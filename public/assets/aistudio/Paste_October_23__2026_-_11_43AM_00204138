@@ -1,0 +1,621 @@
+KOSH INNOVATIONS — BUSINESS PARTNER MASTER (BP MASTER)
+STANDALONE IMPLEMENTATION PROMPT FOR GOOGLE AI STUDIO BUILD
+
+INSTRUCTION
+Implement ONLY the Business Partner Master module described below inside the existing Kosh Innovations Global IT Portal. This is a standalone module-specific prompt, not a replacement for the shared portal architecture. Preserve the existing portal shell, authentication, RBAC, branch context, audit, notification infrastructure, design system, SAP integration framework, and any existing modules. Do not rebuild the application or modify the Item Master module except where a shared integration point is strictly necessary and backward-compatible.
+
+Do not claim a feature is implemented, connected, or tested unless the code has actually been changed and the relevant test has been run. Use the actual connected SAP Business One HANA version, localization, company configuration, UDF definitions, and supported Service Layer metadata as the source of truth. Do not guess SAP property names or values.
+
+SCOPE
+This prompt covers Business Partner Master only: Customer, Supplier/Vendor, and Lead records as supported by the connected SAP B1 company; complete field discovery; contacts; addresses; payment and accounting details; properties/classification; GSTIN verification; geographic cascading auto-population; governance; SAP synchronization; search/list; import/export; configuration; security; and testing. Do not merge this with the separate Item Master, Customer/Manufacturer/Brand custom specification master, or Customer/Part/Model Number custom specification pages.
+
+GEOGRAPHIC CASCADING REQUIREMENT — REQUIRED FIELD ORDER
+For every Business Partner address form, display and collect the geographic fields in exactly this order:
+1. Country
+2. State / Province
+3. District
+4. City
+5. Postal Code
+
+Country selection must drive the available State/Province options. State/Province selection must drive the available District options when reliable district data is available. District selection must drive or filter the available City options when reliable city data is available. Country/state/district/city data must come from a maintained, configurable, versioned geographic reference dataset or a trustworthy configured source. Do not fabricate geographic values. Where an authoritative district or city dataset is unavailable for a country, allow controlled manual entry and label the field accordingly; do not falsely present it as auto-populated. Include type-ahead search, clear dependent selections when a parent selection changes, prevent mismatched combinations, support keyboard/accessibility use, and map selected values to the exact SAP B1 codes/names required by the connected company configuration. For India, support state codes and GSTIN state-code consistency warnings. Never silently change the tax jurisdiction based only on free-text address data.
+
+
+NEW ADDENDUM — SAP BUSINESS PARTNER MASTER, COMPLETE FIELD COVERAGE, AND GSTIN VERIFICATION
+================================================================================
+
+PURPOSE AND IMPLEMENTATION INSTRUCTION
+Implement a complete SAP Business One Business Partner Master capability inside the existing Kosh Innovations Global Item Creation Portal. The user supplied reference document “BP Master SS.docx” contains six pages of screenshots of the SAP Business One Business Partner Master Data window. Use those screenshots as a visual reference, but do not assume that small or unreadable labels in the screenshots are fully legible. The implementation must use the actual SAP Business One version, localization, enabled modules, user-defined fields (UDFs), and supported Service Layer metadata/configuration as the authoritative field inventory.
+
+This is an extension of the EXISTING portal. Do not create a disconnected application, duplicate the current portal shell, remove existing modules, or rebuild the project from scratch. Preserve all previously specified Global Item Master, custom specifications, code/description rule engine, branch availability, approvals/governance, import/export, communication, dashboard, SAP integration, security, audit, and deployment requirements. Do not reintroduce Stage 0 review, Page Acceptance workflow, or image.png requirements; these were explicitly removed in the current master prompt.
+
+Add a new first-class portal module:
+- Navigation label: “Business Partner Master”
+- Suggested route: /business-partners
+- Create/list/detail/edit pages, subject to the portal’s established authorization and governance model.
+- Business Partner types: Customer, Supplier/Vendor, and Lead, following the values supported by the connected SAP Business One company database. If the connected version supports additional partner categories, expose them only when verified through metadata/configuration.
+- Do not confuse Business Partner Master with the separate “Customer / Manufacturer / Brand (Master)” and “Customer / Part / Model Number” Custom Specifications pages. Keep those pages separate as already required. The Business Partner Master is for SAP B1 business partner records; custom specification masters remain their own module/pages.
+
+A. SAP BUSINESS PARTNER MASTER SCREEN AND TABS
+Provide a user-friendly, searchable, responsive form with tabs/sections aligned as closely as practical with the supplied SAP B1 screenshots. Tab labels may differ by SAP B1 version/localization; map them to the actual connected system. Common sections to discover and implement, where supported:
+1. General
+2. Contact Persons
+3. Addresses
+4. Payment Terms / Payment Details
+5. Accounting / Account Determination
+6. Properties / Classification
+7. Remarks / Notes
+8. Attachments
+9. Additional SAP-version-specific tabs or fields discovered through metadata
+10. Kosh Portal Governance and GST Verification (portal-specific section)
+
+Do not silently omit a field because it is not visible in the screenshots. Build a field inventory by inspecting the connected SAP Business One Service Layer metadata and the actual target version. The UI must render all relevant standard fields and configured UDFs supported by the integration. Group fields logically and use progressive disclosure where appropriate; do not create an unusably long single form.
+
+B. FIELD INVENTORY — GENERAL / IDENTIFICATION
+Include all fields available and applicable in the connected SAP B1 company. At minimum, assess and implement the following standard concepts where supported:
+- Business Partner Code (CardCode; generated or assigned according to SAP configuration; never duplicate)
+- Business Partner Name (CardName)
+- Foreign Name / alternate name (where supported)
+- Business Partner Type / CardType (Customer, Supplier, Lead; mapped to valid SAP values)
+- Group / Business Partner Group
+- Currency / default currency
+- Federal Tax ID / Tax ID fields applicable to localization
+- GSTIN / GST Registration Number and relevant tax identifiers for India
+- PAN (where applicable and authorized)
+- Phone 1, Phone 2, mobile, fax
+- Email address
+- Website
+- Contact person / default contact
+- Sales employee / owner / territory / industry where supported
+- Branch / BPL / branch assignment where supported and configured
+- Consolidating BP / parent account / parent-child relationship where supported
+- Valid, frozen, active/inactive status and validity dates where supported
+- Remarks / notes
+- Default payment terms and payment method
+- Price list and discount group where supported
+- Shipping method, delivery terms, and related logistics fields where supported
+- Relevant SAP UDFs (U_ fields), including company-specific mandatory fields
+- Any version/localization-specific standard fields discovered through metadata
+
+The list above is a minimum discovery checklist, not permission to invent fields or send unsupported properties. Resolve exact property names, allowed values, data types, required flags, maximum lengths, and updateability from the connected SAP B1 metadata and configuration. Preserve unknown/custom UDFs as first-class fields when their metadata can be discovered. Provide safe labels for UDFs, using configured labels and otherwise the technical name with a clear “Custom field” indication.
+
+C. CONTACT PERSONS — REPEATING CHILD RECORDS
+Implement a grid/list supporting multiple contact persons per Business Partner, with add/edit/remove actions subject to SAP permissions and API capabilities. Discover actual child entity/property names through the connected version’s metadata. Common fields to map where supported:
+- Contact person name
+- First name, middle name, last name, title/position
+- Department
+- Telephone, mobile, fax
+- Email
+- Address or contact address fields if supported
+- Notes / remarks
+- Active/default contact indicators if available
+- Portal primary-contact marker only if needed; do not misrepresent it as an SAP field unless it maps to a real property.
+
+Allow one valid default contact if SAP rules require it. Validate email and phone format without incorrectly rejecting legitimate international formats. Prevent duplicate child creation during retries.
+
+D. ADDRESSES — MULTIPLE BILL-TO / SHIP-TO RECORDS
+Support multiple address records with address type (Bill To / Ship To or the actual SAP equivalent), address name/code, and default indicators. Discover the real child schema and supported values from metadata. Include, where supported:
+- Address name / address ID
+- Address type
+- Street / street number
+- Building / block
+- Floor / room
+- Address line 2/3 or additional address lines if available
+- City
+- District / county
+- State / province
+- Postal code
+- Country/region
+- GSTIN or tax registration number at address level if supported by the company localization
+- Place of supply / state code where applicable
+- Default bill-to / default ship-to designation
+- Address-specific UDFs
+- Validity/status if supported
+
+For India, support state and state-code mapping using a centrally maintained, versioned list. Country and state selections must be configurable and must use the exact values required by SAP B1. Do not derive or overwrite a tax jurisdiction solely from a free-text address. Warn about inconsistent GSTIN state code and address state, but allow authorized correction/exception handling with an audit trail.
+
+E. PAYMENT TERMS, PAYMENT METHODS, AND FINANCIAL SETTINGS
+Discover and expose applicable SAP B1 fields and lookup values, where supported:
+- Payment terms group
+- Payment method / payment means
+- Credit limit and commitment limit, if present
+- Discount/interest terms if configured
+- Bank/payment details and relevant child collections
+- House bank / bank country / bank code / branch / account identifiers / IBAN / SWIFT or equivalent, only where supported and authorized
+- Payment run / payment block / collection preferences if present in the actual version
+- Reconciliation/accounting fields, control account, and account determination fields, where supported and permitted
+- Tax group / withholding tax settings, where applicable
+- Relevant UDFs
+
+Financial and bank fields require stricter role-based access, masking where appropriate, and field-level audit. Do not show secrets or full sensitive bank data to unauthorized users. Do not change control accounts or financial configuration as a side effect of a normal contact/address edit.
+
+F. PROPERTIES / CLASSIFICATION / SALES AND SERVICE SETTINGS
+Where available in the connected SAP B1 version, support the Properties tab and configured classification fields, including applicable customer/supplier attributes, industry, territory, sales employee, shipping/delivery settings, price list, discount groups, and other standard classification flags. Do not assume a fixed number or fixed naming of property checkboxes. Discover available fields from metadata and expose configured supported values. Maintain a mapping table between portal labels and SAP technical properties.
+
+G. REMARKS, ATTACHMENTS, AND DOCUMENTATION
+- Provide notes/remarks as supported by SAP B1.
+- Support attachment metadata and upload/view/download only if the connected SAP B1 API/version and the organization’s security policy support it.
+- If direct attachment upload is unsupported, show a truthful unsupported/alternative workflow instead of claiming an attachment was synchronized.
+- Enforce allowed file types, size limits, malware scanning where available, access control, safe file names, and audit logging.
+- Do not store attachments indefinitely unless the organization’s retention policy permits it.
+- Do not place passwords, API keys, bank secrets, or unnecessary personal data in free-text remarks.
+- Display sync status and attachment errors truthfully.
+
+H. GSTIN / GST VERIFICATION — INDIA
+Create a dedicated GST Verification panel in Business Partner Master. The objective is to validate GSTIN format and, where an authorized reliable source is available, verify registration status and taxpayer details. Distinguish these separate outcomes:
+1. Format validation — local deterministic validation of GSTIN structure/check digit according to the applicable specification.
+2. Cross-field consistency — GSTIN PAN segment, state code, entered PAN (if provided), and address state/country consistency checks.
+3. Live registration lookup — query an authorized GST data source/API only when available and configured.
+4. Manual official verification — provide a clearly labelled link/button to the official GST taxpayer search portal for a user to verify the GSTIN manually if no supported free API is available.
+5. Verification evidence — store outcome, timestamp, source, response/reference ID if supplied, verifier or service identity, and a minimal audit record. Do not store excessive API response data or unnecessary personal information.
+
+GST verification rules:
+- Do not promise that a free public API is available or always reliable. Availability, access terms, quotas, and permitted usage may change. Confirm the provider’s current terms before enabling live lookup.
+- Prefer official government services or a legally authorized GST verification provider. If an authorized API has a free tier, make provider, rate limits, terms, and availability configurable.
+- Do not scrape the GST portal, bypass CAPTCHA, evade access controls, use stolen credentials, or automate a user session in a way prohibited by the source.
+- Never label a GSTIN “GST-verified” based only on a regular expression or checksum. Use distinct statuses: Not Checked, Format Valid, Format Invalid, Live Verified, Live Not Found/Inactive (only when source actually reports this), Verification Unavailable, Manual Verification Required, and Verification Error.
+- “Format Valid” must not be represented as proof that the GST registration is active.
+- If no authorized live API is configured, the portal must still function using local format checks plus manual official verification; do not block all Business Partner creation solely because live verification is unavailable unless a configurable company policy explicitly requires it.
+- Before live verification, show what data will be sent to the configured provider and retain only necessary evidence. Secure API keys server-side in environment/secret configuration; never expose them in browser code or logs.
+- Apply request timeouts, rate limiting, caching only within a configurable retention period, bounded retries, circuit breaker, provider error handling, and audit. Do not retry invalid GSTINs.
+- Make the provider interface pluggable (e.g. official/authorized API adapter) so the organization can change providers without rewriting the form.
+- Use safe fallback behavior: if provider is down or quota is exhausted, show “Verification unavailable” and offer manual verification. Never silently treat provider failure as a successful verification.
+- The UI may offer “Verify GSTIN”, “Open official GST search”, and “Record manual verification”. Manual verification must capture verifier, date/time, source/reference or notes, and a confirmation checkbox; it must not pretend an automated API check occurred.
+- The official GST taxpayer search URL should be obtained from a trusted configuration setting and verified at deployment; do not hardcode an unverified or third-party lookalike URL.
+- Use the applicable official GSTIN structure and checksum rules from a maintained, tested implementation. Keep validation logic covered by unit tests and versioned if specifications change.
+
+I. GST-RELATED FIELDS AND VALIDATIONS
+Where applicable to the selected Business Partner type and India localization, include:
+- GSTIN / GST registration number
+- PAN
+- Registration type / taxpayer type as available from SAP localization or the configured lookup provider
+- GST registration status and verification status
+- Verification timestamp and source
+- Legal name and trade name returned by an authorized lookup, where the source supplies them
+- State code / state name
+- Address/state consistency warning
+- Tax category or GST treatment fields supported by the connected SAP company
+- GST-related UDFs configured by Kosh Innovations
+- Effective date / validity date only if supported by the actual SAP/localization field
+Do not invent values returned by a provider. Store raw provider responses only if strictly necessary, legally permitted, access-restricted, and covered by a documented retention policy. Prefer normalized minimal results.
+
+J. BUSINESS PARTNER CREATION AND EDIT WORKFLOW
+- Create a new Business Partner form with required-field indicators derived from SAP metadata and company configuration.
+- Support save as draft in the portal if the current architecture permits it; a portal draft must not be represented as already created in SAP.
+- Validate required fields, code uniqueness, field lengths, allowed lookup values, email, address structure, and configured mandatory UDFs before submission.
+- Run GST format and consistency checks as configured. If live verification is required by company policy and unavailable, put the record into an explicit “Verification Pending/Manual Check Required” state; do not silently mark it verified.
+- Show a full review summary before the final SAP submission, including business partner type, identification, GST status, contacts, addresses, payment settings, and selected properties.
+- On authorized confirmation, create/update the BP through the supported SAP Business One Service Layer (or another explicitly approved supported interface).
+- Never insert/update SAP system tables directly with SQL.
+- Use idempotency/correlation identifiers and duplicate detection so retries do not create duplicate BPs.
+- Display the returned SAP CardCode and the actual creation/update result.
+- Separate portal draft status, governance status, GST verification status, and SAP synchronization status.
+- If SAP creation fails, preserve the portal draft and a safe diagnostic error, allow correction/retry, and do not show “Created in SAP.”
+- Use a durable sync queue for retryable errors, bounded exponential backoff, dead-letter/manual recovery, and correlation IDs.
+- Do not automatically overwrite SAP-maintained fields during a later portal update unless the field mapping and ownership policy explicitly permit it.
+- Define field ownership and conflict behavior (Portal-owned, SAP-owned, or synchronized) for every mapped field. Display conflicts and require the configured resolution path.
+
+K. BUSINESS PARTNER SEARCH, LIST, FILTER, AND IMPORT/EXPORT
+Add a Business Partner list page with server-side search, sorting, filtering, and pagination. Support search by CardCode, name, GSTIN, PAN where authorized, email, phone, and city. Filters should include BP type, branch, country/state, GST verification status, governance status, SAP sync status, active/frozen status, and created/updated date where those fields exist. Use allowlisted sort fields, stable ordering, accurate counts, authorization-scoped results, and server-side pagination. Do not expose bank or sensitive financial values in list results.
+Support bulk import/export only through a guided and validated workflow:
+1. Download template based on the current field mapping.
+2. Upload CSV/XLSX.
+3. Inspect headers and map columns.
+4. Validate all rows and show errors/warnings before submission.
+5. Run duplicate checks against portal and SAP.
+6. Show GST format/consistency results; live verification must respect configured rate limits.
+7. Preview records and target SAP mappings.
+8. Confirm authorized submission.
+9. Process as a durable background job with progress and row-level success/failure.
+10. Provide a downloadable error report with row number, field, error code, and safe explanation.
+Do not write to SAP directly from a spreadsheet. Enforce file-size limits, formula-injection protection on exports, strict parsing, authorization, audit, and idempotency.
+
+L. METADATA-DRIVEN FIELD CONFIGURATION
+Create or extend the portal’s existing field configuration framework so authorized administrators can:
+- Discover/sync SAP Business One metadata and UDF definitions.
+- Set portal display label, group/tab, visible/hidden, read-only/editable, required/optional, default, validation rule, help text, lookup source, and field-level access.
+- Map each portal field to exact SAP entity/property names.
+- Define ownership (Portal, SAP, Shared) and conflict resolution.
+- Mark sensitive fields and configure masking/access rules.
+- Configure required fields by BP type and branch/company where allowed.
+- Configure whether GST live verification is advisory or required for submission, subject to legal and company policy.
+- Configure GST verification provider, endpoint, authentication secret reference, timeout, quota, cache duration, and enabled status without exposing secret values.
+- Version mappings and validate a proposed mapping before publishing.
+- Preserve unsupported properties as disabled/unmapped entries rather than sending them blindly to SAP.
+- Prevent ordinary administrators from overriding security-critical platform constraints.
+
+M. SECURITY, PRIVACY, AUDIT, AND COMPLIANCE
+- Use existing portal RBAC and branch/company data scope.
+- Separate permissions for view/create/edit/approve/sync Business Partners, view sensitive financial/bank fields, configure SAP mappings, configure GST provider, and record manual GST verification.
+- Enforce authorization on the backend, not only by hiding UI controls.
+- Use TLS, secret storage/environment configuration, least-privilege SAP technical accounts, request validation, output encoding, CSRF protections where applicable, and secure logging.
+- Never log passwords, access tokens, API keys, full bank account numbers, or complete provider payloads containing unnecessary personal data.
+- Audit who created/edited/approved/synchronized a BP and who performed/recorded GST verification, including before/after field changes where permitted.
+- Keep a traceable event ID, actor, timestamp, source, result, and SAP correlation ID.
+- Apply retention and deletion policies to provider responses, uploaded files, logs, and personal/contact data.
+- Do not represent GST verification as legal/tax advice or guarantee that a registration remains active after the recorded lookup time.
+
+N. TECHNICAL IMPLEMENTATION EXPECTATIONS
+Use the existing project’s architecture and conventions; do not replace the established stack. Where applicable, follow the existing React/TypeScript frontend and FastAPI/Python/Pydantic/SQLAlchemy backend architecture and the current database/migration framework.
+- Implement typed request/response schemas and server-side validation.
+- Add database migrations for portal-owned Business Partner staging/draft data, field mappings, contact/address staging only if needed, GST verification evidence, sync jobs, and audit events. Avoid duplicating SAP’s authoritative master data unnecessarily.
+- Keep SAP as the system of record for records successfully created there; clearly identify portal staging data versus SAP-synchronized data.
+- Implement Service Layer adapters based on the actual connected SAP B1 version, authentication method, company database, localization, metadata, and permissions.
+- Discover actual metadata and run a read-only connectivity/schema diagnostic before implementing create/update payloads.
+- Handle session renewal, timeouts, network failures, concurrency, duplicate conflicts, rate limits, and partial failures.
+- Add observability with correlation IDs, metrics for lookup/sync outcomes, safe structured logs, and an operational recovery view.
+- Do not hardcode example endpoints, credentials, CardCodes, UDFs, property lists, or tax values. Keep environment-specific settings configurable.
+- Do not claim SAP or GST verification is working until it has been tested against an authorized test company/provider.
+
+O. REQUIRED ACCEPTANCE TESTS
+Create automated tests and an implementation test checklist covering:
+1. Discover and display supported BP standard fields and UDFs from the target SAP metadata.
+2. Correct mapping of Customer, Supplier, and Lead values to the actual SAP enum values.
+3. Create a portal draft without falsely reporting SAP creation.
+4. Create a BP in an authorized SAP test company through Service Layer and confirm returned CardCode.
+5. Edit a BP and verify only allowed/owned fields are changed.
+6. Contact persons: multiple contacts, default contact behavior, validation, and retry idempotency.
+7. Addresses: multiple bill-to/ship-to records, defaults, state/country mapping, and duplicate handling.
+8. Payment/accounting fields: permissions, masking, and no accidental update.
+9. UDF fields: correct types, requiredness, lookup values, and payload mapping.
+10. GSTIN valid-format and invalid-format test cases; checksum tests using vetted fixtures.
+11. PAN/state/address mismatch warnings.
+12. Live provider success, not-found/inactive response (only if provider reports it), timeout, quota exhaustion, malformed response, and unavailable-provider fallback.
+13. Manual verification evidence and audit.
+14. Verify that a format-valid GSTIN is never displayed as live verified.
+15. Duplicate CardCode/name/GSTIN checks according to configurable policy.
+16. Bulk import preview, row-level validation, duplicate detection, idempotency, partial failures, error report, and retry.
+17. Search, filter, sorting, pagination, and branch authorization.
+18. Unauthorized user cannot view sensitive bank/accounting fields or invoke SAP/GST configuration endpoints.
+19. Provider secrets and sensitive values do not appear in frontend bundles or logs.
+20. SAP outage leaves a recoverable pending/failed sync record and never falsely reports success.
+21. No direct SQL writes to SAP system tables.
+22. Regression tests prove all existing portal modules and previously accepted visual design remain intact.
+
+P. IMPLEMENTATION ORDER
+1. Inspect the current project and existing SAP integration without rebuilding or removing current functionality.
+2. Inspect the supplied six-page “BP Master SS.docx” screenshots, documenting visible tabs/fields and any unreadable items. Treat screenshots as a reference, not a complete field specification.
+3. Connect to the authorized SAP B1 test environment and inspect Service Layer metadata, UDF definitions, localization, and permissions.
+4. Produce a technical field-to-property mapping from portal field to SAP entity/property, including data type, requiredness, ownership, and authorization.
+5. Build the Business Partner list and form using the existing UI design system.
+6. Implement draft storage, backend validation, SAP adapter, idempotent sync queue, and audit.
+7. Implement GST format and cross-field validation first; then add an authorized live lookup adapter only if a suitable provider and credentials/terms are available; always include manual official verification fallback.
+8. Implement bulk import/export with preview and row-level diagnostics.
+9. Run automated tests and an authorized end-to-end test in the SAP test company.
+10. Report exactly what is implemented, what was tested, what remains blocked by missing SAP access/metadata/provider credentials, and any unsupported SAP fields. Do not claim full field coverage before metadata-based verification.
+
+FINAL NON-NEGOTIABLE RULES
+- Preserve the existing portal and all prior requirements.
+- Do not recreate Stage 0 review or Page Acceptance workflow.
+- Do not require or generate image.png.
+- Do not conflate Business Partner Master with Customer/Manufacturer/Brand Master or Customer/Part/Model Number Custom Specifications.
+- Do not invent SAP fields or unsupported Service Layer properties.
+- Do not bypass GST portal protections or claim live verification without a real authorized source response.
+- Never write directly to SAP B1 system tables.
+- No fake success states: show accurate draft, verification, approval, and SAP synchronization statuses.
+================================================================================
+END OF NEW ADDENDUM
+================================================================================
+
+===============================================================================
+NEW ADDENDUM: GLOBAL MODULE ENABLE / DISABLE MANAGEMENT
+ITEM MASTER AND BUSINESS PARTNER MASTER
+===============================================================================
+
+PURPOSE
+-------
+Implement a centrally managed, administrator-controlled Enable/Disable option
+for each primary business module in the Kosh Innovations Global IT System.
+
+Initial primary modules:
+1. Item Master
+2. Business Partner Master (BP Master)
+
+This is a functional module feature flag and access-control gate, not merely a
+visual menu-hiding feature. Module state must control navigation, routes, pages,
+actions, APIs, imports/exports, approvals, scheduled processing, background
+jobs, and integrations.
+
+PROJECT PRESERVATION
+--------------------
+Preserve all existing application features, pages, field definitions, business
+rules, data, SAP mappings, integrations, workflows, layouts and previous
+requirements. Append this capability; do not rebuild the application or remove
+existing functionality.
+
+A. CENTRAL MODULE MANAGEMENT PAGE
+--------------------------------
+Create an administrator-only page named "Module Management" or
+"Module Enable / Disable" under the existing Settings / General Settings area.
+Follow the current portal design.
+
+Show a row/card for each module:
+- Item Master
+- Business Partner Master
+
+Display module name, description, Enabled/Disabled state, toggle or Enable and
+Disable actions, last changed timestamp, changed-by user, optional reason,
+dependencies and current availability. Require confirmation before disabling.
+
+Only users with a dedicated permission such as MODULE_CONFIGURATION_MANAGE may
+change states. Enforce this permission on the server, not only in the UI.
+
+Default states for a new installation:
+- Item Master: ENABLED
+- Business Partner Master: ENABLED
+
+If a registry or established module state already exists, preserve it. Do not
+reset existing configuration during migration.
+
+B. ITEM MASTER DEPENDENCY MAP
+-----------------------------
+When Item Master is ENABLED, show and permit access to all existing Item Master
+features allowed by the user's role. Inspect the actual project and include all
+related navigation entries and features, including but not limited to:
+
+- Item navigation group
+- Create Item / Item Creation Form
+- Global Item Master
+- Global Item Master search, sort, filters, pagination and actions
+- Item Master import, bulk import, export and templates
+- Item Master requests and request details
+- Item Master approval queues and actions
+- Item Master-specific Custom Specifications, including Customer /
+  Manufacturer / Brand (Master) and Customer / Part / Model Number where these
+  are implemented as Item Master configuration
+- Item Code & Description and its rule configuration
+- Classification Masters used by Item Master
+- Branch Item Availability
+- Item-specific validation, duplicate checks and code allocation
+- Item-specific governance, audit and rule-version history
+- Item-specific SAP creation/synchronization, scheduling, safe testing,
+  activation, monitoring, recovery and retry functions
+- Item-specific notifications, APIs and background jobs
+- Item-only dashboard cards, widgets, counts and quick actions
+- Every additional Item-only route, tab, dialog, action and setting discovered
+  in the current codebase
+
+When Item Master is DISABLED:
+- Hide the top-level Item navigation group and all its submenus.
+- Disable Item-specific configuration pages, including Item Code & Description
+  and Classification Masters that are exclusively used by Item Master.
+- Disable Item-specific Custom Specifications where they belong to Item Master.
+- Disable item creation, editing, submission, approval, import, export and SAP
+  synchronization actions.
+- Block direct navigation to Item Master routes even when a URL is pasted.
+- Reject Item Master API requests server-side.
+- Prevent Item Master schedulers/workers from claiming new jobs.
+- Preserve existing records, issued codes, rules, approvals, audit history and
+  SAP-created records. Do not delete or rewrite data.
+- Do not disable BP Master or shared services still needed by BP Master.
+
+If a user opens an Item Master URL while the module is disabled, show a clear
+"Item Master is currently disabled" message and expose no mutation actions.
+
+C. BUSINESS PARTNER MASTER DEPENDENCY MAP
+-----------------------------------------
+When Business Partner Master is ENABLED, show and permit access to all existing
+BP Master features allowed by the user's role. Inspect the project and include:
+
+- Business Partner Master navigation and pages
+- BP create/edit forms and list/search/sort/filter/pagination
+- Supported Customer, Supplier/Vendor, Lead and other BP types
+- General data, contacts, addresses, payment/accounting fields and properties
+- BP-specific Custom Specifications and field configuration
+- BP import, bulk import, export and templates
+- BP validation, duplicate detection and approvals
+- GSTIN/PAN validation and GST verification
+- BP governance and audit history
+- BP SAP Business One HANA create/update/sync, scheduling, monitoring, recovery
+  and retry functions
+- BP notifications, APIs, queues, jobs, dashboard widgets and quick actions
+- Every additional BP-specific route, tab, dialog, action and configuration
+
+When Business Partner Master is DISABLED:
+- Hide its navigation entry and all BP-only submenus.
+- Disable BP creation, editing, submission, approval, import/export and SAP sync.
+- Disable BP-specific Custom Specifications and field configuration.
+- Disable initiation of BP GST verification. Existing verification history may
+  remain available read-only to authorized audit/compliance roles if policy
+  permits.
+- Block direct BP routes and reject BP APIs server-side.
+- Prevent new BP jobs from starting.
+- Preserve BP records, SAP identifiers, GST verification history, approvals and
+  audit records.
+- Do not disable Item Master or services it needs.
+
+D. SHARED MENUS AND SHARED SERVICES
+-----------------------------------
+Inspect the existing route/navigation tree and explicitly classify each menu,
+route, API and job as one of:
+1. ITEM_MASTER_ONLY
+2. BUSINESS_PARTNER_MASTER_ONLY
+3. SHARED
+4. PLATFORM_ADMIN_ONLY
+5. OTHER_MODULE_ONLY, if applicable
+
+Potential shared areas include login/security, user and role administration,
+organization/branch management, dashboard shell, audit infrastructure,
+communication/notification infrastructure, SAP connection profiles, credential
+vault references and shared monitoring. Determine actual dependencies from the
+code; do not assume all settings belong to one module.
+
+If a shared page has separate Item and BP sections, disable only the section
+belonging to the disabled module. If a shared SAP Integration Management page
+contains both Item and BP jobs, keep the page available to authorized
+administrators and independently gate each module's job group.
+
+Examples:
+- Disabling Item Master must not disable BP GST verification if BP Master is on.
+- Disabling BP Master must not disable Item Code generation if Item Master is on.
+- Do not disable login, role management, platform audit or general SAP
+  connection health checks because one business module is disabled.
+- Do not leave a shared action available if it can mutate data belonging to a
+  disabled module.
+
+E. CENTRAL REGISTRY AND CONSISTENT ENFORCEMENT
+----------------------------------------------
+Use a central module registry and authoritative effective-state service. Avoid
+scattered hardcoded booleans and fragile checks based on menu label strings.
+
+Suggested configuration fields:
+- module_key (unique)
+- display_name
+- description
+- is_enabled
+- configuration_version
+- changed_at
+- changed_by
+- change_reason
+- created_at / updated_at
+
+Suggested keys:
+- ITEM_MASTER
+- BUSINESS_PARTNER_MASTER
+
+Reuse an existing equivalent registry if present; do not create duplicate
+configuration infrastructure unnecessarily. Use the project's current database
+and migration conventions.
+
+Client-side behavior:
+- Build sidebar navigation from module state plus user permissions.
+- Hide the disabled module's full navigation subtree by default.
+- Remove blank menu groups, orphaned separators and dead links.
+- Apply state to dashboard widgets, tabs, contextual actions and buttons.
+- Refresh effective state after a toggle and handle stale browser tabs.
+
+Server-side behavior:
+- Enforce state on every protected API and mutation endpoint.
+- Never rely on hidden menus as security enforcement.
+- Block direct URL/API access when the module is disabled.
+- Return a consistent error, for example HTTP 403 with stable code
+  MODULE_DISABLED and the module key, without leaking protected record data.
+- Make schedulers and background workers use the same authoritative state.
+- If module state cannot be verified because the state service/database fails,
+  fail closed for new writes and integration actions; do not silently assume
+  enabled.
+
+F. SAFE DISABLE AND ENABLE BEHAVIOR
+-----------------------------------
+Before disabling, show a confirmation dialog explaining:
+- Which module will be disabled
+- Menus/functions that become unavailable
+- Impact on new records, edits, approvals, import/export and SAP synchronization
+- Number of running/pending jobs, where available
+- How in-flight and queued work will be handled
+- Shared pages that remain available
+- Optional reason/comment and explicit confirmation
+
+When disabling:
+1. Persist the state transactionally.
+2. Block new module operations immediately after the state becomes effective.
+3. Tell workers to stop claiming new jobs for the module.
+4. Let in-flight work finish only if safe and policy-approved, or pause it at a
+   safe checkpoint; avoid partial database/SAP transactions.
+5. Mark paused jobs clearly, for example PAUSED_MODULE_DISABLED.
+6. Preserve retry counters, idempotency keys, payload references and audit logs.
+7. Do not delete or cancel queued records just because the module is disabled.
+8. Record the committed state change in audit history.
+
+When enabling:
+1. Verify the actor's permission.
+2. Persist the enabled state.
+3. Refresh navigation, route and API state.
+4. Allow eligible queued work to resume according to normal scheduling rules.
+5. Revalidate queued work and do not replay completed jobs.
+6. Do not automatically create/sync historical records unless an explicitly
+   configured recovery policy calls for it.
+7. Audit the committed change and report the actual result.
+
+Use transactions and optimistic concurrency/version checks or equivalent
+protection against conflicting administrator changes.
+
+G. PERMISSIONS AND AUDIT
+------------------------
+Reuse the existing role model where equivalent permissions exist. Otherwise
+define permissions such as:
+- MODULE_CONFIGURATION_VIEW
+- MODULE_CONFIGURATION_MANAGE
+- ITEM_MASTER_ACCESS / CREATE / UPDATE / APPROVE / IMPORT / EXPORT
+- BUSINESS_PARTNER_MASTER_ACCESS / CREATE / UPDATE / APPROVE / IMPORT / EXPORT
+- BUSINESS_PARTNER_GST_VERIFY
+
+Effective access requires BOTH the module to be enabled AND the user to have
+the appropriate permission. Enabling a module must not grant access to every
+user. Disabling a module must not remove role assignments or permissions.
+
+Audit each state transition with event ID, module key, previous/new state,
+actor, timestamp, reason, correlation/request ID, outcome and available job
+impact counts. Reuse the existing audit infrastructure if suitable.
+
+H. DASHBOARD AND NAVIGATION
+---------------------------
+- Hide Item-only cards, charts, counts, recent-record sections and shortcuts
+  when Item Master is disabled.
+- Hide BP-only cards, charts, counts, recent-record sections and shortcuts when
+  BP Master is disabled.
+- Keep shared SAP health monitoring when needed by an enabled module or for
+  authorized platform administrators.
+- Do not display fabricated zero counts for hidden/unavailable modules.
+- Label disabled, unavailable, paused and failed states accurately.
+- If both business modules are disabled, keep the platform shell and authorized
+  administrative recovery features accessible.
+
+I. REQUIRED ACCEPTANCE TESTS
+----------------------------
+1. New installation: both modules default to ENABLED; authorized existing
+   functionality remains available.
+2. Disable Item Master: Item menu and every Item-only submenu disappear;
+   Item routes/APIs/actions/jobs are blocked; data and audit history remain;
+   BP Master and BP GST verification continue working if BP is enabled.
+3. Re-enable Item Master: its menus return; data/rules remain intact; eligible
+   queued jobs resume safely without duplicate records.
+4. Disable BP Master: BP menus/routes/APIs/actions/jobs and new GST verification
+   are disabled; Item Master and code generation continue working if enabled.
+5. Re-enable BP Master: BP features return; existing BP/GST/SAP data remains;
+   jobs resume without duplicate processing.
+6. Shared pages: SAP Integration Management and platform health checks remain
+   available to authorized administrators; Item and BP jobs are independently
+   gated.
+7. Authorization: users lacking MODULE_CONFIGURATION_MANAGE cannot toggle via
+   UI or direct API. Enabled modules remain subject to normal role permissions.
+8. Stale session/race: stale tabs cannot submit writes after disable; concurrent
+   toggles are handled safely; workers stop claiming new jobs.
+9. Failure handling: no silent default-to-enabled on state-service failure;
+   errors and audit reflect the actual committed state.
+10. Regression: Item Master, BP Master, SAP HANA integration, GST verification,
+    import/export, governance, notifications and dashboard continue working
+    when their modules are enabled.
+
+J. IMPLEMENTATION WORKFLOW
+--------------------------
+1. Inspect actual source files, navigation, routes, APIs, permissions, models,
+   migrations, schedulers, workers, SAP jobs, dashboards and tests.
+2. Produce a dependency inventory mapping every route/menu/API/action/config
+   section/background job to its module key.
+3. Identify genuinely shared components.
+4. Implement registry and safe migration.
+5. Implement server-side state gates and permission checks.
+6. Implement the Module Management page and confirmation workflow.
+7. Apply effective state to navigation, routes, dashboards, configuration,
+   actions, imports/exports, approvals, schedules and workers.
+8. Implement safe pause/resume behavior.
+9. Run migrations, lint/type checks, unit/integration tests and acceptance tests.
+10. Inspect rendered enabled/disabled states.
+11. Report actual files changed, migration details, gated routes/jobs, test
+    commands/results and limitations. Never claim tests passed unless run.
+
+Do not stop after creating the visual toggle. Persistence, server-side
+enforcement, shared dependency handling, background-job behavior, audit logging
+and regression tests are mandatory.
+
+FINAL ACCEPTANCE CRITERION
+--------------------------
+An authorized administrator can independently enable/disable Item Master and
+BP Master from one central settings page. State persists across sessions and
+restarts. Disabling a module disables its complete dependent feature set while
+leaving the other enabled module and genuinely shared platform services usable.
+Enabling restores access without data loss, rule loss, permission escalation
+or duplicate processing. Every change is auditable and enforced server-side.
+===============================================================================
+END OF NEW ADDENDUM
+===============================================================================

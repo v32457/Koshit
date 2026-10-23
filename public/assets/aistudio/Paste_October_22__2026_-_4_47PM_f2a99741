@@ -1,0 +1,1014 @@
+ ## 5. CONFIGURABLE ENTERPRISE DASHBOARD
+
+### 5.1 Core Principle — Configuration-Driven, Not Static
+
+Build the dashboard as a configurable enterprise portal capability, not as a fixed page with permanently coded KPI cards, charts, tables, filters, or branch-level summaries.
+
+The portal may provide sensible default dashboard widgets for first-time setup, but those defaults must be stored as configuration and must be editable. Do not hardcode the dashboard layout, KPI list, widget visibility, display order, chart type, branch grouping, filters, refresh interval, or role-specific layout into frontend components.
+
+Dashboard configuration must be persisted in the application database and loaded through authorized backend APIs. Changes made by an authorized administrator must take effect without requiring a code change or application redeployment. Where a configuration change requires a refresh, clearly refresh the affected dashboard or session.
+
+Do not treat a default configuration as real production data. Do not show fabricated metrics, hardcoded sample counts, placeholder trends, or mock SAP status as production results.
+
+### 5.2 Configurable Dashboard Widgets
+
+Provide a reusable widget framework that can support configurable dashboard components, including but not limited to:
+
+- KPI / metric cards.
+- Trend charts and time-series charts.
+- Bar, line, pie/donut, and other approved chart types.
+- Data tables and ranked lists.
+- Status summaries and workflow queues.
+- Recent authorized activity.
+- Branch, business unit, company, or organizational summaries, where applicable.
+- SAP integration health and job status.
+- Alerts and exception summaries.
+- Links or shortcuts to authorized portal modules.
+
+The listed widgets are examples of supported widget types, not a mandatory fixed set. The system must allow future approved widget types to be introduced through the widget framework without redesigning the entire dashboard.
+
+Each widget must have a stable widget type, unique configuration identifier, display title, data-source definition, access policy, and rendering configuration. Keep the widget renderer generic; do not create a separate hardcoded dashboard implementation for every possible KPI.
+
+### 5.3 Dashboard Administration and Configuration UI
+
+Create a dashboard configuration area accessible only to users with the appropriate permission. It must support the following capabilities.
+
+**A. Widget catalogue**
+- Show the widget types available to the current administrator.
+- Describe each widget's purpose, supported visualizations, available data sources, and required permissions.
+- Allow an administrator to add an eligible widget to a dashboard.
+- Prevent a widget from being added if its data source is unavailable or the administrator lacks the required permission.
+- Do not expose sensitive fields or data sources merely because a widget type exists.
+
+**B. Layout and presentation**
+- Add, remove, show, or hide widgets.
+- Reorder widgets using drag-and-drop where supported, with accessible alternative controls.
+- Configure widget size and grid position within defined layout constraints.
+- Set a display title and optional description.
+- Select an allowed visualization type for the chosen data.
+- Configure supported grouping, sorting, date range, and filter defaults.
+- Configure supported display precision, units, and empty-state behaviour.
+- Preview changes before publishing them.
+- Provide reset-to-approved-defaults functionality, with confirmation before overwriting the current configuration.
+
+**C. Audience and access**
+- Configure a dashboard for a supported audience, such as a user, role, department, branch, or organization, where the portal's authorization model permits it.
+- Allow personal layout preferences only if enabled by policy.
+- Define precedence when multiple configuration scopes exist. Use a documented deterministic rule, for example: organization default, then permitted role/branch configuration, then personal preferences when enabled.
+- A user's personal layout preferences must never override authorization, data visibility, company boundaries, branch restrictions, or field-level security.
+- Do not let an administrator grant themselves or another user data access merely by adding a widget.
+
+**D. Configuration lifecycle**
+- Save a configuration as a draft.
+- Preview a draft without affecting other users.
+- Publish an approved configuration.
+- Maintain configuration version history, including who changed it, when, and what changed.
+- Allow authorized users to restore a previous published version.
+- Audit add, edit, remove, publish, restore, and reset actions.
+- Validate configurations before publishing and reject invalid data-source identifiers, unsupported chart types, invalid filters, unauthorized fields, and incompatible widget settings.
+- If maker-checker approval is required by the portal's governance policy, require approval before publishing production-wide changes.
+- Never silently replace an existing configuration with a new default during application startup or migration.
+
+### 5.4 Data Sources and Metric Definitions
+
+Dashboard metrics must be generated from real, authorized application data and, where appropriate, verified SAP integration status. Do not store a displayed KPI value as a manually maintained constant.
+
+For every configurable widget, define or select an approved data source using a controlled registry. The registry must specify:
+
+- A stable data-source identifier and display name.
+- The entity, approved query, service, or aggregation that supplies the data.
+- The metric definition, unit, aggregation method, and any relevant counting rules.
+- Available dimensions and filters, such as date, request status, organization, branch, item category, or SAP processing status, only where those dimensions actually exist and are authorized.
+- Required permissions and permitted organizational scope.
+- Supported time ranges, grouping, sorting, and pagination.
+- Refresh or cache policy.
+- Data freshness information and the last successful update time, where applicable.
+- Expected empty, unavailable, delayed, and error states.
+
+Do not allow a dashboard administrator to enter arbitrary SQL or bypass the application's service and authorization layers. Use a controlled data-source registry, parameterized queries, approved backend services, and server-side validation.
+
+Metric definitions must be explicit and consistent. For example, “approved items awaiting SAP creation” must use a documented status rule and must not count the same item multiple times because of retries, duplicate requests, or multiple integration attempts. Status-based metrics must use the portal's actual workflow state definitions.
+
+Where SAP data is involved, clearly distinguish between portal records, queued integration work, successful SAP confirmation, and unverified or stale synchronization status. A queued or submitted request must not be labelled as successfully created in SAP until the supported integration response or reconciliation process confirms it.
+
+### 5.5 Initial Default Dashboard
+
+Provide a sensible, editable default dashboard for initial deployment. The following are suggested defaults, not permanent mandatory cards:
+
+- Approved global items.
+- Draft item requests.
+- Pending approvals.
+- Returned requests.
+- Approved items awaiting SAP creation.
+- SAP integration failures.
+- Recent authorized activity.
+- Branch-level item statistics, if branch data and access rules are configured.
+- Item creation trends.
+
+Store the default dashboard definition in configuration. Authorized administrators must be able to remove, hide, reorder, rename, or replace these widgets, subject to governance and authorization rules. If a widget is required by policy, mark it as mandatory through configuration and explain why it cannot be removed.
+
+If the required tables, workflow states, SAP status evidence, branch dimension, or data-source configuration are not yet available, do not fabricate the corresponding result. Show a clear configuration or data-unavailable state and provide an actionable message for an authorized administrator. Do not display a fake zero when the real value is unknown or the data query failed.
+
+### 5.6 Filters and Interactive Drill-Down
+
+Widgets may expose filters appropriate to their data source, such as:
+
+- Date range.
+- Item category or item type.
+- Workflow status.
+- Branch or business unit.
+- SAP integration status.
+- Request creator or approver, subject to permissions.
+
+Only offer filters supported by the selected data source and permitted for the current user. Validate filter values on the server. Clearly indicate active filters and provide a way to clear them.
+
+Where authorized, selecting a KPI or chart segment should open the corresponding filtered list or workflow page. Preserve the filter context during navigation where safe and appropriate. Apply record-level and organization-level authorization again on the destination page; a dashboard click must not bypass access control.
+
+### 5.7 Role-Aware and Organization-Aware Dashboards
+
+Dashboard visibility and data scope must be enforced by the backend, not only by hiding frontend widgets.
+
+Examples of possible role-based dashboards include:
+- Requester: their own drafts, submissions, returned requests, and permitted status information.
+- Approver: items awaiting their decision and relevant approval history.
+- Item master administrator: global item records, validation exceptions, and duplicate-review queues.
+- SAP integration operator: integration jobs, failures, retries, reconciliation, and SAP confirmation status.
+- Auditor: authorized read-only workflow and audit information.
+- Portal administrator: configuration, service health, and authorized operational summaries.
+
+These are examples, not a hardcoded role list. Map dashboards and widgets to the portal's configurable RBAC/permission model. Do not assume every deployment has these exact roles.
+
+Organization, company, branch, and data ownership boundaries must be enforced on every request. A global view may be shown only to users authorized for global scope. Do not leak another branch's or company's item data through aggregated totals, charts, exports, drill-downs, or widget error messages.
+
+### 5.8 Database and Backend Design
+
+Implement persistent, versioned dashboard configuration using the project's existing database and migration conventions. Adapt names to the current schema rather than creating duplicate concepts.
+
+The design should support entities equivalent to:
+
+- `dashboard_definition`: dashboard identity, name, scope, owner or audience, status, and metadata.
+- `dashboard_configuration_version`: immutable or historically preserved configuration versions, version number, author, timestamps, change summary, and publication status.
+- `dashboard_widget_instance`: widget instance identity, dashboard/version association, widget type, title, layout, order, and enabled state.
+- `dashboard_widget_configuration`: validated, schema-versioned widget settings, filters, display options, and approved data-source reference.
+- `dashboard_data_source_registry`: approved data-source definitions, metric metadata, allowed dimensions, refresh policy, and permission requirements.
+- `dashboard_user_preference`: optional user-specific layout or filter preferences, only if enabled by policy.
+- `dashboard_audit_log`: configuration and publication events with actor, timestamp, action, target, and relevant before/after change details.
+
+These are logical design entities; reuse or extend existing tables if equivalent structures already exist. Do not create redundant tables without reviewing the current application model.
+
+Use database constraints and transactions to prevent duplicate configuration identifiers, invalid version relationships, and partially published configuration states. Keep secrets and credentials out of dashboard configuration JSON. Avoid storing sensitive row-level data or large result sets inside configuration records.
+
+Expose authenticated, permission-checked backend APIs for:
+- Retrieving the effective dashboard configuration for the current user.
+- Listing available widget types and approved data sources.
+- Creating and editing configuration drafts.
+- Validating and previewing a draft.
+- Publishing, restoring, and resetting configurations.
+- Retrieving widget data through approved data-source identifiers and validated parameters.
+- Retrieving permitted configuration version history and audit events.
+
+Use the existing API conventions and schema. Do not invent routes that conflict with existing endpoints; inspect the application before implementing.
+
+### 5.9 Performance, Resilience, and Freshness
+
+- Load widgets independently where practical so a failed widget does not take down the whole dashboard.
+- Use pagination and server-side aggregation for large datasets.
+- Set query timeouts and reasonable limits.
+- Avoid N+1 queries and unbounded result sets.
+- Use caching only where safe and appropriate; include authorization scope and relevant filters in cache keys.
+- Define refresh behaviour per widget or data source, within permitted operational limits.
+- Do not claim real-time data if the source is delayed, cached, or updated on a schedule.
+- Display last-updated time or freshness status where meaningful.
+- Provide distinct loading, no-data, stale-data, configuration-required, permission-denied, and query-failure states.
+- If a widget fails, show an understandable error and preserve the rest of the dashboard.
+- Do not expose stack traces, SQL, secrets, tokens, internal hostnames, or sensitive integration details in user-facing error messages.
+- Log technical details securely for authorized support personnel.
+
+### 5.10 Security, Audit, and Governance
+
+- Enforce authentication, RBAC, organization scope, branch scope, and field-level permissions on the backend for both configuration and widget data.
+- Treat all client-supplied widget IDs, data-source IDs, filters, sorting fields, and configuration JSON as untrusted input.
+- Validate configurations against versioned schemas and allowlists.
+- Prevent arbitrary SQL execution, unsafe expressions, injection, unauthorized aggregation, and cross-tenant or cross-branch data leakage.
+- Protect configuration changes with appropriate permissions and optional maker-checker approval.
+- Audit configuration creation, modification, preview if required by policy, publication, restoration, deletion, and reset.
+- Apply retention and privacy rules to audit events and any user-specific preferences.
+- Do not expose hidden widgets' data through background API calls.
+- Keep SAP credentials and integration secrets in the application's approved secret-management mechanism, never in dashboard settings.
+
+### 5.11 Acceptance Criteria
+
+The dashboard implementation is acceptable only when all of the following have been verified:
+
+1. An authorized administrator can add, remove, hide, rename, reorder, and configure eligible widgets without changing application source code.
+2. The dashboard configuration persists across sign-in sessions, page reloads, and service restarts.
+3. A published configuration version can be audited and restored by an authorized user.
+4. The initial dashboard is provided as editable configuration rather than fixed frontend markup.
+5. Widget data comes from approved backend data sources and real database or verified integration records.
+6. Missing, delayed, unauthorized, and failed data are not represented as fabricated values or misleading zeros.
+7. Role, branch, company, and record-level authorization is enforced server-side for widget data, aggregations, and drill-down.
+8. Invalid or unauthorized data sources, filters, chart types, and configuration options are rejected.
+9. A failed widget does not crash the entire dashboard.
+10. The dashboard is usable on supported desktop and smaller screens, and configuration controls are accessible.
+11. Automated tests cover configuration CRUD, validation, publishing/versioning, access control, data-source authorization, filter validation, empty/error states, and dashboard rendering.
+12. Do not claim these criteria have passed until the corresponding implementation and tests have actually been executed and their results inspected.
+
+### 5.12 Implementation Instruction
+
+Before changing code:
+1. Inspect the existing application structure, dashboard implementation, authentication/RBAC model, database schema, migration system, and available metric/data sources.
+2. Identify which dashboard capabilities already exist and which are missing.
+3. Present a page-specific implementation plan and identify any assumptions or schema gaps.
+4. Follow the project's required page-by-page preview, acceptance, and revision process. Implement only the currently approved page or stage, run its checks, and show an actual preview when the environment supports it.
+5. Do not proceed to the next page or stage until the user explicitly accepts the current preview, unless the user authorizes batching.
+6. Do not claim SAP connectivity, database contents, production readiness, preview completion, or test success unless actually verified.
+
+The final result must be a genuinely configurable enterprise dashboard framework—not a fixed collection of cards disguised as a configurable dashboard.
+
+
+
+### 5.13 Advanced Configurability, Usability, and Operational Controls
+
+Extend the configurable dashboard framework with the following requirements, while preserving all existing Section 5 requirements.
+
+1. **Separate administration from personalization.** Authorized administrators manage approved widgets, data sources, access policies, and shared layouts. Individual users may manage permitted personal layouts, saved views, and filter preferences. Personalization must never override authorization or organizational data boundaries.
+
+2. **Maintain a KPI business glossary.** Each metric must have a stable identifier, display label, business definition, calculation rule, unit, approved source, aggregation method, relevant status rules, refresh policy, and accountable owner. Clearly distinguish portal approval, integration submission, SAP confirmation, and reconciliation completion.
+
+3. **Support configuration portability.** Provide authorized export and import of dashboard definitions and controlled promotion across development, test, and production environments. Include schema versions, dependency validation, compatibility checks, integrity validation, audit history, and rollback. Never include credentials, tokens, or secrets in exports.
+
+4. **Support configurable operational alerts.** Where approved notification services exist, allow authorized configuration of thresholds, alert recipients, escalation rules, deduplication, delivery channels, quiet hours, and notification history. Protect against notification loops and alert storms. Do not claim delivery unless it is confirmed by the relevant notification service.
+
+5. **Expose data freshness and quality.** Indicate when data was last successfully updated and distinguish current, stale, unavailable, incomplete, and failed results. Provide authorized drill-down to relevant refresh, integration, or reconciliation diagnostics. Never substitute fabricated values or misleading zeros for unavailable data.
+
+6. **Enforce resource limits.** Apply server-side limits for query execution time, result size, refresh frequency, concurrency, and expensive aggregations. Use safe caching where appropriate, respecting user, role, organization, branch, and filter scope. A widget failure must not prevent other widgets from loading.
+
+7. **Support localization and accessibility.** Design for configurable language-ready labels, locale-aware dates and numbers, configured time zones, responsive screen sizes, keyboard operation, screen readers, sufficient contrast, and accessible alternatives to visual charts.
+
+8. **Support saved views and controlled exports.** Allow users to save permitted filter combinations and restore them later. Any CSV, Excel, print, or other export must enforce the same backend authorization, data-scope, and field restrictions as the originating widget. Audit exports where required by policy.
+
+9. **Support workflow ageing and SLA reporting.** Where business rules are defined, configure ageing thresholds, working calendars, business hours, escalation indicators, and overdue calculations. Define how weekends, holidays, paused workflows, reopened requests, and changes of ownership affect calculations. Do not invent SLA targets.
+
+10. **Validate dependencies before publication.** Detect missing data sources, unsupported fields, incompatible widget types, invalid filters, deprecated configuration schemas, and insufficient permissions. Block publication when critical validation fails and provide actionable error messages.
+
+11. **Distinguish zero from unknown.** Display zero only when a successful, authorized calculation confirms a zero result. Show separate states for no matching records, unavailable source, stale data, insufficient permission, and query failure.
+
+12. **Define historical reporting behaviour.** For every historical metric, specify whether values are recalculated from current records or derived from retained historical snapshots. If snapshots are required, implement an approved retention and audit policy; do not imply historical accuracy when the necessary history is not retained.
+
+13. **Test configuration changes before release.** Validate dashboard configuration, widget dependencies, metric definitions, access policies, data-source availability, responsive rendering, error states, and representative role and organization scopes before publishing. Record actual test results and do not claim successful verification without evidence.
+
+14. **Keep the framework extensible and safe.** Use a documented, versioned widget contract and validated configuration schemas. New widgets must use approved backend services and permission-checked data sources. Do not allow arbitrary SQL, untrusted JavaScript, or unrestricted plugins to bypass application security.
+
+15. **Respect existing architecture.** Inspect the current application and reuse existing database entities, RBAC, audit, notification, job scheduling, logging, and migration conventions where suitable. Avoid duplicate implementations and unnecessary restructuring. Implement changes through the established page-by-page preview, user acceptance, revision, and verification process.
+
+These additions extend the existing dashboard specification; they must not remove or weaken any existing functional, security, governance, or acceptance requirement.
+
+
+## 6. COMMUNICATION, EMAIL TEMPLATE, CONFIRMATION, BROADCAST, AND NOTIFICATION MANAGEMENT
+
+### 6.1 Purpose and Design Principle
+
+Implement a configurable Communication and Notification Management module for the Kosh Innovations Global Item Creation Portal.
+
+This module must centrally manage transactional email, confirmation messages, workflow notifications, system alerts, authorized broadcasts, and delivery tracking. It must be configuration-driven and integrated with the portal's existing authentication, RBAC, workflow, audit, job scheduling, and database architecture.
+
+Do not hardcode message text, recipient lists, email subjects, event-to-template mappings, notification channels, retry values, or broadcast rules in application code. Store approved configuration in the database and expose authorized administration screens and backend APIs.
+
+Email is a delivery channel, not the source of truth for a workflow. Sending an email must not approve an item, change an item's status, or substitute for a persisted in-portal workflow event.
+
+Inspect the existing project before implementing. Reuse existing modules and conventions where possible; do not create duplicate notification, audit, scheduler, or user-management systems.
+
+### 6.2 Scope and Communication Types
+A
+Support the following configurable communication types. They are distinct use cases, not necessarily separate technical engines.
+
+1. **Transactional email**
+   - Item request submitted.
+   - Request received and reference number assigned.
+   - Request approved or rejected.
+   - Request returned for correction, including the reason and next action.
+   - Request withdrawn or cancelled, where supported.
+   - Item created or updated in SAP, only after confirmed status.
+   - SAP creation failed or requires authorized intervention.
+   - Duplicate item detected or manual review required.
+   - Approval reminder and overdue escalation.
+   - Password reset, account invitation, or security messages only if the portal supports those functions.
+   - Administrative configuration or service alerts, sent only to authorized recipients.
+
+2. **Confirmation messages**
+   - On-screen confirmation after a successful user action.
+   - In-portal notification confirming a persisted workflow event.
+   - Email acknowledgement where enabled.
+   - Confirmation reference ID, timestamp, next step, and link to the authorized portal page.
+   - Distinguish “request received,” “approval completed,” “sent to SAP,” and “SAP creation confirmed.” Do not claim completion before the relevant operation is verified.
+
+3. **In-portal notifications**
+   - Notification centre accessible from the portal navigation.
+   - Unread count, read/unread state, creation time, category, priority, and safe deep link.
+   - Mark one or all as read, subject to authorization.
+   - Pagination and filters for date, category, priority, and read status.
+   - Notification preferences, where allowed by policy.
+   - Clear empty, loading, and error states.
+
+4. **Broadcasts and announcements**
+   - Authorized administrators can draft, preview, submit for approval where required, schedule, publish, pause, cancel, and expire announcements.
+   - Target audience may include all eligible portal users, selected roles, branches, departments, or user groups, but only where these are supported by the actual organization and RBAC model.
+   - Channels may include in-portal announcement, email, or both, based on approved configuration.
+   - Support effective start and end times, timezone, priority, subject/title, message body, optional approved links, and optional acknowledgement requirement.
+   - Provide audience-size estimate and recipient-rule preview before publication.
+   - Record who created, approved, scheduled, published, edited, cancelled, and expired the broadcast.
+   - Prevent unauthorized users from broadcasting to all users or to audiences outside their administrative scope.
+   - Do not implement broadcast as unrestricted bulk email or expose recipient addresses to other recipients.
+
+5. **Operational alerts**
+   - Repeated email delivery failures.
+   - Notification worker or queue unavailable.
+   - SAP integration failures or prolonged pending work, where supported by the integration module.
+   - Scheduled job failures, stale integration status, or reconciliation discrepancies, where supported by actual telemetry.
+   - Thresholds, recipients, escalation rules, and quiet hours must be configurable within bounded operational limits.
+
+### 6.3 Administration Navigation
+
+Integrate the module into the portal's existing navigation and permission model. Suggested logical navigation:
+
+- Communication Management
+  - Email Templates
+  - Notification Rules and Event Mapping
+  - Confirmation Message Settings
+  - Broadcasts and Announcements
+  - Recipient Groups and Audience Rules
+  - Delivery Queue and Message History
+  - Failed Messages and Retry Queue
+  - Communication Settings and Provider Health
+  - Communication Audit Trail
+
+These are proposed logical pages, not a mandate to duplicate existing pages or force a fixed menu hierarchy. Reconcile them with the portal's current navigation numbering and information architecture before implementation.
+
+### 6.4 Email Template Management
+
+Provide a configurable template catalogue with search, filters, status, category, language, and version history.
+
+Each template should support, as appropriate:
+
+- Unique template code and display name.
+- Purpose/category and triggering event.
+- Email subject.
+- Plain-text body and safe HTML body.
+- Supported locale/language.
+- Available placeholder/variable schema.
+- Sender profile selection from an administrator-approved list.
+- Reply-to profile selection, if permitted.
+- Default recipient rule reference, not an arbitrary unrestricted recipient list.
+- Template status: draft, in review, approved, active, retired.
+- Template version, creator, approver, timestamps, and change summary.
+- Effective date or activation state, where needed.
+- Preview with clearly identified sample data.
+- Test-send function restricted to authorized users and explicitly approved test recipients.
+- Render validation, missing-variable checks, and HTML sanitization.
+- A way to compare versions and restore a prior approved version.
+- Optional localization with a defined fallback policy.
+
+Do not permit arbitrary scripts, unsafe HTML, executable expressions, or unrestricted template code. Use a safe template engine and allowlisted variables. Prevent template injection and unsafe URL construction.
+
+### 6.5 Template Variables and Personalization
+
+Provide a controlled variable catalogue, for example:
+
+- `recipient_display_name`
+- `request_reference`
+- `item_code`, only when assigned and authorized for display
+- `item_description`
+- `request_status`
+- `submitted_at`
+- `approved_at`
+- `returned_reason`
+- `next_action`
+- `portal_link`
+- `sap_processing_status`
+- `support_contact`
+
+These are examples only. Define the actual variables based on verified application entities and event payloads. Each variable must have a stable identifier, type, description, source, permission classification, and null/empty behaviour.
+
+Requirements:
+- Validate every variable against the selected template's schema before sending.
+- Escape user-supplied text appropriately for HTML and plain text.
+- Do not expose passwords, authentication tokens, secrets, private notes, unnecessary personal data, or restricted item information.
+- Avoid including sensitive details in email subject lines or notifications visible on shared screens.
+- If required data is missing, block or safely render the message according to the template's validation policy and log the reason.
+- Links must use the configured trusted portal base URL, not an untrusted Host header or arbitrary client-supplied URL.
+- Deep links must still enforce authentication and authorization when opened.
+
+### 6.6 Event-to-Notification Rules
+
+Implement a configurable event-to-template and event-to-channel mapping.
+
+Each rule should define, as applicable:
+- Stable rule identifier and display name.
+- Source event code.
+- Enabled/disabled status.
+- Eligible template version.
+- Channel: in-portal, email, or an approved combination.
+- Recipient resolver or approved audience rule.
+- Conditions and status transitions.
+- Priority and escalation policy.
+- Deduplication/idempotency key strategy.
+- Delay or scheduling settings within operational limits.
+- Quiet-hours handling where applicable.
+- Rule version, effective period, owner, and audit history.
+
+Possible event codes include:
+- `ITEM_REQUEST_SUBMITTED`
+- `ITEM_REQUEST_APPROVED`
+- `ITEM_REQUEST_REJECTED`
+- `ITEM_REQUEST_RETURNED`
+- `ITEM_REQUEST_CANCELLED`
+- `ITEM_APPROVED_AWAITING_SAP`
+- `SAP_ITEM_CREATION_CONFIRMED`
+- `SAP_ITEM_CREATION_FAILED`
+- `DUPLICATE_ITEM_REVIEW_REQUIRED`
+- `APPROVAL_REMINDER_DUE`
+- `BROADCAST_PUBLISHED`
+
+Use event names consistent with the actual workflow implementation. Do not silently create events that are not emitted by the application.
+
+Events must be generated from persisted business transitions, not merely from frontend button clicks. For important state changes, use a durable event/outbox pattern or an equivalent reliable mechanism so that a database commit followed by a service restart does not permanently lose the required notification. Ensure that retries cannot accidentally trigger duplicate messages.
+
+### 6.7 Recipient Resolution and Access Control
+
+Recipient rules must be centrally defined, validated, and auditable. Possible recipient classes include:
+
+- Request creator.
+- Current assigned approver.
+- Previous actor, when policy permits.
+- Authorized item master team.
+- Authorized SAP integration operators.
+- Configured portal administrators.
+- Approved role, branch, department, or user group.
+- Explicit approved recipients for an authorized operational alert.
+
+Requirements:
+- Resolve recipients from current authoritative portal data.
+- Re-check active account status, permissions, organizational scope, and notification preferences where applicable.
+- Never trust a recipient email address or role supplied by a browser request without server-side validation.
+- Do not allow users to enumerate all user addresses.
+- Do not expose addresses in To/Cc to unrelated recipients; use individual messages or appropriate privacy-preserving delivery.
+- Avoid sending restricted item details to recipients who are not authorized to view the item.
+- If no eligible recipient is resolved, record a controlled failure or no-recipient outcome and surface it to authorized administrators.
+- Maintain explicit rules for recipients when an approver changes or a request is reassigned.
+
+### 6.8 Broadcast Lifecycle and Safeguards
+
+Broadcast lifecycle should support:
+- Draft.
+- Preview/validation.
+- Pending approval, if required.
+- Scheduled.
+- Published/sending.
+- Paused.
+- Completed.
+- Cancelled.
+- Expired.
+- Failed or partially failed.
+
+Before sending, show:
+- Selected audience rule and estimated recipient count.
+- Channel(s), subject/title, preview, schedule, timezone, and expiration.
+- Whether acknowledgement is required.
+- Expected impact and any policy warnings.
+
+Safeguards:
+- Require appropriate permissions and optional maker-checker approval for broad audiences or high-priority messages.
+- Require confirmation before publishing to large or organization-wide audiences.
+- Use bounded batch sizes, rate limits, and provider quotas.
+- Support cancellation of not-yet-sent batches where technically possible.
+- Do not promise cancellation of messages already accepted by an external email provider.
+- Prevent a broadcast from sending repeatedly because of page refresh, retry, or job restart.
+- Keep an immutable record of the published content/version and audience rule used.
+- Do not automatically send a newly edited template to a previous audience.
+- Treat acknowledgement as a recorded user action, not proof that a person understood the message.
+
+### 6.9 Notification Centre and User Preferences
+
+Provide a user-facing notification centre that supports:
+- Unread badge/count.
+- Read/unread state.
+- Date and category filters.
+- Safe links to relevant portal records.
+- Mark as read and mark all as read.
+- Configurable preferences for optional notification categories and channels, subject to mandatory security and operational notices.
+- Clear indication of critical messages and announcements.
+- Expiration or archival policy.
+- Accessibility and responsive design.
+
+Users must not be able to disable mandatory security messages or legally/operationally required notifications where policy says they are compulsory. Preferences must never change workflow permissions or the underlying event record.
+
+### 6.10 Email Provider and Delivery Configuration
+
+Support an adapter-based email delivery interface so that the portal can use an approved SMTP server or an authorized email provider without coupling workflow code to a single vendor.
+
+Configuration may include:
+- Provider/transport type.
+- Host, port, TLS mode, sender identity, and connection timeout where SMTP is used.
+- Secret reference for credentials rather than credentials stored in plain text.
+- Approved sender and reply-to profiles.
+- Rate limits, batch limits, and connection settings.
+- Test connection and test-send operation.
+- Provider health and last successful test.
+- Enabled/disabled state and environment designation.
+- Per-environment configuration.
+
+Security requirements:
+- Never hardcode credentials or commit them to source control.
+- Store credentials in an approved secret store or protected deployment configuration.
+- Mask secrets in the UI and never return them through read APIs.
+- Require authorized access to view or change provider settings.
+- Use TLS and certificate validation according to the selected transport.
+- Keep development/test and production recipients and settings separate.
+- Never use real production recipients during testing unless explicitly authorized.
+- Do not claim an email was delivered to a user's inbox merely because the SMTP server or provider accepted it.
+
+If the project requires on-premises operation, support an approved internal SMTP relay where available. Do not introduce a mandatory external SaaS dependency without approval.
+
+### 6.11 Delivery Queue, Statuses, Retries, and Recovery
+
+Use durable, asynchronous processing for email and bulk broadcasts. A user-facing request should not wait for all emails to be delivered.
+
+Track separate lifecycle states, such as:
+- Created.
+- Queued.
+- Processing.
+- Accepted by provider/SMTP relay.
+- Delivered, if the provider supplies a verified delivery event.
+- Bounced.
+- Deferred.
+- Failed.
+- Cancelled.
+- Suppressed by policy.
+- No eligible recipient.
+
+Do not treat “queued,” “sent,” or “accepted by provider” as equivalent to “delivered” or “read.”
+
+Implement:
+- Durable queue or outbox-backed job records.
+- Bounded exponential backoff with jitter for transient failures.
+- Maximum attempts and retry windows configurable within safe limits.
+- No automatic retry for known permanent failures such as invalid recipients, unless the error classification indicates a recoverable condition.
+- Dead-letter/failed-message queue.
+- Authorized manual retry, with duplicate-prevention safeguards.
+- Error classification and safe diagnostic messages.
+- Per-message and per-broadcast correlation IDs.
+- Provider throttling and rate-limit handling.
+- Job lease/locking or equivalent concurrency controls to prevent two workers from processing the same job concurrently.
+- Idempotency keys for event and recipient/channel/template-version combinations, according to the business rules.
+- Retention and purge policies for message payloads and logs.
+- Metrics for queue age, success/failure rate, retry count, provider latency, and undelivered backlog.
+
+A manual retry must not duplicate a business action or create duplicate portal notifications. Preserve original attempt history and record every retry action.
+
+### 6.12 Confirmation UX and Business-State Integrity
+
+After a user action, show an on-screen confirmation based on the actual backend result.
+
+Examples:
+- “Request submitted” only after the request is persisted.
+- “Request returned for correction” only after the workflow transition is committed.
+- “Notification queued” when the notification is durably queued.
+- “SAP item creation confirmed” only after a supported SAP response or reconciliation confirms the creation.
+
+If the business action succeeds but notification queuing fails, do not misreport the business action as failed or repeat the business action automatically. Show the true business result and indicate that notification delivery is delayed or requires attention, while relying on the durable outbox/recovery mechanism to retry safely.
+
+Use clear error messages and correlation/reference IDs where appropriate. Do not show stack traces, provider credentials, private addresses, internal server details, or sensitive message payloads.
+
+### 6.13 Audit, Privacy, and Retention
+
+Audit at least:
+- Template create, edit, preview/test-send where policy requires, approval, activation, retirement, and restoration.
+- Event rule and recipient rule changes.
+- Broadcast draft, approval, schedule, publication, pause, cancellation, and expiration.
+- Provider configuration changes, without logging secret values.
+- Delivery attempts, retries, permanent failures, and manual interventions.
+- User preference changes where audit is required.
+- Broadcast acknowledgements, when enabled.
+
+Audit entries should record actor, timestamp, action, target, configuration/template version, result, and correlation ID as appropriate.
+
+Apply data minimization. Do not retain complete email bodies or recipient payloads indefinitely without a defined business and privacy purpose. Define retention, archival, deletion, and access policies for message payloads, delivery metadata, broadcast history, and audit records. Restrict access to message content and recipient information.
+
+### 6.14 Database and API Design
+
+Inspect the existing schema and reuse equivalent entities where possible. The design should support logical entities equivalent to:
+
+- `communication_template`
+- `communication_template_version`
+- `notification_event_rule`
+- `notification_recipient_rule`
+- `notification_inbox`
+- `communication_message`
+- `communication_delivery_attempt`
+- `communication_outbox` or equivalent durable event queue
+- `broadcast_campaign`
+- `broadcast_audience_snapshot` or auditable audience-rule reference
+- `broadcast_recipient_status`, if individual delivery tracking is required
+- `communication_provider_profile`
+- `communication_user_preference`
+- `communication_audit_log`
+
+These are logical examples, not a requirement to create duplicate tables if equivalent structures already exist.
+
+Use migrations, foreign keys, appropriate indexes, status constraints, idempotency constraints, and transactions. Avoid storing secrets in configuration tables. Store provider secrets as references to the approved secret-management mechanism.
+
+Create authenticated, permission-checked APIs following existing project conventions for:
+- Template listing, editing, validation, preview, versioning, approval, activation, and retirement.
+- Event-to-template and recipient-rule configuration.
+- In-portal notification listing, reading, and preference management.
+- Broadcast drafting, audience preview, approval, scheduling, publishing, pausing, cancellation, and history.
+- Delivery status, failed-message queue, authorized retry, and reconciliation.
+- Provider configuration, connection tests, and health status.
+- Audit history.
+
+Do not expose an API that lets a client submit arbitrary recipients, arbitrary templates, or unrestricted message bodies to send organization-wide email.
+
+### 6.15 Security and Abuse Prevention
+
+- Enforce backend RBAC and organizational scope for every administrative action and recipient resolution.
+- Protect against template injection, HTML injection, header injection, forged sender identities, recipient enumeration, spam abuse, and unauthorized mass messaging.
+- Validate and sanitize all inputs.
+- Restrict test-send recipients to approved addresses or approved domains according to policy.
+- Apply sending quotas, rate limits, batch limits, and publication approvals.
+- Require stronger controls for organization-wide broadcasts and critical alerts.
+- Prevent users from changing sender identities to impersonate executives or other employees.
+- Protect broadcast audience privacy.
+- Ensure deep links require normal authentication and authorization.
+- Do not include sensitive item or SAP error details in messages sent to unauthorized recipients.
+- Use CSRF protection where applicable and secure administrative sessions.
+- Record security-relevant failures and suspicious mass-send attempts.
+
+### 6.16 Operational Reporting
+
+Provide configurable operational reporting for:
+- Queue depth and oldest pending message.
+- Success, failure, bounce, and deferral rates, when supported by the provider.
+- Retry counts and dead-letter backlog.
+- Delivery latency and provider availability.
+- Broadcast progress and partial failure.
+- Template rendering/validation failures.
+- Notifications without eligible recipients.
+- Suppressed messages and the policy reason.
+- Provider health and last successful connection test.
+
+Use real operational data. Distinguish unavailable telemetry from a zero count. Restrict message contents and recipient details to authorized roles.
+
+### 6.17 Acceptance Criteria
+
+Do not mark this module complete until actual implementation and tests verify that:
+
+1. An authorized administrator can create, validate, version, approve where required, activate, retire, and restore email templates without changing source code.
+2. Template variables are allowlisted, validated, escaped, and permission-aware.
+3. Event rules resolve recipients from authoritative server-side data.
+4. Persisted workflow transitions create the intended notifications exactly once at the business-event level, with safe retries for delivery.
+5. The user receives truthful confirmation of the actual business operation and notification status.
+6. In-portal notifications support read/unread state and authorized filtering.
+7. Broadcasts support audience preview, scheduling, approval where required, publication, pause/cancel where possible, expiration, and audit.
+8. Unauthorized users cannot send to arbitrary recipients, impersonate sender identities, or broadcast outside their scope.
+9. The delivery queue survives worker restarts and supports bounded retry, permanent-failure handling, and manual recovery without duplicate messages.
+10. Provider credentials are protected, masked, and excluded from logs and exports.
+11. Provider acceptance is not falsely reported as inbox delivery or message readership.
+12. Delivery history, correlation IDs, and audit events support authorized investigation.
+13. Data retention and privacy rules are defined and applied.
+14. Automated tests cover template rendering, missing variables, HTML/header injection, recipient resolution, RBAC, organization scope, event idempotency, outbox recovery, provider failure, retries, broadcasts, rate limits, and audit history.
+15. Mock/test provider results are visibly distinguished from actual provider delivery. Do not claim real email delivery unless the configured provider's actual response or delivery event has been verified.
+16. The implementation follows the existing page-by-page preview, user acceptance, revision, and verification process.
+
+### 6.18 Implementation Sequence
+
+Before coding, inspect the current project, workflow events, RBAC model, user and branch schema, audit service, background-job infrastructure, provider constraints, and existing email/notification code.
+
+Present a dependency-aware implementation plan. Implement in approved stages, for example:
+1. Data model, permissions, and communication configuration.
+2. Email template management and safe preview/test-send.
+3. Event rules, recipient resolution, and durable outbox.
+4. In-portal notification centre.
+5. Broadcast lifecycle and audience controls.
+6. Delivery queue, retries, failed-message recovery, and operational monitoring.
+7. Audit, privacy, security tests, and end-to-end verification.
+
+This sequence may be adjusted after inspecting the actual project. Do not implement every page at once unless the user explicitly authorizes batching. Show an actual preview where supported, ask for explicit acceptance, and revise rejected pages before proceeding.
+
+Do not claim an SMTP connection, provider delivery, background job, database migration, preview, or test has succeeded unless it has actually been executed and verified.
+
+## 7. CONFIGURABLE WHATSAPP INTEGRATION — API AND NON-API MODES
+
+### 7.1 Objective and Mandatory Design Principle
+
+Implement WhatsApp as a configurable communication channel within the portal's Communication and Notification Management module. The portal must support both:
+
+1. **API mode** — an authorized WhatsApp Business Platform integration, such as the official Meta WhatsApp Cloud API or another specifically approved official provider.
+2. **Non-API / user-assisted mode** — a controlled workflow where an authorized user opens WhatsApp or WhatsApp Web through a click-to-chat link with a prefilled message, then reviews and manually sends the message. The portal may record the user's action and outcome, but must not claim that a message was sent, delivered, or read unless that fact has been independently verified.
+
+The administrator must be able to select and configure the permitted mode through the portal UI. Do not hardcode the mode or provider into application logic. Configuration must persist in the database and be controlled by RBAC.
+
+Do not implement browser automation, session scraping, unofficial WhatsApp Web libraries, QR-session hijacking, or unattended sending through a personal WhatsApp account. Non-API mode is user-assisted/manual, not a method for bypassing official API rules or messaging restrictions.
+
+### 7.2 Integration Mode Selection
+
+Provide a WhatsApp Integration Settings page with:
+- Integration display name.
+- Enabled/disabled state.
+- Selected mode: `OFF`, `OFFICIAL_API`, or `USER_ASSISTED`.
+- Environment designation: development, test, or production.
+- Approved provider/transport selection, where API mode is enabled.
+- Default sender/business account reference, where supported.
+- Supported notification categories and event mappings.
+- Allowed recipient scope and policy.
+- Test/health status, last test time, last successful operation, and safe diagnostic status.
+- Configuration version, last modified by, and last modified time.
+- Activation/deactivation controls with confirmation and audit logging.
+
+The UI must clearly explain the operational difference between API and user-assisted mode. Only authorized administrators may change the integration mode or activate production sending. If an organization requires maker-checker approval, enforce it before production activation.
+
+Changing modes must not silently convert queued API jobs into manual messages or vice versa. Define and display how pending jobs are handled during a mode change. Require explicit confirmation for material changes.
+
+### 7.3 Official API Mode
+
+Use an approved official WhatsApp Business Platform API. The initial supported implementation may use Meta WhatsApp Cloud API if authorized by the organization. Keep the integration behind a provider adapter so that approved providers can be supported later without rewriting business workflows.
+
+Configuration should support the provider's required identifiers and endpoints, for example:
+- Provider mode and environment.
+- WhatsApp Business Account identifier, where required.
+- Phone Number ID or equivalent sender identifier.
+- Business/portfolio identifiers where required.
+- Access token or credential reference.
+- Webhook callback configuration and verification settings.
+- Provider API version, managed as a controlled configuration.
+- Approved template namespace/name/language references where applicable.
+- Rate and batch limits within provider policy.
+- Connection/health test and last successful provider response.
+
+Security:
+- Never hardcode access tokens, app secrets, verification tokens, or other credentials.
+- Store secrets in an approved secret-management facility or protected deployment configuration; database records should hold secret references, not plaintext credentials.
+- Mask secrets in the UI and never return them from read APIs.
+- Validate webhook signatures using the provider's documented method where supported.
+- Validate webhook verification challenges according to the provider's official documentation.
+- Enforce HTTPS for production webhook endpoints.
+- Do not log access tokens, full secret-bearing headers, or unnecessary personal data.
+- Separate development/test and production credentials and sender identities.
+
+Do not claim API connectivity until an actual authorized provider connection test has succeeded. Clearly distinguish mock mode from real provider mode.
+
+### 7.4 User-Assisted / Non-API Mode
+
+Provide a compliant click-to-chat workflow for authorized users. Where supported, open WhatsApp or WhatsApp Web using the recipient phone number in international format and a URL-encoded prefilled message, using the official documented click-to-chat approach.
+
+Expected flow:
+1. A permitted portal event or authorized user action prepares a message using an approved template.
+2. The backend validates the recipient, template variables, message length/content rules, and the user's permission to view the related record.
+3. The portal displays the intended recipient and complete message preview.
+4. The user explicitly clicks **Open WhatsApp**.
+5. The portal opens the supported WhatsApp destination with the recipient and prefilled message, where the platform supports it.
+6. The user reviews the recipient and message in WhatsApp and manually presses Send.
+7. The user returns to the portal and may record an outcome, such as `USER_OPENED_WHATSAPP`, `USER_CONFIRMED_SENT`, `NOT_SENT`, or `UNKNOWN`.
+8. The portal records the actor, timestamp, template version, event/reference ID, and declared outcome.
+
+Important limitations:
+- Opening WhatsApp or a prefilled chat does not mean the message was sent.
+- A user's manual confirmation is an attestation, not independent provider delivery evidence.
+- Do not label user-assisted messages as API-delivered, delivered, or read.
+- The portal cannot reliably verify a manual send unless an approved supported mechanism provides evidence.
+- Do not use unofficial WhatsApp Web automation or scrape browser state to infer send status.
+- The browser may block pop-ups or the target device may not have WhatsApp configured; display an understandable fallback and allow the user to copy the message.
+- Provide a **Copy message** action and, where appropriate, a **Copy recipient number** action.
+- Avoid writing the full message or recipient into browser logs or analytics.
+- Manual mode must not silently send bulk messages. Every user-assisted send requires a deliberate user action for the individual conversation unless a separately reviewed, compliant workflow is approved.
+
+For broadcast-like use in user-assisted mode, provide a controlled work queue for authorized operators. Each recipient should have a clear status and an explicit open/review/send/record-outcome workflow. Do not create an unattended mass-click or auto-send mechanism.
+
+### 7.5 Mode Capability Matrix
+
+Show an administrator-visible capability matrix and use it to enable or disable features accurately.
+
+- API mode may support automated event-triggered sending, approved message templates, provider message IDs, webhook-based delivery statuses, retry handling, and scalable processing, subject to the chosen provider and account permissions.
+- User-assisted mode supports message preparation, preview, click-to-chat, manual send by a human, copy-to-clipboard, and manual outcome recording.
+- Features requiring provider callbacks, verified delivery receipts, automatic replies, or unattended sending must be unavailable or clearly marked unsupported in user-assisted mode.
+- Do not show fake webhook status, provider message IDs, automated delivery receipts, or API health metrics in user-assisted mode.
+- The UI must explain mode limitations before activation.
+
+### 7.6 WhatsApp Templates and Message Content
+
+Integrate WhatsApp message templates with the existing communication template system, but preserve channel-specific validation and approval status.
+
+Each WhatsApp template should include:
+- Stable template code and display name.
+- Purpose and triggering event.
+- Channel and permitted integration mode(s).
+- Language/locale.
+- Message body and supported variables.
+- Provider-approved template identifier, language, and status for API template messages where required.
+- Template category and required parameters according to the provider's current rules.
+- Template version, status, author, approver, and audit history.
+- Preview using safe sample data.
+- Missing-variable validation and safe variable escaping.
+- Clear distinction between locally drafted content and a template approved by the provider.
+
+Do not assume that a portal-created template is approved for use by the WhatsApp Business Platform. Before API sending, validate that the selected template is approved and usable for the configured account, language, and message category under the provider's current rules. If approval or eligibility is missing, block the send and provide a useful message.
+
+Use only verified business facts and permitted variables. Do not include passwords, access tokens, unnecessary personal information, restricted item data, or sensitive internal error details. Links must use a configured trusted portal base URL. Deep links must enforce authentication and authorization.
+
+### 7.7 Event Mapping and Recipient Rules
+
+Allow authorized administrators to configure which events may generate WhatsApp messages, subject to policy, recipient preferences, and provider rules.
+
+Possible event mappings:
+- `ITEM_REQUEST_SUBMITTED`
+- `ITEM_REQUEST_APPROVED`
+- `ITEM_REQUEST_REJECTED`
+- `ITEM_REQUEST_RETURNED`
+- `ITEM_APPROVED_AWAITING_SAP`
+- `SAP_ITEM_CREATION_CONFIRMED`
+- `SAP_ITEM_CREATION_FAILED`
+- `APPROVAL_REMINDER_DUE`
+- `BROADCAST_PUBLISHED`
+
+These are examples only; map to events actually emitted by the application.
+
+Each event rule should specify:
+- Event code.
+- Enabled state.
+- Selected template/version.
+- Channel mode eligibility.
+- Approved recipient resolver.
+- Conditions and allowed status transitions.
+- Priority and scheduling policy.
+- Deduplication/idempotency strategy.
+- Retry policy in API mode.
+- Manual work-queue behaviour in user-assisted mode.
+- Rule version and audit history.
+
+Resolve recipients from authoritative server-side records. Normalize and validate phone numbers in international format. Verify that the recipient is eligible and that the sending user/service has permission to disclose the referenced information. Do not trust arbitrary phone numbers, event codes, or item details supplied by the browser.
+
+Where appropriate, allow a configurable preference or consent status for optional messages and broadcasts. Record the source, timestamp, and status of consent/preferences where the organization is required to do so. Mandatory operational/security notices must follow the organization's approved policy. Do not assume consent or lawful eligibility merely because a phone number exists in the database.
+
+### 7.8 API Sending Lifecycle and Webhooks
+
+In API mode, implement durable asynchronous sending:
+1. A persisted business event is created.
+2. A durable outbox or equivalent mechanism records the notification intent.
+3. The worker validates rule, template approval, recipient eligibility, configuration, and idempotency key.
+4. The provider adapter submits the message.
+5. The portal records the provider response and message identifier, if returned.
+6. Verified provider webhook events update delivery state.
+7. Transient errors are retried within bounded policy; permanent failures go to the failed-message queue.
+8. Authorized operators can inspect the event and retry safely where permitted.
+
+Webhook requirements:
+- Verify provider signatures or documented authenticity controls.
+- Validate event structure and expected identifiers.
+- Handle duplicate and out-of-order webhooks idempotently.
+- Store only necessary event details.
+- Acknowledge valid callbacks promptly and process them safely.
+- Reject invalid callbacks without disclosing secrets or internal details.
+- Never treat an unverified request as a delivery receipt.
+- Do not allow a webhook to change item approval or SAP item master data directly.
+- Record correlation IDs and audit relevant status transitions.
+
+Do not equate API acceptance with delivery. Use distinct states such as queued, submitted, accepted, sent (only if provider-defined), delivered, read, failed, and unknown, using only states supported by the selected provider. If the provider does not supply a status, display it as unknown rather than inventing one.
+
+### 7.9 Retry, Failure, and Duplicate Prevention
+
+For API mode:
+- Use durable job records and an outbox or equivalent mechanism.
+- Use idempotency and event-recipient-channel keys appropriate to the provider's capabilities.
+- Apply bounded exponential backoff with jitter for transient errors.
+- Respect provider rate limits and retry guidance.
+- Classify permanent versus transient failures.
+- Use a dead-letter/failed-message queue and authorized manual retry.
+- Prevent two workers from processing the same job concurrently.
+- Preserve every attempt and its correlation information.
+
+For user-assisted mode:
+- Do not automatically open repeated WhatsApp tabs or repeat manual send tasks after a timeout.
+- Use explicit statuses for prepared, opened, manually reported sent, not sent, and unknown.
+- Do not convert an operator's manual outcome into a verified provider receipt.
+- Prevent the same business event from generating duplicate work items unless a deliberate resend is authorized and audited.
+
+### 7.10 Broadcast and Bulk Communication
+
+Broadcasts must use approved audience rules and permission checks. Provide audience preview, estimated recipient count, message preview, scheduling, approval where required, rate limits, cancellation of unsent work where possible, and audit history.
+
+In API mode:
+- Send only using permitted provider methods, templates, and rate limits.
+- Respect provider restrictions, opt-in/consent requirements, messaging windows, and template rules applicable at the time of implementation.
+- Process delivery statuses from verified webhooks when available.
+- Do not assume the rules for one provider or message category apply universally.
+
+In user-assisted mode:
+- Provide a controlled operator queue, not automatic mass sending.
+- Require explicit per-recipient human action to open the conversation and manually send.
+- Show clear completion counts based on recorded operator outcomes, with a disclaimer that manual outcomes are not independently verified.
+- Prevent duplicate work items and preserve the operator's audit trail.
+
+Never expose the full recipient list to recipients or permit unauthorized users to broadcast to all portal users.
+
+### 7.11 Configuration UI and Operational Pages
+
+Integrate the following logical pages into the existing navigation, reusing existing communication and integration pages where possible:
+
+- WhatsApp Integration Overview.
+- Integration Mode and Provider Configuration.
+- Credentials/Secret Reference Management.
+- Connection and Configuration Test.
+- Webhook Configuration and Verification Status (API mode only).
+- WhatsApp Template Catalogue and Template Validation.
+- Event-to-Template and Recipient Rules.
+- User-Assisted Message Queue.
+- API Message Queue and Delivery Status (API mode only).
+- Failed Messages and Authorized Retry (API mode only where appropriate).
+- Broadcasts and Audience Preview.
+- Provider Health, Rate Limits, and Operational Metrics (API mode only where supported).
+- WhatsApp Audit Trail.
+
+The navigation must be permission-controlled. Hide or disable features unsupported by the selected mode and explain why. Avoid duplicate pages where the existing Communication Management module already provides equivalent functionality.
+
+### 7.12 Database and API Design
+
+Inspect the existing database and reuse equivalent tables where possible. The logical data model should support:
+- `whatsapp_integration_config`
+- `whatsapp_secret_reference`
+- `whatsapp_template` and `whatsapp_template_version`
+- `whatsapp_event_rule`
+- `whatsapp_recipient_rule`
+- `whatsapp_message`
+- `whatsapp_delivery_attempt` for API mode
+- `whatsapp_webhook_event` for verified API callbacks
+- `whatsapp_manual_work_item` or an equivalent user-assisted queue
+- `whatsapp_broadcast` and associated audience/progress records where needed
+- `whatsapp_user_preference` or consent/eligibility records where appropriate
+- `whatsapp_audit_log`
+
+These are logical examples; do not create duplicate tables when the shared communication module can safely represent the same concepts with channel-specific fields and validation.
+
+Provide authenticated and permission-checked APIs using existing conventions for:
+- Reading and updating integration mode/configuration.
+- Testing approved provider connectivity.
+- Validating and previewing templates.
+- Managing event mappings and recipient rules.
+- Queueing eligible API messages.
+- Creating and updating user-assisted work items.
+- Retrieving status and history.
+- Processing provider webhooks securely.
+- Managing broadcasts and audience preview.
+- Viewing audit and health information.
+
+Never expose secrets in API responses. Never expose a generic endpoint that lets a client send arbitrary messages to arbitrary phone numbers.
+
+### 7.13 Security, Privacy, and Compliance
+
+- Enforce RBAC and organization/branch scope on configuration, message content, recipient resolution, and history.
+- Protect API credentials using the approved secret-management mechanism.
+- Validate webhook authenticity and defend against replay or duplicate events.
+- Use HTTPS for production callbacks and trusted links.
+- Apply rate limits, sending quotas, audience restrictions, and approvals.
+- Minimize personal data in logs and delivery records.
+- Define retention and deletion policies for message payloads, phone numbers, delivery history, and audit data.
+- Prevent cross-branch and cross-company data leakage.
+- Do not expose restricted item details in messages or previews to unauthorized users.
+- Make consent/preferences and suppression rules configurable where required by the organization's approved policy and applicable law.
+- Use only official, supported integrations for automated sending.
+- Clearly disclose that user-assisted mode cannot independently prove delivery or readership.
+- Do not log tokens, secrets, full authentication headers, or unnecessary message contents.
+
+### 7.14 Testing and Acceptance Criteria
+
+Do not declare the feature complete until actual tests verify:
+
+1. An authorized administrator can select and persist `OFF`, `OFFICIAL_API`, or `USER_ASSISTED` mode.
+2. Unauthorized users cannot modify integration settings or activate production messaging.
+3. API mode uses an approved provider adapter and protected secret references.
+4. A real provider test is clearly distinguished from a mock test and is reported only after an actual attempt.
+5. User-assisted mode prepares the intended recipient and message, supports preview and copy, and opens click-to-chat where supported.
+6. User-assisted mode never claims that opening WhatsApp proves a message was sent or delivered.
+7. API mode validates template approval/eligibility and recipient rules before submission.
+8. Provider webhooks are authenticated, idempotent, and resilient to duplicate/out-of-order events.
+9. Retries do not create duplicate business events or uncontrolled duplicate messages.
+10. API queue state and user-assisted work-item state remain clearly distinct.
+11. Broadcast audience selection, permissions, approval, scheduling, rate limits, and cancellation behaviour are tested.
+12. Credentials are masked and do not appear in logs or exports.
+13. Consent/preferences and suppression rules are enforced where configured and required.
+14. Failed and unknown states are shown accurately; missing provider evidence is never replaced with invented delivery status.
+15. Audit records identify configuration changes, operator actions, message attempts, retries, and status changes.
+16. Tests cover RBAC, organization scope, phone-number validation, template variables, injection attempts, duplicate events, provider failures, webhook verification, manual status declarations, and mode switching.A
+17. The actual UI is previewed and accepted according to the portal's page-by-page acceptance process.
+18. Do not claim that a live WhatsApp message was sent, delivered, or read unless the relevant evidence was actually obtained from the configured provider.
+
+### 7.15 Implementation Plan
+
+Before coding:
+1. Inspect the existing communication module, RBAC, users/contacts, workflow events, scheduler/worker, secret management, database schema, and deployment constraints.
+2. Confirm whether Meta WhatsApp Business Platform access, a WhatsApp Business Account, an eligible sender number, approved templates, and webhook reachability are available. Do not assume these are configured.
+3. Identify whether the portal will use on-premises SMTP/WhatsApp provider connectivity and whether outbound HTTPS/webhook hosting is permitted.
+4. Present the proposed configuration UI and mode-specific capability matrix.
+5. Implement one approved page/stage at a time, run the relevant checks, show an actual preview where supported, and request explicit acceptance before proceeding unless the user authorizes batching.
+6. Keep API and user-assisted status models separate and preserve auditability across mode changes.
+7. Do not claim live integration, provider approval, webhook reachability, successful sending, or test completion without actual verification.
+
+The end result must be a genuinely configurable WhatsApp channel with an official API mode and a safe user-assisted non-API mode, integrated into the existing communication framework without hardcoded provider assumptions.

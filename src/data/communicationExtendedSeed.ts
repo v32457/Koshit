@@ -1,0 +1,712 @@
+import {
+  EmailConfig,
+  EmailTemplateDetailed,
+  WhatsAppTemplateDetailed,
+  NotificationRule,
+  DetailedDeliveryQueueItem,
+  WebhookEventRecord,
+  RecipientConsentRecord,
+  BroadcastCampaignDetailed,
+} from '../types/communication';
+
+export const INITIAL_EMAIL_CONFIG: EmailConfig = {
+  id: 'cfg-email-primary',
+  configName: 'Kosh Corporate SMTP Relay (Primary Production)',
+  providerType: 'SMTP',
+  smtpHost: 'mail-relay.koshinnovations.com',
+  smtpPort: 587,
+  tlsMode: 'STARTTLS',
+  authMode: 'LOGIN_PASSWORD',
+  username: 'svc_portal_mailer@koshinnovations.com',
+  isSecretConfigured: true,
+  senderDisplayName: 'Kosh Innovations Global Item Portal',
+  senderEmail: 'notifications@koshinnovations.com',
+  replyToEmail: 'support-masterdata@koshinnovations.com',
+  allowedDomains: ['koshinnovations.com', 'koshmail.com'],
+  connectionTimeoutSec: 10,
+  sendTimeoutSec: 15,
+  rateLimitPerSec: 25,
+  maxMessageSizeMb: 15,
+  defaultPriority: 'MEDIUM',
+  testRecipientAllowlist: [
+    'suresh.kumar@koshinnovations.com',
+    'ramesh.checker@koshinnovations.com',
+    'karthik.maker@koshinnovations.com',
+  ],
+  isEnabled: true,
+  environment: 'PROD',
+  version: 3,
+  updatedAt: '2026-10-21T14:30:00Z',
+  lastTestStatus: 'PASS',
+  lastTestTimestamp: '2026-10-22T08:00:00Z',
+  lastTestDiagnostics: 'Connected to mail-relay.koshinnovations.com:587 with STARTTLS. Handshake took 128ms. Auth accepted.',
+};
+
+export const INITIAL_DETAILED_EMAIL_TEMPLATES: EmailTemplateDetailed[] = [
+  {
+    id: 'et-item-submitted',
+    code: 'EMAIL_ITEM_SUBMITTED',
+    name: 'Item Creation Submitted for Checker Review',
+    businessPurpose: 'Notify branch and global item checkers when an item maker submits a new item request.',
+    module: 'APPROVALS',
+    eventCode: 'ITEM_SUBMITTED',
+    language: 'en_IN',
+    subject: '[Action Required] Review Item {item_code} Submitted by {maker_name}',
+    htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+  <div style="background-color: #0B192C; padding: 20px; text-align: center; color: white;">
+    <h2 style="margin: 0; font-size: 18px; letter-spacing: 0.5px;">KOSH INNOVATIONS</h2>
+    <p style="margin: 4px 0 0; font-size: 12px; color: #94a3b8;">Global Item Master Governance Portal</p>
+  </div>
+  <div style="padding: 24px; color: #1e293b; line-height: 1.5;">
+    <p style="font-size: 15px; font-weight: bold;">Dear {recipient_display_name},</p>
+    <p>A new item master request has been locked and submitted for your formal verification:</p>
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+      <tr><td style="padding: 8px 12px; font-weight: bold; width: 35%;">Item Code:</td><td style="padding: 8px 12px; font-family: monospace; color: #0284c7; font-weight: bold;">{item_code}</td></tr>
+      <tr><td style="padding: 8px 12px; font-weight: bold;">Category:</td><td style="padding: 8px 12px;">{item_category}</td></tr>
+      <tr><td style="padding: 8px 12px; font-weight: bold;">Description:</td><td style="padding: 8px 12px;">{item_description}</td></tr>
+      <tr><td style="padding: 8px 12px; font-weight: bold;">Submitted By:</td><td style="padding: 8px 12px;">{maker_name}</td></tr>
+      <tr><td style="padding: 8px 12px; font-weight: bold;">Operating Branch:</td><td style="padding: 8px 12px;">{branch_name}</td></tr>
+      <tr><td style="padding: 8px 12px; font-weight: bold;">Timestamp:</td><td style="padding: 8px 12px;">{timestamp}</td></tr>
+    </table>
+    <div style="text-align: center; margin: 24px 0;">
+      <a href="{portal_url}/approvals" style="background-color: #2563eb; color: white; padding: 10px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 13px; display: inline-block;">Open Approval Inbox</a>
+    </div>
+  </div>
+  <div style="background-color: #f1f5f9; padding: 14px 20px; font-size: 11px; color: #64748b; text-align: center; border-top: 1px solid #e2e8f0;">
+    This is an automated system notification from Kosh Innovations Global Item Portal. Please do not reply directly.
+  </div>
+</div>`,
+    plainTextBody: `Dear {recipient_display_name},
+
+A new item master request has been submitted for your review:
+- Item Code: {item_code}
+- Category: {item_category}
+- Description: {item_description}
+- Submitted By: {maker_name}
+- Operating Branch: {branch_name}
+- Submission Timestamp: {timestamp}
+
+Please review in the Kosh Portal:
+{portal_url}/approvals
+
+Regards,
+Kosh Innovations Global Master Governance Team`,
+    availablePlaceholders: [
+      '{recipient_display_name}',
+      '{item_code}',
+      '{item_category}',
+      '{item_description}',
+      '{maker_name}',
+      '{branch_name}',
+      '{timestamp}',
+      '{portal_url}',
+    ],
+    version: 3,
+    status: 'ACTIVE',
+    createdBy: 'Suresh Kumar',
+    modifiedBy: 'Ananya Sharma',
+    approvedBy: 'Ramesh Balasubramanian',
+    updatedAt: '2026-10-21T10:00:00Z',
+  },
+  {
+    id: 'et-item-approved',
+    code: 'EMAIL_ITEM_APPROVED',
+    name: 'Item Approved & Queued for SAP B1 Sync',
+    businessPurpose: 'Notify maker and branch stakeholders when an item is authorized by checker.',
+    module: 'APPROVALS',
+    eventCode: 'ITEM_APPROVED',
+    language: 'en_IN',
+    subject: '[Approved] Item {item_code} Approved & Synced to SAP B1',
+    htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+  <div style="background-color: #065f46; padding: 18px; text-align: center; color: white;">
+    <h2 style="margin: 0; font-size: 18px;">KOSH MASTER DATA AUTHORIZED</h2>
+  </div>
+  <div style="padding: 24px; color: #1e293b; line-height: 1.5;">
+    <p>Dear {recipient_display_name},</p>
+    <p>Your item request <strong>{item_code}</strong> has been authorized by <strong>{checker_name}</strong> and scheduled for SAP B1 HANA Service Layer synchronization.</p>
+    <p>View your item: <a href="{portal_url}/items">{portal_url}/items</a></p>
+  </div>
+</div>`,
+    plainTextBody: `Dear {recipient_display_name},
+
+Your item request {item_code} has been authorized by {checker_name} and scheduled for SAP B1 HANA synchronization.
+
+View item: {portal_url}/items`,
+    availablePlaceholders: ['{recipient_display_name}', '{item_code}', '{item_description}', '{checker_name}', '{timestamp}', '{portal_url}'],
+    version: 2,
+    status: 'ACTIVE',
+    createdBy: 'Suresh Kumar',
+    modifiedBy: 'Suresh Kumar',
+    approvedBy: 'Ananya Sharma',
+    updatedAt: '2026-10-19T14:00:00Z',
+  },
+  {
+    id: 'et-sap-sync-alert',
+    code: 'EMAIL_SAP_SYNC_ALERT',
+    name: 'SAP B1 Service Layer Integration Failure Alert',
+    businessPurpose: 'Critical alert to IT administrators when SAP Hana sync fails.',
+    module: 'SAP_INTEGRATION',
+    eventCode: 'SAP_SYNC_FAILED',
+    language: 'en_IN',
+    subject: '[CRITICAL ALERT] SAP Service Layer Sync Failure #{batch_id}',
+    htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 2px solid #ef4444; border-radius: 8px;">
+  <div style="background-color: #991b1b; padding: 18px; text-align: center; color: white;">
+    <h2 style="margin: 0; font-size: 18px;">SAP SERVICE LAYER INTEGRATION ALERT</h2>
+  </div>
+  <div style="padding: 24px; color: #1e293b;">
+    <p style="color: #b91c1c; font-weight: bold;">Immediate Attention Required</p>
+    <p>Batch ID: <code>{batch_id}</code> failed with code <code>{error_code}</code>: {error_message}</p>
+    <p><a href="{portal_url}/integration/monitor" style="color: #2563eb; font-weight: bold;">Open Integration Recovery Queue</a></p>
+  </div>
+</div>`,
+    plainTextBody: `CRITICAL ALERT: SAP Service Layer Sync Failure
+Batch ID: {batch_id}
+Failed Item: {item_code}
+Error: {error_code} - {error_message}
+Recovery: {portal_url}/integration/monitor`,
+    availablePlaceholders: ['{batch_id}', '{item_code}', '{error_code}', '{error_message}', '{environment}', '{timestamp}', '{portal_url}'],
+    version: 1,
+    status: 'ACTIVE',
+    createdBy: 'Suresh Kumar',
+    modifiedBy: 'Suresh Kumar',
+    updatedAt: '2026-10-15T09:00:00Z',
+  },
+];
+
+export const INITIAL_DETAILED_WHATSAPP_TEMPLATES: WhatsAppTemplateDetailed[] = [
+  {
+    id: 'wat-approval-alert',
+    code: 'kosh_item_approval_alert',
+    displayName: 'Item Review Pending Alert',
+    category: 'UTILITY',
+    language: 'en_US',
+    headerType: 'TEXT',
+    headerText: 'KOSH MASTER DATA ALERT',
+    bodyTemplate: 'Hello {{1}}, a new item creation request {{2}} ({{3}}) has been submitted by {{4}} and awaits your approval in the Kosh Portal. Please visit: {{5}}',
+    footerText: 'Kosh Innovations Global IT',
+    buttons: [
+      { type: 'URL', label: 'Review Request', url: 'https://my.koshinnovations.com/approvals' },
+      { type: 'QUICK_REPLY', label: 'Acknowledged' },
+    ],
+    parameters: [
+      { index: 1, sampleValue: 'Ramesh Balasubramanian', variableKey: 'recipient_display_name' },
+      { index: 2, sampleValue: 'MAPALBL0003', variableKey: 'item_code' },
+      { index: 3, sampleValue: 'Machine Parts Aluminium Blue Finish', variableKey: 'item_description' },
+      { index: 4, sampleValue: 'Karthik Raja', variableKey: 'maker_name' },
+      { index: 5, sampleValue: 'https://my.koshinnovations.com/approvals', variableKey: 'portal_url' },
+    ],
+    metaApprovalStatus: 'APPROVED',
+    internalApprovalStatus: 'APPROVED',
+    lastSyncTimestamp: '2026-10-22T08:00:00Z',
+    supportedModes: ['OFFICIAL_API', 'USER_ASSISTED'],
+    version: 2,
+    updatedAt: '2026-10-20T12:00:00Z',
+  },
+  {
+    id: 'wat-item-authorized',
+    code: 'kosh_item_authorized_alert',
+    displayName: 'Item Authorization Notice',
+    category: 'UTILITY',
+    language: 'en_US',
+    headerType: 'NONE',
+    bodyTemplate: 'Hello {{1}}, your item {{2}} has been authorized by {{3}} and queued for SAP B1 HANA synchronization.',
+    footerText: 'Kosh Master Governance',
+    buttons: [{ type: 'URL', label: 'View Master Record', url: 'https://my.koshinnovations.com/items' }],
+    parameters: [
+      { index: 1, sampleValue: 'Karthik Raja', variableKey: 'recipient_display_name' },
+      { index: 2, sampleValue: 'FGHDMCRGY0002', variableKey: 'item_code' },
+      { index: 3, sampleValue: 'Ramesh Balasubramanian', variableKey: 'checker_name' },
+    ],
+    metaApprovalStatus: 'APPROVED',
+    internalApprovalStatus: 'APPROVED',
+    lastSyncTimestamp: '2026-10-22T08:00:00Z',
+    supportedModes: ['OFFICIAL_API', 'USER_ASSISTED'],
+    version: 1,
+    updatedAt: '2026-10-18T10:00:00Z',
+  },
+  {
+    id: 'wat-sap-critical',
+    code: 'kosh_sap_service_layer_failure',
+    displayName: 'SAP Sync Critical Incident Alert',
+    category: 'AUTHENTICATION',
+    language: 'en_US',
+    headerType: 'TEXT',
+    headerText: 'INCIDENT NOTIFICATION',
+    bodyTemplate: 'CRITICAL ALERT for IT Admin {{1}}: Batch {{2}} failed with error {{3}}. Immediate manual recovery required at {{4}}',
+    footerText: 'SAP Service Layer Monitor',
+    buttons: [{ type: 'URL', label: 'Open Recovery Queue', url: 'https://my.koshinnovations.com/integration/monitor' }],
+    parameters: [
+      { index: 1, sampleValue: 'Suresh Kumar', variableKey: 'recipient_display_name' },
+      { index: 2, sampleValue: 'BATCH-20261022-01', variableKey: 'batch_id' },
+      { index: 3, sampleValue: 'SAP-ERR-4001 Duplicate ItemCode', variableKey: 'error_message' },
+      { index: 4, sampleValue: 'https://my.koshinnovations.com/integration/monitor', variableKey: 'portal_url' },
+    ],
+    metaApprovalStatus: 'PENDING',
+    internalApprovalStatus: 'APPROVED',
+    lastSyncTimestamp: '2026-10-22T07:30:00Z',
+    supportedModes: ['OFFICIAL_API', 'USER_ASSISTED'],
+    version: 1,
+    updatedAt: '2026-10-22T07:15:00Z',
+  },
+];
+
+export const INITIAL_NOTIFICATION_RULES: NotificationRule[] = [
+  {
+    id: 'rule-item-submit',
+    name: 'Item Creation Checker Review Dispatch',
+    eventCode: 'ITEM_SUBMITTED',
+    module: 'APPROVALS',
+    description: 'Triggered when Item Maker completes form and locks atomic item code for approval.',
+    triggerCondition: 'item.status == "SUBMITTED"',
+    priority: 'HIGH',
+    recipientResolutionRule: 'ITEM_CHECKER',
+    channels: {
+      email: true,
+      whatsApp: true,
+      inPortal: true,
+    },
+    emailTemplateId: 'et-item-submitted',
+    whatsAppTemplateId: 'wat-approval-alert',
+    isEnabled: true,
+    updatedAt: '2026-10-21T10:00:00Z',
+  },
+  {
+    id: 'rule-item-approve',
+    name: 'Item Authorized Notification to Maker',
+    eventCode: 'ITEM_APPROVED',
+    module: 'APPROVALS',
+    description: 'Triggered when Checker authorizes item master record.',
+    triggerCondition: 'item.status == "APPROVED"',
+    priority: 'MEDIUM',
+    recipientResolutionRule: 'ITEM_MAKER',
+    channels: {
+      email: true,
+      whatsApp: true,
+      inPortal: true,
+    },
+    emailTemplateId: 'et-item-approved',
+    whatsAppTemplateId: 'wat-item-authorized',
+    isEnabled: true,
+    updatedAt: '2026-10-20T14:00:00Z',
+  },
+  {
+    id: 'rule-sap-sync-failure',
+    name: 'SAP B1 Service Layer Failure Incident',
+    eventCode: 'SAP_SYNC_FAILED',
+    module: 'SAP_INTEGRATION',
+    description: 'Triggered when Service Layer returns HTTP 4xx/5xx or Hana dead-letter error.',
+    triggerCondition: 'sync.status == "FAILED" || sync.retryCount >= 3',
+    priority: 'CRITICAL',
+    recipientResolutionRule: 'SECURITY_ADMIN',
+    channels: {
+      email: true,
+      whatsApp: true,
+      inPortal: true,
+    },
+    emailTemplateId: 'et-sap-sync-alert',
+    whatsAppTemplateId: 'wat-sap-critical',
+    isEnabled: true,
+    updatedAt: '2026-10-21T16:00:00Z',
+  },
+  {
+    id: 'rule-2fa-otp',
+    name: 'Enterprise 2FA OTP Code Generation',
+    eventCode: 'TWO_FACTOR_OTP',
+    module: 'SECURITY',
+    description: 'Immediate delivery of 6-digit login or master-edit verification passcode.',
+    triggerCondition: 'auth.action == "2FA_REQUESTED"',
+    priority: 'CRITICAL',
+    recipientResolutionRule: 'ITEM_MAKER',
+    channels: {
+      email: true,
+      whatsApp: false,
+      inPortal: false,
+    },
+    isEnabled: true,
+    updatedAt: '2026-09-01T08:00:00Z',
+  },
+  {
+    id: 'rule-system-announcement',
+    name: 'Operational & Maintenance Broadcast Delivery',
+    eventCode: 'SYSTEM_ANNOUNCEMENT',
+    module: 'SYSTEM',
+    description: 'Manual or scheduled broadcast notices to branch teams.',
+    triggerCondition: 'campaign.status == "PUBLISHED"',
+    priority: 'MEDIUM',
+    recipientResolutionRule: 'ALL_BRANCH_USERS',
+    channels: {
+      email: true,
+      whatsApp: true,
+      inPortal: true,
+    },
+    isEnabled: true,
+    updatedAt: '2026-10-18T11:00:00Z',
+  },
+];
+
+export const INITIAL_DETAILED_DELIVERY_QUEUE: DetailedDeliveryQueueItem[] = [
+  {
+    id: 'queue-msg-101',
+    channel: 'EMAIL',
+    recipient: 'checker.pondicherry@koshinnovations.com',
+    recipientName: 'Ramesh Balasubramanian',
+    eventCode: 'ITEM_SUBMITTED',
+    subject: '[Action Required] Review Item MAPALBL0003 Submitted by Karthik Raja',
+    previewText: 'Dear Ramesh Balasubramanian, a new item master request has been locked and submitted...',
+    status: 'DELIVERED',
+    priority: 'HIGH',
+    retryCount: 0,
+    maxRetries: 3,
+    scheduledAt: '2026-10-22T08:15:00Z',
+    lastAttemptAt: '2026-10-22T08:15:22Z',
+    correlationId: 'req-mapalbl-email-01',
+    idempotencyKey: 'idem-49102-email-01',
+    providerReceiptId: 'smtp-ack-20261022-84192',
+    createdAt: '2026-10-22T08:15:00Z',
+  },
+  {
+    id: 'queue-msg-102',
+    channel: 'WHATSAPP',
+    recipient: '+919840123456',
+    recipientName: 'Ramesh Balasubramanian',
+    eventCode: 'ITEM_SUBMITTED',
+    subject: 'WhatsApp Meta Graph: kosh_item_approval_alert',
+    previewText: 'Hello Ramesh Balasubramanian, a new item creation request MAPALBL0003 awaits your approval...',
+    status: 'READ',
+    priority: 'HIGH',
+    retryCount: 0,
+    maxRetries: 3,
+    scheduledAt: '2026-10-22T08:15:00Z',
+    lastAttemptAt: '2026-10-22T08:15:45Z',
+    correlationId: 'req-mapalbl-wa-01',
+    idempotencyKey: 'idem-49102-wa-01',
+    providerReceiptId: 'wamid.HBgMOTE5ODQwMTIzNDU2FQIAERgSRTk0OTM5',
+    createdAt: '2026-10-22T08:15:00Z',
+  },
+  {
+    id: 'queue-msg-103',
+    channel: 'EMAIL',
+    recipient: 'maker.chennai@koshinnovations.com',
+    recipientName: 'Priya Sundaram',
+    eventCode: 'ITEM_APPROVED',
+    subject: '[Approved] Item FGHDMCRGY0002 Approved & Synced to SAP B1',
+    previewText: 'Dear Priya Sundaram, your item request FGHDMCRGY0002 has been authorized by checker...',
+    status: 'DELIVERED',
+    priority: 'MEDIUM',
+    retryCount: 0,
+    maxRetries: 3,
+    scheduledAt: '2026-10-22T07:46:00Z',
+    lastAttemptAt: '2026-10-22T07:46:18Z',
+    correlationId: 'req-fghdmcr-email-02',
+    idempotencyKey: 'idem-49098-email-02',
+    providerReceiptId: 'smtp-ack-20261022-77190',
+    createdAt: '2026-10-22T07:46:00Z',
+  },
+  {
+    id: 'queue-msg-104',
+    channel: 'EMAIL',
+    recipient: 'sap.monitor@koshinnovations.com',
+    recipientName: 'Suresh Kumar',
+    eventCode: 'SAP_SYNC_FAILED',
+    subject: '[CRITICAL ALERT] SAP Service Layer Sync Failure #BATCH-20261021-01',
+    previewText: 'CRITICAL ALERT: SAP Service Layer Sync Failure for Batch BATCH-20261021-01...',
+    status: 'DEAD_LETTER',
+    priority: 'CRITICAL',
+    retryCount: 5,
+    maxRetries: 5,
+    scheduledAt: '2026-10-21T18:40:00Z',
+    lastAttemptAt: '2026-10-21T19:10:00Z',
+    nextRetryAt: undefined,
+    errorMessage: 'SMTP 421 4.7.0 Rate limit exceeded. 5 attempts exhausted without handshake.',
+    errorCode: 'ERR_SMTP_BACKOFF_EXHAUSTED',
+    correlationId: 'sap-sync-err-8821',
+    idempotencyKey: 'idem-sap-err-8821-01',
+    createdAt: '2026-10-21T18:40:00Z',
+  },
+  {
+    id: 'queue-msg-105',
+    channel: 'WHATSAPP',
+    recipient: '+919443123456',
+    recipientName: 'Karthik Raja',
+    eventCode: 'ITEM_APPROVED',
+    subject: 'WhatsApp Meta Graph: kosh_item_authorized_alert',
+    previewText: 'Hello Karthik Raja, your item FGHDMCRGY0002 has been authorized by Ramesh...',
+    status: 'DELIVERED',
+    priority: 'MEDIUM',
+    retryCount: 0,
+    maxRetries: 3,
+    scheduledAt: '2026-10-22T07:46:00Z',
+    lastAttemptAt: '2026-10-22T07:46:30Z',
+    correlationId: 'req-fghdmcr-wa-02',
+    idempotencyKey: 'idem-49098-wa-02',
+    providerReceiptId: 'wamid.HBgMOTE5NDQzMTIzNDU2FQIAERgSRTk0OTQw',
+    createdAt: '2026-10-22T07:46:00Z',
+  },
+  {
+    id: 'queue-msg-106',
+    channel: 'EMAIL',
+    recipient: 'checker.chennai@koshinnovations.com',
+    recipientName: 'Ramesh Balasubramanian',
+    eventCode: 'ITEM_SUBMITTED',
+    subject: '[Action Required] Review Item RMSTSS250004',
+    previewText: 'Dear Ramesh Balasubramanian, a new item master request has been submitted...',
+    status: 'PROCESSING',
+    priority: 'HIGH',
+    retryCount: 1,
+    maxRetries: 3,
+    scheduledAt: '2026-10-22T09:00:00Z',
+    lastAttemptAt: '2026-10-22T09:00:15Z',
+    correlationId: 'req-rmstss-email-01',
+    idempotencyKey: 'idem-49105-email-01',
+    createdAt: '2026-10-22T09:00:00Z',
+  },
+];
+
+export const INITIAL_WEBHOOK_EVENTS: WebhookEventRecord[] = [
+  {
+    id: 'wh-evt-001',
+    provider: 'WHATSAPP_META',
+    eventType: 'message.read',
+    messageId: 'wamid.HBgMOTE5ODQwMTIzNDU2FQIAERgSRTk0OTM5',
+    recipient: '+919840123456',
+    timestamp: '2026-10-22T08:16:12Z',
+    signatureStatus: 'VALID_HMAC_SHA256',
+    payloadSummary: 'Meta Cloud API message status update: READ by recipient',
+    rawPayload: {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'WABA-KOSH-INNOVATIONS-91413',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                statuses: [
+                  {
+                    id: 'wamid.HBgMOTE5ODQwMTIzNDU2FQIAERgSRTk0OTM5',
+                    status: 'read',
+                    timestamp: '1792656972',
+                    recipient_id: '919840123456',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'wh-evt-002',
+    provider: 'WHATSAPP_META',
+    eventType: 'message.delivered',
+    messageId: 'wamid.HBgMOTE5NDQzMTIzNDU2FQIAERgSRTk0OTQw',
+    recipient: '+919443123456',
+    timestamp: '2026-10-22T07:46:42Z',
+    signatureStatus: 'VALID_HMAC_SHA256',
+    payloadSummary: 'Meta Cloud API message status update: DELIVERED to device handset',
+    rawPayload: {
+      object: 'whatsapp_business_account',
+      entry: [{ id: 'WABA-KOSH-INNOVATIONS-91413', changes: [{ field: 'messages', value: { status: 'delivered' } }] }],
+    },
+  },
+  {
+    id: 'wh-evt-003',
+    provider: 'EMAIL_RELAY',
+    eventType: 'message.delivered',
+    messageId: 'smtp-ack-20261022-84192',
+    recipient: 'checker.pondicherry@koshinnovations.com',
+    timestamp: '2026-10-22T08:15:35Z',
+    signatureStatus: 'VALID_HMAC_SHA256',
+    payloadSummary: 'SMTP Server 250 2.0.0 OK queue id 4WbV0m4N5vz3t8r delivery receipt',
+    rawPayload: {
+      event: 'delivered',
+      smtp_id: '4WbV0m4N5vz3t8r',
+      response: '250 2.0.0 OK',
+      email: 'checker.pondicherry@koshinnovations.com',
+    },
+  },
+  {
+    id: 'wh-evt-004',
+    provider: 'EMAIL_RELAY',
+    eventType: 'message.bounced',
+    messageId: 'smtp-ack-old-9912',
+    recipient: 'former.staff@koshinnovations.com',
+    timestamp: '2026-10-21T11:20:00Z',
+    signatureStatus: 'VALID_HMAC_SHA256',
+    payloadSummary: '550 5.1.1 User unknown; mailbox does not exist (Hard bounce recorded in suppression list)',
+    rawPayload: {
+      event: 'bounced',
+      bounce_type: 'hard',
+      status: '5.1.1',
+      email: 'former.staff@koshinnovations.com',
+    },
+  },
+];
+
+export const INITIAL_CONSENT_REGISTRY: RecipientConsentRecord[] = [
+  {
+    id: 'cs-01',
+    userId: 'u-maker-1',
+    name: 'Karthik Raja',
+    email: 'karthik.raja@koshinnovations.com',
+    phoneNumber: '+919443123456',
+    role: 'ITEM_MAKER',
+    branchName: 'Pondicherry HQ Plant',
+    emailConsent: true,
+    whatsAppConsent: 'OPTED_IN',
+    consentSource: 'EMPLOYEE_ONBOARDING',
+    consentUpdatedAt: '2026-08-15T09:00:00Z',
+    isSuppressed: false,
+  },
+  {
+    id: 'cs-02',
+    userId: 'u-checker-1',
+    name: 'Ramesh Balasubramanian',
+    email: 'ramesh.checker@koshinnovations.com',
+    phoneNumber: '+919840123456',
+    role: 'ITEM_CHECKER',
+    branchName: 'Chennai Unit',
+    emailConsent: true,
+    whatsAppConsent: 'OPTED_IN',
+    consentSource: 'USER_PORTAL_PREFERENCE',
+    consentUpdatedAt: '2026-09-01T14:30:00Z',
+    isSuppressed: false,
+  },
+  {
+    id: 'cs-03',
+    userId: 'u-admin-1',
+    name: 'Suresh Kumar',
+    email: 'suresh.kumar@koshinnovations.com',
+    phoneNumber: '+919841098765',
+    role: 'PLATFORM_ADMIN',
+    branchName: 'Pondicherry HQ Plant',
+    emailConsent: true,
+    whatsAppConsent: 'OPTED_IN',
+    consentSource: 'EMPLOYEE_ONBOARDING',
+    consentUpdatedAt: '2026-07-01T10:00:00Z',
+    isSuppressed: false,
+  },
+  {
+    id: 'cs-04',
+    userId: 'u-global-admin',
+    name: 'Ananya Sharma',
+    email: 'ananya.sharma@koshinnovations.com',
+    phoneNumber: '+919884567890',
+    role: 'GLOBAL_ITEM_ADMIN',
+    branchName: 'Pondicherry HQ Plant',
+    emailConsent: true,
+    whatsAppConsent: 'OPTED_IN',
+    consentSource: 'EMPLOYEE_ONBOARDING',
+    consentUpdatedAt: '2026-08-01T11:00:00Z',
+    isSuppressed: false,
+  },
+  {
+    id: 'cs-05',
+    userId: 'u-former-staff',
+    name: 'Inactive Ex-Employee',
+    email: 'former.staff@koshinnovations.com',
+    phoneNumber: '+919999999999',
+    role: 'ITEM_MAKER',
+    branchName: 'Hosur Plant',
+    emailConsent: false,
+    whatsAppConsent: 'OPTED_OUT',
+    consentSource: 'USER_PORTAL_PREFERENCE',
+    consentUpdatedAt: '2026-10-21T11:20:00Z',
+    isSuppressed: true,
+    suppressionReason: 'Hard bounce: Mailbox does not exist (SMTP 550 5.1.1)',
+  },
+];
+
+export const INITIAL_DETAILED_CAMPAIGNS: BroadcastCampaignDetailed[] = [
+  {
+    id: 'camp-2026-01',
+    title: 'Quarterly Global Item Master Code Freeze & HANA Maintenance',
+    businessReason: 'Mandatory scheduled maintenance notification for SAP Business One HANA database engine indexing.',
+    targetScope: 'ALL_USERS',
+    channels: ['IN_PORTAL', 'EMAIL', 'WHATSAPP'],
+    priority: 'HIGH',
+    status: 'COMPLETED',
+    scheduledAt: '2026-10-22T06:00:00Z',
+    publishedAt: '2026-10-22T06:00:00Z',
+    completedAt: '2026-10-22T06:05:00Z',
+    createdBy: 'Suresh Kumar',
+    approvedBy: 'Ananya Sharma',
+    totalRecipients: 32,
+    sentCount: 32,
+    deliveredCount: 31,
+    readCount: 28,
+    failedCount: 1,
+  },
+  {
+    id: 'camp-2026-02',
+    title: 'Strict Revision on Raw Material (RM) Sub-Category Naming',
+    businessReason: 'Compliance mandate requiring ISO 9001 surface finish grade certificate on all Raw Material items.',
+    targetScope: 'SPECIFIC_ROLE',
+    targetRole: 'ITEM_MAKER',
+    channels: ['IN_PORTAL', 'EMAIL', 'WHATSAPP'],
+    priority: 'MEDIUM',
+    status: 'COMPLETED',
+    scheduledAt: '2026-10-21T09:30:00Z',
+    publishedAt: '2026-10-21T09:30:00Z',
+    completedAt: '2026-10-21T09:32:00Z',
+    createdBy: 'Ananya Sharma',
+    approvedBy: 'Suresh Kumar',
+    totalRecipients: 10,
+    sentCount: 10,
+    deliveredCount: 10,
+    readCount: 9,
+    failedCount: 0,
+  },
+  {
+    id: 'camp-2026-03',
+    title: 'Scheduled Disaster Recovery Drill for Pondicherry & Chennai Hubs',
+    businessReason: 'Annual IT business continuity drill for Hana Service Layer failover replica.',
+    targetScope: 'SPECIFIC_BRANCH',
+    targetBranchId: 'br-pondicherry',
+    channels: ['EMAIL', 'IN_PORTAL'],
+    priority: 'HIGH',
+    status: 'SCHEDULED',
+    scheduledAt: '2026-10-25T10:00:00Z',
+    createdBy: 'Suresh Kumar',
+    approvedBy: 'Ananya Sharma',
+    totalRecipients: 18,
+    sentCount: 0,
+    deliveredCount: 0,
+    readCount: 0,
+    failedCount: 0,
+  },
+  {
+    id: 'camp-2026-04',
+    title: 'Draft: New GST & HSN Code Classification Guidance',
+    businessReason: 'Upcoming tax revision guidance for finance and procurement teams.',
+    targetScope: 'ALL_USERS',
+    channels: ['IN_PORTAL', 'EMAIL'],
+    priority: 'LOW',
+    status: 'DRAFT',
+    createdBy: 'Karthik Raja',
+    totalRecipients: 32,
+    sentCount: 0,
+    deliveredCount: 0,
+    readCount: 0,
+    failedCount: 0,
+  },
+];
+
+export const SHARED_VARIABLE_REGISTRY = [
+  { key: '{recipient_display_name}', label: 'Recipient Full Name', desc: 'Full display name of target user', type: 'STRING', sensitive: false, example: 'Ramesh Balasubramanian' },
+  { key: '{item_code}', label: 'Item Code', desc: 'Atomic generated or provisional item code', type: 'STRING', sensitive: false, example: 'MAPALBL0003' },
+  { key: '{item_category}', label: 'Item Category', desc: 'Primary Category name and code (RM, FG, PK, CO, MA)', type: 'STRING', sensitive: false, example: 'MA (Machinery / Spares)' },
+  { key: '{item_description}', label: 'Item Description', desc: 'Standardized concatenated item description', type: 'STRING', sensitive: false, example: 'Machine Parts Aluminium Blue Finish Grade 6061' },
+  { key: '{maker_name}', label: 'Maker Full Name', desc: 'Identity of user who authored item draft', type: 'STRING', sensitive: false, example: 'Karthik Raja' },
+  { key: '{checker_name}', label: 'Checker Full Name', desc: 'Identity of reviewer who evaluated item', type: 'STRING', sensitive: false, example: 'Ramesh Balasubramanian' },
+  { key: '{branch_name}', label: 'Branch Name', desc: 'Operating facility or manufacturing plant', type: 'STRING', sensitive: false, example: 'Pondicherry HQ Plant' },
+  { key: '{timestamp}', label: 'Timestamp (IST)', desc: 'Formatted event timestamp in Indian Standard Time', type: 'DATETIME', sensitive: false, example: '22-Oct-2026 14:30 IST' },
+  { key: '{portal_url}', label: 'Portal Base URL', desc: 'Canonical base link to portal deep links', type: 'URL', sensitive: false, example: 'https://my.koshinnovations.com' },
+  { key: '{rejection_reason}', label: 'Rejection Reason', desc: 'Checker remarks when returning or rejecting request', type: 'STRING', sensitive: true, example: 'Missing ISO 9001 test certificate attachment.' },
+  { key: '{batch_id}', label: 'SAP Sync Batch ID', desc: 'Service Layer transaction batch identifier', type: 'STRING', sensitive: false, example: 'BATCH-20261022-01' },
+  { key: '{error_code}', label: 'Error Code', desc: 'SAP B1 HANA Service Layer error code', type: 'STRING', sensitive: false, example: 'SAP-ERR-4001' },
+  { key: '{error_message}', label: 'Error Message', desc: 'Human-readable failure diagnostic', type: 'STRING', sensitive: true, example: 'Duplicate ItemCode detected in OITM table.' },
+  { key: '{otp_code}', label: '2FA One-Time Passcode', desc: 'Time-based one-time authentication code (10 min expiry)', type: 'NUMBER', sensitive: true, example: '491823' },
+];

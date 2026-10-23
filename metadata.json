@@ -1,0 +1,6 @@
+{
+  "name": "My Kosh Innovations Global IT System",
+  "description": "Enterprise Global Item Creation, Governance and SAP Business One HANA Integration Portal for Kosh Innovations multi-branch manufacturing operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

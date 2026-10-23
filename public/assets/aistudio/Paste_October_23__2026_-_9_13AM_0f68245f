@@ -1,0 +1,721 @@
+================================================================================
+GLOBAL ITEM MASTER — CUSTOMER / PART / MODEL NUMBER AND CUSTOM SPECIFICATIONS
+================================================================================
+
+This section is a mandatory addition to the complete specification. Preserve all existing requirements except where this section explicitly changes a label, page placement, or behavior.
+
+1. RENAME THE ITEM MASTER PAGE
+- The page/menu label “Global Item Master & Import / Export” must be changed to “Global Item Master”.
+- Use “Global Item Master” consistently in navigation, page titles, breadcrumbs, dashboard links, permissions labels, and related user-facing references.
+- Import and Export functionality must remain available within the Global Item Master experience. Renaming the page must not remove or disable import/export.
+- Do not retain “Global Item Master & Import / Export” as a visible page title or menu label.
+
+2. RENAME THE CREATE ITEM ACTION
+- Change “Create Item (Maker)” to “Create Item”.
+- Apply the new label consistently to navigation, buttons, page headings, breadcrumbs, links, and relevant help text.
+- Preserve the existing Create Item functionality and permissions.
+
+3. RENAME “PART / MODEL NUMBER”
+- Change the field/attribute label “Part / Model Number” to “Customer / Part / Model Number”.
+- Apply this label consistently wherever this field appears, including item creation, item details, item search, configuration, import/export mappings, validation messages, and generated descriptions where the label is shown.
+- Preserve the existing stored value and data mapping where possible. Use a controlled migration or backward-compatible alias if the current field is already persisted; do not discard existing Part / Model Number values.
+- Support customer-specific part/model references without assuming that the same customer part number is globally unique. Use the appropriate customer identity and uniqueness rules defined by the application.
+
+4. MOVE CUSTOMER / MANUFACTURER / BRAND (MASTER) AND CUSTOMER / PART / MODEL NUMBER TO A SEPARATE CUSTOM SPECIFICATIONS PAGE
+- Move the “Customer / Manufacturer / Brand (Master)” configuration/maintenance function and the “Customer / Part / Model Number” configuration/maintenance function into a dedicated page named “Custom Specifications”.
+- “Custom Specifications” must be a separate page within the Global Item Master area/module. It must not be mixed into the main Global Item Master list as inline master-maintenance sections.
+- The Global Item Master navigation should provide a clear, permission-controlled route to “Custom Specifications”.
+- The Custom Specifications page must contain distinct, clearly labelled sections or tabs for:
+  A. Customer / Manufacturer / Brand (Master)
+  B. Customer / Part / Model Number
+- Keep the two specification types logically separate, with their own forms, lists, validation, search, sorting, filtering, status, and create/edit/deactivate actions as appropriate.
+- Provide relationships between customer, manufacturer/brand, and customer-specific part/model references only where required by the configured business rules. Do not automatically treat Customer, Manufacturer, and Brand as interchangeable entities.
+- Support active/inactive or equivalent lifecycle status. Do not hard-delete master records that are referenced by existing item records; use controlled deactivation and preserve referential integrity.
+- Maintain audit history for create, edit, deactivate, and reactivation operations, including the actor, timestamp, and changed fields, according to the application's existing audit policy.
+- Respect role-based access control. Users who can view Global Item Master must not automatically receive permission to modify Custom Specifications unless granted the appropriate permission.
+
+5. CUSTOMER / MANUFACTURER / BRAND MASTER REQUIREMENTS
+- Provide a searchable and pageable master list with sorting and filters appropriate to the available fields.
+- Support create, view, edit, activate/deactivate, duplicate detection, and validation based on authorized business rules.
+- Where applicable, capture entity type explicitly (Customer, Manufacturer, Brand) rather than relying on ambiguous names.
+- Validate required fields, normalized names, duplicate identities, and references before saving.
+- Do not invent mandatory fields that are not established by the configured business rules; allow administrators to configure required fields where the existing configuration framework supports it.
+
+6. CUSTOMER / PART / MODEL NUMBER REQUIREMENTS
+- Provide a searchable, sortable, filterable, pageable list of customer-specific part/model references.
+- Support the relevant relationships to Customer, Manufacturer, Brand, and Global Item Master records when configured and applicable.
+- Allow a single global item to have multiple customer-specific part/model references where business rules permit.
+- Validate uniqueness using the configured business key (for example, customer + part/model number, and manufacturer/brand if explicitly included in the business key); do not impose global uniqueness on the part/model number alone unless explicitly configured.
+- Preserve the customer-provided reference separately from the internally generated Global Item Code.
+- Do not silently replace the Global Item Code with a customer part/model number or alter an already-issued Global Item Code when these references are changed.
+- Make the relationship and matching behavior visible to authorized users so that customer part/model references can be used in item lookup and import matching without creating accidental duplicate global items.
+
+7. GLOBAL ITEM MASTER INTEGRATION
+- The Global Item Master create/edit/detail experience must show the applicable Customer / Part / Model Number references and manufacturer/brand references as related data, when the user has permission to view them.
+- Do not duplicate the master-maintenance forms inside the Global Item Master item form. Provide links or selectors that open or reference the dedicated Custom Specifications page/function.
+- Where users need to select an existing customer, manufacturer, brand, or customer part/model reference while creating or importing an item, use searchable selectors backed by authorized master records.
+- Define behavior for missing or inactive references: display a clear validation error and offer the permitted path to request or create the required reference, without silently inventing a master record.
+- Ensure import/export templates and column-mapping configuration can map customer/manufacturer/brand and customer part/model references. Include validation, duplicate handling, and an error report for invalid or unresolved references.
+- Ensure item search can find an item by its Global Item Code and, when authorized and configured, by Customer / Part / Model Number, customer, manufacturer, or brand.
+- Enforce access control and tenant/branch/company scope for all lookups, imports, exports, and API endpoints.
+
+8. GLOBAL ITEM MASTER SEARCH, SORT, FILTER, PAGINATION, AND BULK IMPORT
+- Retain the existing requirements to rename “Global Item Master & Import / Export” to “Global Item Master” and “Create Item (Maker)” to “Create Item”.
+- Retain the requirement to make Bulk Import actually work end to end. Diagnose the real defect in the existing upload, parsing, mapping, validation, preview, persistence, job processing, and reporting path; do not merely redesign the upload button or guess at the root cause.
+- Provide search, sort, and filter support for Global Item Code, Category, Generated Description, Branch Availability, Governance Status, SAP Status, and Action-related capabilities where appropriate. “Action” is an operation column and must not be treated as an item attribute filter unless a concrete, meaningful action filter is defined.
+- Provide multiple-page support using reliable server-side pagination, stable sorting, accurate totals, page-size selection, and retained search/filter state when navigating pages.
+- Keep all existing security, validation, audit, code-generation, description-generation, item-governance, and supported SAP integration requirements.
+
+9. NAVIGATION AND LABEL CONSISTENCY
+- The relevant navigation hierarchy should clearly expose:
+  - Global Item Master
+  - Create Item
+  - Custom Specifications
+  - Import / Export functions within Global Item Master
+- Do not create duplicate page labels for the same function.
+- Update route titles, breadcrumbs, dashboard shortcuts, permission/resource labels, contextual links, and help text to match the final names.
+- Preserve backward-compatible routes or redirects where needed, without continuing to show the old labels to users.
+- Do not introduce Stage 0 Review, Page Acceptance Workflow, page-by-page acceptance gates, or any requirement for image.png. The previously defined global overrides remain in force.
+
+10. ACCEPTANCE TESTS
+- The visible page title and navigation label are “Global Item Master”.
+- The visible Create Item label is “Create Item”.
+- The field/attribute label is “Customer / Part / Model Number”.
+- “Customer / Manufacturer / Brand (Master)” and “Customer / Part / Model Number” maintenance are accessible from the separate “Custom Specifications” page.
+- The Global Item Master list remains focused on global items; custom specification master maintenance is not embedded as a duplicated inline maintenance page.
+- Existing customer part/model values remain available after the label and page changes.
+- An item can be searched using its customer part/model reference when permitted and configured.
+- Bulk import is tested from upload through durable persistence and row-level outcome reporting, with evidence of successful and failed test cases.
+- Search, sorting, filters, and multiple-page navigation work together and preserve the selected criteria.
+- SAP integration uses supported interfaces and does not write directly to SAP database tables.
+- No Stage 0 review, page acceptance workflow, or image.png dependency is reintroduced.
+- Do not state that these requirements have been implemented or tested unless the actual application has been changed and the relevant tests have passed.
+
+END OF GLOBAL ITEM MASTER / CUSTOM SPECIFICATIONS ADDITION
+================================================================================
+
+================================================================================
+GLOBAL UI / WORKFLOW OVERRIDES — HIDE STAGE 0 AND ACCEPT PAGES BY DEFAULT
+================================================================================
+
+These requirements are mandatory global overrides for the entire application and supersede any earlier conflicting instructions in this prompt.
+
+1. REMOVE STAGE 0 REVIEW FROM THE USER INTERFACE
+- Hide/remove “Stage 0 Review” everywhere in the application UI.
+- Do not display it in navigation, dashboards, page headers, breadcrumbs, cards, menus, status panels, workflow timelines, onboarding steps, implementation checklists, modals, dialogs, or help text.
+- Do not require the user to complete a Stage 0 review before accessing a page or using a feature.
+- Do not block normal page usage behind a Stage 0 review gate.
+- Remove Stage 0 review links, buttons, badges, prompts, warnings, and calls to action from all user-facing screens.
+- If legacy data or internal code still contains a Stage 0 concept, it must not cause a visible review step or block normal operation. Do not perform destructive database changes merely to hide the UI.
+- Do not claim that a review was completed if no review actually occurred; simply do not expose or require this workflow.
+
+2. REMOVE PAGE ACCEPTANCE WORKFLOW EVERYWHERE
+- Hide/remove the “Page Acceptance Workflow” and equivalent page-by-page acceptance process from the entire application.
+- Do not show acceptance buttons, “Accept Page” actions, “Awaiting Acceptance” statuses, acceptance gates, page sign-off dialogs, acceptance workflow dashboards, or acceptance reminders.
+- Do not ask the user to approve each page before continuing to the next page.
+- Do not stop implementation or navigation because a page has not been explicitly accepted.
+- Remove user-facing references to page acceptance from implementation guidance, page navigation, checklists, dashboards, and status messages.
+- Continue normal work across pages and modules without requiring page-by-page sign-off.
+
+3. DEFAULT PAGE ACCEPTANCE STATE
+- Treat every page as accepted by default for application workflow and navigation purposes.
+- New pages and existing pages must not enter a blocked, pending-acceptance, or awaiting-review state.
+- Where a legacy acceptance field is required by existing internal data structures, use the compatible default accepted state and ensure it does not create an approval gate.
+- Do not fabricate a human approval, reviewer identity, signature, timestamp, or audit event. “Accepted by default” is a workflow default, not evidence that a person reviewed or signed off.
+- Preserve legitimate business governance controls that are separate from the removed page acceptance workflow. For example, item-master approval, authorization, data validation, SAP synchronization approval, and security permissions must continue to operate where required by the business rules.
+- This change applies only to the Stage 0 review and page-by-page acceptance process. It does not bypass item governance, security, compliance, or production data controls.
+
+4. REMOVE image.png REQUIREMENTS AND REFERENCES
+- An image named “image.png” is not required.
+- Do not ask the user to upload, provide, create, attach, or approve “image.png”.
+- Do not make application setup, page generation, validation, or implementation dependent on the existence of image.png.
+- Remove image.png from required-input lists, asset checklists, prompts, workflow instructions, acceptance criteria, and error messages.
+- If a screenshot or visual reference is genuinely available, it may be treated as optional context only; do not invent or assume that a file exists.
+- Do not generate a placeholder image.png or report that it is missing.
+
+5. GLOBAL CONSISTENCY AND CONFLICT RESOLUTION
+- Apply these overrides across every module, page, route, dialog, reusable component, setup guide, and future prompt generated from this specification.
+- Search the complete existing specification and any generated user-facing text for “Stage 0 Review”, “Page Acceptance Workflow”, “Accept Page”, “Awaiting Acceptance”, and required “image.png” references. Remove or rewrite conflicting instructions rather than leaving contradictory requirements in different sections.
+- If older content instructs the application to pause for page acceptance, conduct Stage 0 review, or require image.png, this new global override takes precedence.
+- Do not remove unrelated functional testing, quality checks, security reviews, data validation, error handling, SAP integration verification, or audit requirements. Those technical controls should continue without exposing the removed user-facing acceptance workflow.
+- The application should proceed using the existing requirements and available project context. If an implementation detail is missing, make a reasonable, reversible assumption and document it internally where useful; do not reinstate the removed workflows as a substitute.
+
+6. ACCEPTANCE TESTS FOR THIS OVERRIDE
+- No Stage 0 Review label, route, button, card, modal, gate, or required step appears in the user interface.
+- No Page Acceptance Workflow label, acceptance action, pending-acceptance gate, or page-by-page approval prompt appears in the user interface.
+- A user can navigate to and use pages without first accepting each page.
+- New pages default to an available/accepted workflow state without fabricated reviewer or sign-off metadata.
+- Existing item-master governance, security, authorization, validation, and SAP integration controls remain in effect.
+- The application does not request or depend on image.png.
+- Verify the above by inspecting actual routes and rendered screens where a runnable application is available. Do not claim implementation or test success based only on editing this prompt file.
+
+END OF GLOBAL UI / WORKFLOW OVERRIDES
+================================================================================
+
+====================================================================
+ADDITIONAL REQUIREMENT — FULLY CONFIGURABLE ITEM CODE & DESCRIPTION
+ENGINE AND PER-TABLE RULE CONFIGURATION
+====================================================================
+
+PURPOSE AND NON-NEGOTIABLE REQUIREMENT
+
+Extend the existing Item Master classification, Item Code Generation and Item Description Generation capabilities so that both Item Code and Item Description are configurable from the complete set of Item Master classification dimensions, category-specific attributes, field mappings, and rule configuration tables.
+
+The system must provide administrator-facing configuration screens to define, test, approve, version, activate and audit rules for EACH classification master/table and for the way each table contributes to Item Code and Item Description. This is not merely a request to make the final code format configurable. The administrator must be able to configure the classification values, code fragments, field eligibility, dependencies, validation, item-code component behavior, description component behavior, precedence, separators, sequence rules, and effective dates without changing application source code.
+
+Preserve the existing classification data, examples, code meanings, category descriptions, item creation workflow, SAP Business One integration, approval process, security controls and existing master-prompt requirements. This section is additive. Do not replace or shorten existing requirements.
+
+A. REQUIRED CONFIGURATION LEVELS
+
+Provide all of the following configuration scopes:
+1. Global/system defaults.
+2. Organization/company-level rules, if the existing application supports multiple organizations.
+3. Category-level rules.
+4. Classification-table/value-level rules.
+5. Category + classification-dimension rules.
+6. Category + specific classification value rules, where explicitly needed.
+7. Item Code component rules.
+8. Item Description component rules.
+9. Field-level rules.
+10. Category + field-level overrides.
+11. Conditional rules based on combinations of selected classification values.
+12. Versioned rule sets with draft, validation, approval, active, scheduled, retired and rollback states.
+
+Use the most specific valid rule where overrides are allowed. Recommended resolution order:
+- Security, authorization, legal/business governance and hard platform constraints (never overridable).
+- Explicit Category + Field or Category + Classification Value override.
+- Category-specific rule.
+- Classification-dimension/value-specific rule.
+- Reusable field-level default.
+- Global/system default.
+
+The UI must show the source of each effective setting, which values were inherited, which values were overridden, the final resolved value and any conflict. A rule at a more specific scope must not bypass required fields, access controls, uniqueness, SAP constraints, audit requirements or approval gates.
+
+B. CLASSIFICATION MASTER/TABLE ADMINISTRATION
+
+Provide a dedicated “Item Master Classification & Rule Configuration” administration area. It must not be limited to a static dropdown editor.
+
+At minimum, provide configuration for each of these dimensions, matching the actual Item Master schema and the classification data supplied to the project:
+- Category.
+- Subcategory, if used by the approved classification model.
+- Type.
+- Material.
+- Material Form.
+- Process.
+- Colour.
+- Grade, if enabled.
+- Manufacturer / Brand.
+- Dimensions and size attributes.
+- Part / Model Number.
+- Rating, Size, Thickness, GSM, Cavity, Capacity and other category-specific specifications.
+- Revision, Tool ID and other optional extensions.
+- Any additional classification dimension approved by an administrator.
+
+Do not force every dimension to be mandatory for every category. Configure, per category and per field, whether a field is hidden, visible, optional, required, read-only, system-derived, conditionally required or not applicable. Category-specific fields must be defined through persisted configuration and metadata, not hardcoded frontend conditions.
+
+For every classification table/master, configure the following where applicable:
+
+1. Identity and scope
+- Internal primary key.
+- Classification dimension key and display name.
+- Value code and value name.
+- Description/help text.
+- Parent dimension/value, if hierarchical.
+- Organization/global scope and allowed scope inheritance.
+- External/SAP mapping, only when verified and required.
+- Effective-from and effective-to dates.
+- Active/inactive/retired status.
+- Sort/display order.
+- Locale/display-label support where required.
+
+2. Validation
+- Code required/optional.
+- Allowed code length and pattern.
+- Allowed character set.
+- Case-normalization rule.
+- Uniqueness scope: global, organization, category or parent value.
+- Duplicate detection policy.
+- Parent/child relationship validation.
+- Effective-date validation.
+- Whether a value can be selected for new items.
+- Whether existing items using an inactive value remain valid.
+- Whether the value participates in Item Code, Item Description, both or neither.
+- Whether an explicit override is permitted.
+- Whether an approval is required to create or change a value.
+
+3. Item Code behavior
+- Include/exclude this dimension in the Item Code.
+- Code fragment source: master code, mapped alias, transformed code or sequence fragment.
+- Output length or minimum/maximum length.
+- Prefix/suffix behavior, if applicable.
+- Transformation rule, selected from a safe, validated set of operations.
+- Padding/alignment rule where applicable.
+- Conditional inclusion.
+- Component order or priority.
+- Separator before/after the component.
+- Fallback behavior when optional.
+- Error behavior when required but missing.
+- Collision and duplicate-code validation.
+- Whether code changes affect only future items or require a controlled migration proposal for existing items.
+
+4. Item Description behavior
+- Include/exclude this dimension in the description.
+- Display source: code, name, display label, normalized value, mapped description or approved attribute.
+- Position/order.
+- Prefix/suffix text, if allowed.
+- Separator.
+- Formatting/capitalization/whitespace rule.
+- Optional/required behavior.
+- Conditional inclusion.
+- Fallback behavior.
+- Maximum output contribution/overall length behavior.
+- Duplicate or ambiguity warning, if relevant.
+
+5. Dependencies and conditions
+- Applicable categories.
+- Applicable subcategories/types/materials/forms/processes/colours.
+- Required or prohibited combinations.
+- Conditional visibility.
+- Conditional requirement.
+- Conditional code/description inclusion.
+- Rule priority and conflict policy.
+- Validation message and corrective guidance.
+
+6. Governance
+- Draft and active versions.
+- Created by / updated by / approved by.
+- Reason for change.
+- Created/updated/approved timestamps.
+- Effective date.
+- Change diff.
+- Impact assessment and number of affected existing items.
+- Audit trail.
+- Rollback eligibility.
+- Import/export and validation report.
+
+Do not delete a classification value referenced by items, historical requests, approved codes, SAP records or audit records. Retire/deactivate it and define whether it remains available for existing records. Prevent silent changes to the meaning of an existing classification code.
+
+C. REQUIRED ADMINISTRATION PAGES
+
+Create the following working pages, following the existing application's page-by-page review process:
+
+C.1 Classification Dimension Catalogue
+- Lists all available dimensions and associated master tables.
+- Shows field key, display name, data type, category applicability, status, and whether it contributes to code or description.
+- Allows authorized administrators to add a new configurable dimension when supported by the approved schema.
+- Defines whether the dimension is global, category-specific, hierarchical, code-bearing, description-bearing or validation-only.
+- Must distinguish a metadata-only field from a new physical database column. Do not create arbitrary columns without a schema migration and approval.
+
+C.2 Classification Value Management
+- Search, filter, create, edit draft, validate, approve, activate, deactivate, retire, import and export classification values.
+- Display duplicate checks and parent-child validation.
+- Show code/description effects and affected categories before activation.
+- Prevent unsafe hard deletion.
+- Provide bulk import preview, row-level errors and an import confirmation step.
+
+C.3 Category Configuration
+For each category, configure:
+- Category code/name/description and active status.
+- Applicable classification dimensions.
+- Visible, hidden, optional, required, read-only and system-generated fields.
+- Field order and grouping on the item creation page.
+- Conditional display and validation.
+- Default values, where approved.
+- Allowed classification values or value filters.
+- Item Code rule-set version.
+- Item Description rule-set version.
+- Required approval level and allowed user scopes.
+- SAP mapping/profile, only where verified.
+- Effective dates and change history.
+
+C.4 Item Code Rule Builder
+Provide a visual, ordered component builder. Each row represents a component and includes:
+- Component sequence/order.
+- Component name and unique key.
+- Source classification dimension/field.
+- Source selection: master code, approved alias, fixed literal, transformation output or sequence.
+- Applicable categories/conditions.
+- Required/optional behavior.
+- Conditional inclusion expression from a safe supported rule language.
+- Transformation and normalization.
+- Fixed width or minimum/maximum width.
+- Padding character and alignment.
+- Prefix/suffix.
+- Separator policy.
+- Fallback policy.
+- Sequence scope and format.
+- Output length impact.
+- Uniqueness behavior.
+- Error message if resolution fails.
+- Active state and rule version.
+
+Allow the administrator to reorder components through explicit controls or drag-and-drop if the UI supports it. Reordering must update a persisted rule version, not merely the client-side view.
+
+C.5 Item Description Rule Builder
+Provide a visual, ordered description builder with:
+- Component order.
+- Source field/dimension.
+- Display mode: value name, code, label, approved mapped text or formatted attribute.
+- Conditional inclusion.
+- Optional/required behavior.
+- Prefix/suffix.
+- Separator.
+- Whitespace/capitalization/normalization.
+- Numeric/unit formatting, where appropriate.
+- Fallback behavior.
+- Maximum description length and truncation policy.
+- Duplicate/ambiguity warning.
+- Category-specific rule association.
+- Rule version and approval status.
+
+Do not silently truncate important specifications. If output exceeds the target limit, show a validation error or use an explicitly approved truncation/shortening strategy. Preserve the complete structured attributes even if a display description has a shorter limit.
+
+C.6 Conditional Rule Configuration
+- Configure conditions such as “when Category = RM, Material and Material Form are required”.
+- Configure conditions such as “include Colour only when a colour-bearing material or item type is selected”.
+- Configure category-specific field visibility and requirements.
+- Configure allowed/blocked classification combinations.
+- Configure whether a selected value changes the available options for dependent dimensions.
+- Configure rule priority and conflict handling.
+- Provide a test/simulation interface with sample selections.
+- Use a constrained, validated expression/rule engine. Do not execute arbitrary user-supplied Python, JavaScript, SQL or code.
+- Detect conflicting, unreachable, circular or ambiguous rules before activation.
+
+The examples above are illustrative only. Implement actual conditions from the approved Kosh classification requirements and current data, and allow authorized administrators to change them through the UI.
+
+C.7 Rule Test Bench / Preview
+- Let the administrator select a category and sample values for each applicable dimension.
+- Show each resolved Item Code component and the final preview.
+- Show each Item Description component and the final preview.
+- Show skipped optional components and why they were skipped.
+- Show required fields that are missing.
+- Show rule source, inherited defaults, overrides and active version.
+- Show validation errors and warnings.
+- Test uniqueness against persisted records without reserving a production code.
+- Clearly distinguish a simulation from permanent code allocation.
+- Provide test cases that can be saved with a rule version.
+
+C.8 Rule Approval and Version History
+- Draft → Validated → Submitted for Approval → Approved → Scheduled/Active → Retired.
+- Support rejection with reason and controlled resubmission.
+- Enforce separation of duties where required.
+- Show before/after differences, test results, impacted categories and item counts.
+- Never activate an unvalidated rule.
+- Do not silently change the code/description of already approved items.
+- Rule rollback must create an auditable new activation/version rather than deleting history.
+
+D. ITEM CODE GENERATION ENGINE — REQUIRED BEHAVIOR
+
+The Item Code engine must derive codes from active, approved, persisted rule configuration. Do not hardcode the format `FGPPIMBK0001` or any component order into frontend or backend source code. Treat that format only as an illustrative example unless the active configuration defines it.
+
+Support:
+- Category-specific code patterns.
+- Different patterns for FG, SF, RM, BO, PM, MA, CO, SV, SC, TR, CP, MO, HF and any other approved categories.
+- Optional components and conditional components.
+- Two-character codes where configured, while allowing per-dimension code lengths and future changes.
+- Aliases/mapped code fragments where the source classification code must differ from the code fragment used in the final Item Code.
+- Sequence components with configurable width, prefix, padding, reset scope and reset conditions.
+- Organization/category/subcategory/plant scope for sequences, only where approved.
+- Global uniqueness or other explicitly defined uniqueness scope.
+- SAP ItemCode maximum length and character restrictions based on verified SAP Business One metadata/version.
+- Validation against inactive/retired classification values.
+- Concurrency-safe permanent allocation.
+- Provisional preview without consuming a sequence unless the approved policy explicitly allocates at that point.
+- A clear distinction between preview, reserved, allocated and synchronized code states.
+- Idempotent submission/retry behavior.
+- Non-reuse of issued or externally published codes.
+- Code reservation expiry only if the approved numbering policy allows it; expiry must not recycle a permanently issued code.
+- Safe behavior if approval fails, a request is cancelled or SAP synchronization fails.
+
+Do not use `MAX(ItemCode)+1`, worksheet row numbers, timestamps, browser counters or an in-memory counter for production sequence allocation. Use database sequences or a transactionally locked allocation table with appropriate unique constraints. Verify uniqueness again at allocation/commit time.
+
+If a change to a classification value or rule would produce a different code for an existing item, do not silently rewrite the existing code. Generate an impact report and require an explicit migration/change request, approval and compatibility plan. Existing SAP ItemCodes must never be changed automatically unless the supported SAP process, business policy and explicit approval authorize it.
+
+E. ITEM DESCRIPTION GENERATION ENGINE — REQUIRED BEHAVIOR
+
+Generate Item Description from active, approved, persisted description rules and selected classification/attribute values. The administrator must be able to configure the composition per category and override individual fields/components where authorized.
+
+Support:
+- Category-specific descriptions.
+- Component order.
+- Display names versus codes.
+- Optional Grade, Revision, Tool ID and other optional extensions.
+- Manufacturer/Brand and model/part number when relevant.
+- Dimensions, rating, size, thickness, GSM, cavity, capacity, process, material form, colour and key specification as configured.
+- Locale-aware numeric/unit formatting where needed.
+- Normalization of whitespace and separators.
+- Exclusion of blank/null values without duplicate separators.
+- Controlled capitalization.
+- Maximum length based on verified destination-field limits.
+- Warning for descriptions that become ambiguous when a component is omitted.
+- Live preview while the user selects classification values.
+- Snapshot of the generated description and rule version at submission/approval.
+- Explicit policy for whether an editable manual description is allowed, and if so, who may edit it and how the override is audited.
+- Controlled recalculation when a draft changes.
+- No silent regeneration of an approved item's description after a rule update.
+
+Keep structured source attributes separate from the generated display description. A generated description is not a substitute for storing the actual material, grade, dimensions, rating or other attributes in their proper fields.
+
+F. PER-TABLE CONFIGURATION MATRIX
+
+Provide a central table showing every classification table/dimension and the rule settings that apply to it. The exact physical table names must be discovered from the actual schema; the labels below are logical dimensions and must not be treated as guaranteed database table names.
+
+For each dimension, expose these settings:
+- Dimension key and display label.
+- Physical source table/model or metadata reference.
+- Primary key and code/name columns, as verified.
+- Active status and scope.
+- Parent/dependency.
+- Categories in which it applies.
+- Required/optional/hidden/read-only behavior by category.
+- Allowed values and relationship filters.
+- Validation pattern, length and uniqueness scope.
+- Contribution to Item Code: yes/no/conditional.
+- Code fragment source and transformation.
+- Component position and separator.
+- Contribution to Item Description: yes/no/conditional.
+- Description display source and component position.
+- Conditional rule association.
+- Default/fallback behavior.
+- SAP mapping/target field, only if verified.
+- Effective rule version and override source.
+- Impact count and change history.
+
+The table must allow an administrator to open a dimension and configure its rules without editing source code. Provide both:
+1. A dimension-level default configuration.
+2. A category + dimension override configuration.
+
+Recommended initial matrix, subject to the actual approved classification schema:
+
+1. Category
+- Usually required for item creation.
+- Defines the category-specific form, validation profile, Item Code pattern and Item Description pattern.
+- Must be selected before category-dependent fields/rules are resolved.
+- Category code/name can contribute to Item Code/Description only when the active rule specifies it.
+- Category changes after code allocation must trigger impact validation.
+
+2. Subcategory
+- Enable only if present in the approved classification model.
+- Parent Category relationship must be validated.
+- Can filter available types, materials or other dimensions.
+- Configure whether its code/name contributes to Item Code and/or Description.
+
+3. Type
+- Define category applicability and permitted values.
+- Support dependent filtering by Category/Subcategory.
+- Configure code fragment, description text, conditional requirement and output position.
+
+4. Material
+- Maintain approved material values and their codes/names.
+- Configure applicability by category/type.
+- Support code/name/mapped alias contribution.
+- Validate whether material is required for the selected category.
+
+5. Material Form
+- Configure applicable categories/materials and allowed combinations.
+- Configure form code and description label independently.
+- Allow the field to be optional or required by category/material rule.
+
+6. Process
+- Configure allowed process values by category/material/type as required by the actual business taxonomy.
+- Support process code mapping, description inclusion and dependency validation.
+
+7. Colour
+- Configure applicable categories/materials/types.
+- Permit “not applicable” only as an explicit configured state, not as an accidental blank.
+- Configure whether colour contributes to Item Code and/or Description.
+- Avoid allocating duplicate code fragments to different active colours within the same relevant scope.
+
+8. Grade
+- Optional unless a category-specific rule requires it.
+- Configure allowed grades by material/category.
+- Distinguish actual grade data from a short code fragment used in Item Code.
+- Include grade in descriptions only according to the category's active rule.
+
+9. Manufacturer / Brand
+- Use the approved centrally maintained master.
+- Configure whether manufacturer/brand affects Item Code, Description, duplicate checks or SAP mapping.
+- Do not assume it must be embedded in every Item Code.
+
+10. Dimensions and numeric attributes
+- Configure data type, unit, precision, minimum/maximum and category applicability.
+- Normalize units according to approved rules.
+- Include only the configured formatted representation in the generated code/description.
+- Preserve original structured measurements and units.
+
+11. Part / Model Number
+- Validate according to the category's rules.
+- Define whether it is a user-entered field or selected from an approved master.
+- Configure uniqueness and whether it appears in code/description.
+- Do not transform away meaningful characters without an explicit approved rule.
+
+12. Rating / Size / Thickness / GSM / Cavity / Capacity / Specification
+- Treat each as a distinct typed field or approved structured attribute where practical.
+- Configure visibility, requirement, unit, precision, validation and category applicability.
+- Define exact display format and inclusion conditions.
+- Do not concatenate unrelated values into a single field in the database merely to make description generation easier.
+
+13. Revision / Tool ID / other optional extensions
+- Do not require them for every category.
+- Configure category applicability, permission, validation, code/description contribution and lifecycle behavior.
+- If a field is not enabled for a category, do not show it in the creation form or require it in validation.
+
+14. Future administrator-defined dimensions
+- Add only through the approved metadata/schema extension mechanism.
+- Define data type, validation, category applicability, value source, access policy and code/description behavior.
+- If a physical database migration is necessary, generate and review a migration; do not create arbitrary runtime SQL columns.
+
+G. ITEM CREATION FORM MUST BE DRIVEN BY CONFIGURATION
+
+When a user selects a Category:
+1. Load the active approved category configuration.
+2. Display only the dimensions and fields enabled for that category.
+3. Apply the configured field order and grouping.
+4. Load only valid values for dependent dimensions.
+5. Apply required/optional/hidden/read-only rules.
+6. Validate incompatible combinations as the user makes selections.
+7. Recalculate the Item Code preview using the active Item Code rule version.
+8. Recalculate the Item Description preview using the active Item Description rule version.
+9. Explain missing required inputs and the rule that requires them.
+10. Show a preview of code components and description components if the user has permission.
+11. On server-side validation/submission, resolve the same approved rule version and validate again.
+12. Persist the selected classification IDs/keys and relevant rule-version snapshots.
+13. If a rule changes while the form is open, detect the version change and ask the user to refresh/revalidate; never silently submit using an unknown mixture of old and new rules.
+
+Do not rely on frontend validation alone. The backend is authoritative for rule resolution, uniqueness, permanent sequence allocation, authorization and approval eligibility.
+
+H. SAFE RULE LANGUAGE AND CONFLICT DETECTION
+
+Do not execute arbitrary SQL, Python, JavaScript or shell commands supplied through the configuration UI. Use a constrained rule schema or approved expression language supporting only defined operators, comparisons, boolean combinations, membership tests, null checks, string/number formatting and controlled references to approved fields.
+
+Before activation, validate:
+- Missing or invalid source dimensions.
+- Invalid classification codes.
+- Duplicate active code fragments where uniqueness is required.
+- Cyclic dependencies.
+- Conflicting required/hidden/read-only rules.
+- Unreachable conditions.
+- Ambiguous rule priorities.
+- Unknown field references.
+- Output-length violations.
+- Incompatible SAP destination constraints.
+- Sequence-scope collisions.
+- Rules that could produce an empty Item Code or invalid Item Description.
+- Rules that change an existing code unexpectedly.
+
+Show actionable errors and warnings. A failed validation must prevent activation. Warnings must be categorized and either resolved or explicitly acknowledged by an authorized user under policy.
+
+I. RULE VERSIONING, APPROVAL AND CHANGE IMPACT
+
+Every active rule set must have an immutable version identifier. Capture the rule versions used for:
+- Preview (where useful for diagnostics).
+- Code reservation/allocation.
+- Item submission.
+- Approval.
+- SAP synchronization.
+
+The exact snapshot policy must be explicit. At minimum, permanently allocated codes and approved descriptions must remain traceable to the rule version and classification values used at allocation/approval time.
+
+When a rule or classification value changes:
+- Show before/after configuration.
+- Show categories and fields affected.
+- Estimate the number of drafts, pending approvals, approved items and SAP-synchronized items potentially affected.
+- Identify whether future creations only are affected or existing records would need migration.
+- Require reason and appropriate approval.
+- Do not rewrite approved records or SAP data automatically.
+- Create a new rule version; preserve prior versions and audit history.
+- Support rollback through a new controlled version/activation.
+- Record activation time and activating actor.
+
+J. DATA MODEL AND API REQUIREMENTS
+
+Inspect the actual project schema before implementing. Reuse existing models and do not create duplicate configuration entities if equivalent entities already exist.
+
+The implementation will likely need logical entities for:
+- Classification dimension metadata.
+- Classification values and relationships.
+- Category-to-dimension configuration.
+- Dimension-level rule configuration.
+- Category + dimension override.
+- Item Code rule set and ordered components.
+- Item Description rule set and ordered components.
+- Conditional rules and rule dependencies.
+- Rule version, approval and activation history.
+- Sequence allocation/counters, scoped and concurrency-safe.
+- Rule test cases and validation results.
+- Code allocation record / idempotency record.
+- Rule impact assessment.
+- Audit events.
+
+Potential API capabilities, adapted to existing naming conventions:
+- List/get classification dimensions.
+- Create/update/retire classification values.
+- Configure category field applicability and validation.
+- Configure dimension-level defaults.
+- Configure category + dimension overrides.
+- Create/edit/clone Item Code rule sets.
+- Create/edit/clone Item Description rule sets.
+- Validate/simulate rules.
+- Preview generated code and description without allocating a permanent code.
+- Submit/approve/reject/activate rule versions.
+- View version history and impact analysis.
+- Allocate/reserve a permanent code through an authorized, idempotent server operation.
+- View code-allocation history.
+- Import/export classification values and rule configuration with validation.
+
+All APIs must enforce RBAC, scope checks, optimistic concurrency or equivalent conflict detection, audit logging and server-side validation. Never expose a secret or permit an unauthorized user to activate rules.
+
+K. ACCEPTANCE TESTS — REQUIRED BEFORE CLAIMING COMPLETION
+
+1. An administrator can configure a separate Item Code and Item Description rule for each enabled category.
+2. An administrator can configure each classification dimension/table and set its contribution to code and description independently.
+3. An administrator can configure a category-specific override for a field/dimension without changing the reusable global default.
+4. The configuration UI clearly shows inherited defaults, overrides, effective settings and rule version.
+5. Adding an approved new classification value requires no frontend source-code change.
+6. Adding a supported metadata-defined dimension does not require a frontend hardcoded dropdown change.
+7. If a new physical database field is required, it goes through a reviewed migration rather than arbitrary runtime schema alteration.
+8. Category selection dynamically changes visible fields, required fields, dependent options, Item Code preview and Item Description preview.
+9. Item Code components can be reordered and transformed according to safe rules.
+10. Item Description components can be reordered, conditionally included and formatted according to safe rules.
+11. Empty optional components do not leave doubled separators or malformed output.
+12. Required missing fields prevent validation/submission.
+13. Duplicate codes are prevented under concurrent users and multiple application workers.
+14. A preview does not consume a permanent sequence unless the approved policy explicitly says so.
+15. The same idempotent allocation request cannot allocate multiple different permanent codes.
+16. Rule validation detects invalid references, conflicts, cycles and length/uniqueness issues.
+17. An unapproved or invalid rule cannot be activated.
+18. Rule changes do not silently alter approved item codes/descriptions or existing SAP ItemCodes.
+19. Audit/version history identifies who changed, approved and activated each rule and when.
+20. Item code and description rule versions are traceable from the item record and SAP synchronization record.
+21. SAP field limits and mappings are based on verified metadata/API contract, not assumptions.
+22. Existing portal, approval, RBAC, audit and SAP integration functionality continues to work.
+23. Tests are run in the actual environment and exact results are reported. Do not claim tests passed if they were not run.
+
+L. PAGE-BY-PAGE IMPLEMENTATION WORKFLOW
+
+Follow the existing page-by-page review and explicit acceptance process:
+1. Inspect existing frontend, backend, database models, migrations, classification masters, code/description logic and current spreadsheets/configuration.
+2. Produce a gap analysis showing existing functionality versus this requirement.
+3. Propose the data model, configuration precedence, safe rule language, APIs, permissions and migration plan.
+4. Present the first page's design and implementation scope.
+5. Implement only the approved page and its necessary backend/schema/tests.
+6. Run actual checks and report their exact results.
+7. Show a real rendered preview if the environment supports it; never fabricate screenshots or claim an unrun test.
+8. Ask for explicit accept/reject/revise before proceeding, unless the user expressly authorizes implementation in batches.
+9. Preserve all previous requirements and all approved functionality.
+
+Recommended page sequence:
+- Page 1: Classification Dimension Catalogue.
+- Page 2: Classification Value Management.
+- Page 3: Category Configuration.
+- Page 4: Item Code Rule Builder.
+- Page 5: Item Description Rule Builder.
+- Page 6: Conditional Rule Configuration.
+- Page 7: Rule Test Bench / Preview.
+- Page 8: Rule Approval and Version History.
+- Page 9: Integration with Item Creation Form.
+- Page 10: Impact Analysis, Audit and Operational Reporting.
+
+FINAL INSTRUCTION
+
+Item Code and Item Description must be driven entirely by active, approved, persisted configuration, not hardcoded source-code conditions. Every classification table/dimension must have an understandable rule-configuration experience, including how that dimension is validated, made available by category, and included or excluded from Item Code and Item Description. Support dimension-level defaults and category + dimension overrides. Preserve all existing master-prompt requirements and implement changes through reviewed, versioned, auditable configuration. Start by inspecting the existing implementation and reporting the gap analysis; do not claim the feature is implemented until the code, persistence, UI, APIs and tests have actually been completed and verified.

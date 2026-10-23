@@ -1,0 +1,1360 @@
+===============================================================================
+NEW ADDENDUM: GLOBAL MODULE ENABLE / DISABLE MANAGEMENT
+ITEM MASTER AND BUSINESS PARTNER MASTER
+===============================================================================
+
+PURPOSE
+-------
+Implement a centrally managed, administrator-controlled Enable/Disable option
+for each primary business module in the Kosh Innovations Global IT System.
+
+Initial primary modules:
+1. Item Master
+2. Business Partner Master (BP Master)
+
+The module control is a functional feature flag and access-control gate. It must
+not be implemented as visual menu hiding alone. Module state must consistently
+control navigation, page access, actions, APIs, background jobs, scheduled
+processing, imports/exports, approvals, and integrations.
+
+IMPORTANT PROJECT PRESERVATION RULE
+-----------------------------------
+Preserve all existing application features, pages, field definitions, business
+rules, data, SAP mappings, integrations, workflows, layouts, and prior
+requirements. Add this capability to the existing application. Do not rebuild
+the app from scratch, remove existing functionality, or replace previous
+requirements with a shortened implementation.
+
+A. CENTRAL MODULE MANAGEMENT PAGE
+--------------------------------
+Create an administrator-only page named "Module Management" or
+"Module Enable / Disable" under the existing Settings / General Settings area.
+Use the current portal visual style and navigation structure.
+
+Show one card or row for each primary module:
+- Item Master
+- Business Partner Master
+
+Each module row/card must display:
+- Module name and description
+- Enabled / Disabled state
+- Toggle or explicit Enable and Disable actions
+- Last changed timestamp
+- Changed by user
+- Optional reason/comment for the change
+- Dependency/shared-feature warning where relevant
+- A clear indication of whether the module is currently available
+- A confirmation step before disabling a module
+
+Only users with a specifically authorized permission such as
+MODULE_CONFIGURATION_MANAGE may change module states. A general administrator
+label in the UI is not sufficient authorization by itself; enforce the
+permission on the server.
+
+Default state for this initial rollout:
+- Item Master: ENABLED
+- Business Partner Master: ENABLED
+
+If existing deployments already have established module states, migrate them
+safely and preserve those states rather than blindly resetting them. If there
+is no prior configuration, initialize both modules as enabled so that existing
+functionality is not unexpectedly hidden.
+
+B. ITEM MASTER MODULE DEPENDENCY MAP
+------------------------------------
+When Item Master is ENABLED, show and allow access to all existing Item Master
+features that the current user is otherwise authorized to use.
+
+The Item Master module includes, at minimum, the following existing
+Item Master-specific navigation entries and features. Inspect the actual
+current project and include every related entry, including any additional
+entries discovered in the codebase:
+
+- Item
+- Create Item / Item Creation Form
+- Global Item Master
+- Global Item Master search, sort, filter, pagination and list actions
+- Item Master import, bulk import, export and templates
+- My Requests when the request is an Item Master request
+- Item Master approval queues and approval actions
+- Item Master-specific Custom Specifications, including the
+  Customer / Manufacturer / Brand (Master) and
+  Customer / Part / Model Number specifications if they are currently
+  implemented as Item Master configuration
+- Item Code & Description
+- Item Code & Description rule configuration
+- Classification Masters used by Item Master
+- Branch Item Availability
+- Item Master-specific validation, duplicate detection and code allocation
+- Item Master-specific governance, audit views and rule-version history
+- Item Master SAP creation/synchronization, scheduling, safe testing,
+  activation, monitor/recovery and retry functions where those functions
+  process Item Master records
+- Item Master-specific notifications, imports, exports, APIs and background
+  jobs
+- Dashboard cards, widgets, quick actions and counts that are exclusively
+  based on Item Master
+- Any other route, tab, dialog, action or setting whose function is specific
+  to Item Master
+
+When Item Master is DISABLED:
+- Hide or disable the top-level Item navigation entry.
+- Hide or disable all Item Master-specific submenus listed above.
+- Disable Item Master-specific configuration sections, including Item Code &
+  Description and Classification Masters used only by Item Master.
+- Disable Item Master-specific Custom Specifications where they are part of
+  Item Master configuration.
+- Disable Item Master creation, editing, submission, approval, bulk import,
+  export, and SAP synchronization actions.
+- Prevent direct navigation to Item Master routes, even if a user pastes a URL.
+- Reject Item Master-specific API requests on the server.
+- Prevent Item Master-specific scheduled jobs and workers from starting new
+  processing while the module is disabled.
+- Prevent queued Item Master jobs from being picked up for new processing.
+- Do not delete, archive, clear, or rewrite existing Item Master data.
+- Do not silently alter already issued Item Codes, approved records, rules,
+  audit entries, or SAP-created records.
+- Keep shared infrastructure and shared menus enabled if another active module
+  needs them.
+- Do not disable BP Master merely because Item Master is disabled.
+
+If a user tries to open an Item Master route directly while the module is
+disabled, show a clear "Item Master is currently disabled" page or message,
+with no data or mutation actions exposed. Do not render the disabled page
+behind a transparent overlay as a substitute for access enforcement.
+
+C. BUSINESS PARTNER MASTER DEPENDENCY MAP
+-----------------------------------------
+When Business Partner Master is ENABLED, show and allow access to all existing
+BP Master features that the current user is otherwise authorized to use.
+
+The BP Master module includes, at minimum, the following features. Inspect the
+actual current project and include all related entries found in the codebase:
+
+- Business Partner Master navigation entry
+- Business Partner creation and editing forms
+- Business Partner list, search, sort, filter and pagination
+- Customer, Supplier/Vendor, Lead and other supported BP types
+- General data, contacts, addresses, payment/accounting fields and supported
+  properties
+- BP Master-specific Custom Specifications and field configuration
+- BP Master import, bulk import, export and templates
+- BP Master validation, duplicate detection and approval workflows
+- GSTIN/PAN validation and GST verification workflow
+- BP Master audit history and governance
+- BP Master SAP Business One HANA creation, update, synchronization, scheduling,
+  monitoring, recovery and retry functions
+- BP Master-specific notifications, APIs, queues and background jobs
+- BP Master-specific dashboard cards, widgets and quick actions
+- Any additional BP-specific route, tab, dialog, action or configuration page
+
+When Business Partner Master is DISABLED:
+- Hide or disable the BP Master top-level navigation entry and its submenus.
+- Disable BP creation, editing, submission, approval, import, export and
+  SAP synchronization actions.
+- Disable BP-specific Custom Specifications and field configuration.
+- Disable BP-specific GST verification initiation and processing. Existing
+  verification history must remain available only to authorized audit or
+  compliance users if governance policy permits read-only access.
+- Prevent direct route access and reject BP-specific API requests server-side.
+- Prevent new BP-specific background jobs from starting while disabled.
+- Preserve all existing BP records, SAP identifiers, verification history,
+  approvals and audit records.
+- Do not disable Item Master or shared features still required by Item Master.
+
+D. SHARED MENUS AND SHARED SERVICES
+-----------------------------------
+Do not assume every menu belongs exclusively to one module. Inspect the current
+navigation and route tree and assign each menu item an explicit module
+dependency.
+
+Use one of these classifications for every navigation item, route, API and job:
+1. ITEM_MASTER_ONLY
+2. BUSINESS_PARTNER_MASTER_ONLY
+3. SHARED
+4. PLATFORM_ADMIN_ONLY
+5. OTHER_MODULE_ONLY, if additional modules exist
+
+Shared examples may include:
+- Login, session management and security
+- User and role administration
+- Organization and branch management
+- Global dashboard shell and layout
+- Audit infrastructure
+- Communication and notification infrastructure
+- SAP connection profiles and credential vault references
+- Shared monitoring and health checks
+- Shared classification services, if genuinely used by both modules
+
+The actual dependency must be determined from the existing implementation.
+Do not classify a shared feature as exclusive without inspecting its consumers.
+
+If both Item Master and BP Master use a shared configuration or SAP connection:
+- Keep the shared page accessible to authorized administrators while at least
+  one dependent module is enabled, unless the page is explicitly platform-wide.
+- Keep independent connection health monitoring available to platform
+  administrators even if a business module is disabled.
+- Disable only the operations associated with the disabled module.
+- Where a shared screen has separate Item and BP sections, disable only the
+  section for the disabled module.
+- Where a shared action cannot safely be separated, explain the dependency
+  and require a deliberate administrator confirmation instead of silently
+  breaking the active module.
+
+Examples:
+- Disabling Item Master must not disable BP Master GST verification if BP Master
+  remains enabled.
+- Disabling BP Master must not disable Item Code generation if Item Master
+  remains enabled.
+- Disabling either module must not disable login, role management, platform
+  audit, or general SAP connection health checks.
+- If SAP Integration Management contains both Item and BP jobs, keep the page
+  visible to authorized administrators and independently disable only the job
+  groups belonging to the disabled module.
+
+E. MENU AND ROUTE IMPLEMENTATION
+--------------------------------
+Implement a central module registry and a single effective-state service.
+Avoid scattered hardcoded booleans across unrelated components.
+
+Suggested conceptual registry:
+- module_key: ITEM_MASTER
+- module_key: BUSINESS_PARTNER_MASTER
+- display_name
+- description
+- is_enabled
+- changed_at
+- changed_by
+- change_reason
+- configuration_version
+
+Each navigation item and route must declare its required module or modules.
+A route with multiple dependencies is available only when its documented
+dependency rule is satisfied. Prefer explicit dependency metadata rather than
+matching route names or labels using fragile string comparisons.
+
+On the client:
+- Build navigation from the effective module state and the user's permissions.
+- Remove disabled module menus from normal navigation or render them disabled
+  with an explicit reason, according to the existing UI convention. The
+  default behavior should be to hide the disabled module's entire navigation
+  subtree, as requested.
+- Ensure collapsed and expanded sidebar states behave consistently.
+- Remove or disable related dashboard cards, quick links, tabs, buttons, and
+  contextual actions.
+- Do not leave blank menu groups, orphaned separators or dead links.
+- Refresh effective module state after an authorized state change.
+- Handle a stale browser tab gracefully if the module is disabled elsewhere.
+
+On the server:
+- Enforce module state on every protected API and mutation endpoint.
+- Do not trust a client-side hidden menu as an authorization mechanism.
+- Return a consistent structured error for a disabled module, such as HTTP 403
+  with a stable error code MODULE_DISABLED and the module key.
+- Do not leak protected record details in the error response.
+- Ensure direct URL navigation cannot bypass the module gate.
+- Ensure background workers and scheduled tasks use the same authoritative
+  module-state service.
+
+F. DISABLE CONFIRMATION AND OPERATIONAL SAFETY
+----------------------------------------------
+Before disabling a module, display a confirmation dialog that identifies:
+- The module being disabled
+- The menu and functions that will become unavailable
+- The impact on new creation, updates, approvals, imports/exports and SAP sync
+- The treatment of currently running jobs
+- Any pending queue items that will be paused
+- Shared pages that will remain available
+- A required confirmation action
+- An optional reason for the change
+
+The system must not delete or cancel queued records merely because a module is
+disabled.
+
+When disabling a module:
+1. Persist the new authoritative state transactionally.
+2. Make the module unavailable for new operations.
+3. Signal active workers to stop claiming new jobs for that module.
+4. Let in-flight operations finish only when safe and policy-approved, or stop
+   them at a safe checkpoint. Do not abruptly interrupt a transaction in a way
+   that risks partial SAP or database writes.
+5. Mark paused work with an explicit status such as PAUSED_MODULE_DISABLED.
+6. Preserve retry counts, idempotency keys, job payload references and audit
+   history.
+7. Show the administrator the number of running and pending jobs, where that
+   information is available.
+8. Record the module-state change in the audit log.
+
+When enabling a module:
+1. Verify the user has permission.
+2. Persist the enabled state.
+3. Refresh menu, route and API effective state.
+4. Allow eligible queued jobs to resume according to normal scheduling rules.
+5. Revalidate jobs before resuming them; do not replay already completed work.
+6. Do not automatically create or synchronize historical records unless an
+   explicitly configured recovery policy requests it.
+7. Audit the change and show the result.
+
+If the module-state service or database is unavailable, fail closed for new
+writes and integration actions for modules whose enabled state cannot be
+verified. Do not assume that a module is enabled because the client cannot
+load its configuration. Continue to provide a clear operational error and
+platform-admin recovery route.
+
+G. DATA MODEL AND CONFIGURATION STORAGE
+---------------------------------------
+Add an appropriate migration using the application's existing database and
+migration conventions. Do not create duplicate configuration tables if an
+equivalent reliable module-registry table already exists.
+
+Suggested table: system_module_registry
+
+Fields:
+- id (primary key)
+- module_key (unique, non-null)
+- display_name
+- description
+- is_enabled (non-null boolean)
+- configuration_version
+- changed_at (timestamp with timezone)
+- changed_by (user reference where supported)
+- change_reason (nullable)
+- created_at
+- updated_at
+
+Suggested module keys:
+- ITEM_MASTER
+- BUSINESS_PARTNER_MASTER
+
+Use a separate immutable audit/event table or the existing audit infrastructure
+to record:
+- Event ID
+- Module key
+- Previous state
+- New state
+- User identity
+- Timestamp
+- Reason/comment
+- Correlation/request ID
+- Result
+- Relevant job impact counts, if available
+
+Use the existing audit implementation where suitable rather than introducing a
+parallel audit system without justification.
+
+Protect against concurrent administrators changing the same module at the
+same time. Use transactions and optimistic concurrency/version checks or an
+equivalent safe mechanism.
+
+Do not allow ordinary module configuration to override security permissions,
+data-governance controls, credential protection, or platform-wide safety rules.
+
+H. ROLE-BASED AUTHORIZATION
+---------------------------
+Implement permissions such as:
+- MODULE_CONFIGURATION_VIEW
+- MODULE_CONFIGURATION_MANAGE
+- ITEM_MASTER_ACCESS
+- ITEM_MASTER_CREATE
+- ITEM_MASTER_UPDATE
+- ITEM_MASTER_APPROVE
+- ITEM_MASTER_IMPORT
+- ITEM_MASTER_EXPORT
+- BUSINESS_PARTNER_MASTER_ACCESS
+- BUSINESS_PARTNER_MASTER_CREATE
+- BUSINESS_PARTNER_MASTER_UPDATE
+- BUSINESS_PARTNER_MASTER_APPROVE
+- BUSINESS_PARTNER_MASTER_IMPORT
+- BUSINESS_PARTNER_MASTER_EXPORT
+- BUSINESS_PARTNER_GST_VERIFY
+
+Reuse equivalent existing permissions where present. Do not create duplicate
+permission models without first inspecting the existing role system.
+
+Effective access must require both:
+1. The relevant module is enabled.
+2. The current user has the required permission.
+
+Enabling a module does not grant access to every user. Disabling a module does
+not remove roles, permissions, user assignments or audit history.
+
+I. DASHBOARD AND REPORTING BEHAVIOR
+-----------------------------------
+- Hide Item Master-only cards, charts, counts, shortcuts and recent-record
+  sections when Item Master is disabled.
+- Hide BP Master-only cards, charts, counts, shortcuts and recent-record
+  sections when BP Master is disabled.
+- If the dashboard includes a shared SAP integration card, retain it when
+  needed by an enabled module or for platform-admin monitoring.
+- Do not display fabricated zero counts when a section is hidden or unavailable.
+- Label disabled, unavailable, paused and failed states accurately.
+- Keep unrelated module dashboards operational.
+- If both business modules are disabled, preserve the platform shell and
+  authorized administrative recovery features.
+
+J. ACCEPTANCE TESTS — REQUIRED
+------------------------------
+Implement and run tests; do not claim completion merely because the UI toggle
+is visible.
+
+Test 1 — Initial configuration:
+- If no prior registry exists, Item Master and BP Master are both enabled.
+- Existing menus and routes remain available to authorized users.
+
+Test 2 — Disable Item Master:
+- Item navigation disappears from the sidebar.
+- Create Item, Global Item Master, Item-specific Custom Specifications,
+  Item Code & Description, Classification Masters used only by Item Master,
+  Branch Item Availability and all other Item-only submenus disappear.
+- Direct Item Master URL access is blocked.
+- Item Master API reads/writes are rejected according to the policy.
+- Item Master creation, approval, imports, exports and SAP jobs cannot start.
+- Existing data and audit history are preserved.
+- BP Master, its forms, its GST verification and BP-specific SAP processing
+  remain available if BP Master is enabled.
+- Shared platform pages and services continue to work.
+
+Test 3 — Re-enable Item Master:
+- Item Master menus and authorized routes return.
+- Existing data and rules are intact.
+- No duplicate item records are created.
+- Paused eligible jobs resume only under safe retry and idempotency rules.
+
+Test 4 — Disable BP Master:
+- BP Master navigation and all BP-only submenus disappear.
+- Direct BP routes and BP APIs are blocked.
+- BP creation, approvals, imports/exports, GST verification initiation and
+  BP SAP jobs are disabled.
+- Item Master and its code generation remain operational if enabled.
+
+Test 5 — Re-enable BP Master:
+- BP menus and authorized routes return.
+- Existing BP records, GST verification history and SAP mappings remain intact.
+- Queued work resumes safely without duplicating records.
+
+Test 6 — Shared menus:
+- SAP Integration Management remains accessible to authorized platform
+  administrators.
+- Item and BP job groups can be controlled independently.
+- Disabling one module does not break shared services used by the other.
+
+Test 7 — Authorization:
+- A user without MODULE_CONFIGURATION_MANAGE cannot toggle module states,
+  even by calling the API directly.
+- A user without module-specific access cannot use the module merely because
+  it is enabled.
+
+Test 8 — Race conditions and stale sessions:
+- Simultaneous toggle requests are handled safely.
+- A browser tab with stale state cannot submit protected writes after disable.
+- Workers do not claim new jobs after the disabled state is effective.
+
+Test 9 — Failure and recovery:
+- Database or state-service errors do not silently default to enabled.
+- Failed disable/enable operations show an accurate result.
+- Audit entries are created only with the actual committed state transition.
+
+Test 10 — Regression:
+- Existing Item Master, BP Master, SAP HANA integration, GST verification,
+  import/export, governance, notifications and dashboard features still work
+  when their modules are enabled.
+- No prior requirements are removed or weakened.
+
+K. IMPLEMENTATION PROCESS
+-------------------------
+1. Inspect the current project files, route definitions, sidebar/navigation
+   components, page components, API routers, permission model, database models,
+   migrations, scheduler, background workers, SAP integration jobs, dashboard
+   widgets and tests.
+2. Produce a dependency inventory mapping every route, menu, API, action,
+   configuration section and background job to its module key.
+3. Identify genuinely shared pages and functions.
+4. Implement the database-backed module registry and safe migration.
+5. Implement server-side module gating and permission checks.
+6. Implement the Module Management page and confirmation workflow.
+7. Apply effective module state to sidebar navigation, routes, dashboards,
+   configuration pages, action buttons, imports/exports, approval queues,
+   schedulers and workers.
+8. Implement safe pause/resume handling for module-specific background work.
+9. Run migrations, lint/type checks, unit tests, integration tests and the
+   acceptance tests above using the actual available project environment.
+10. Inspect the rendered UI for both enabled and disabled states.
+11. Report files changed, migration details, routes/jobs gated, test commands,
+    test outcomes and any limitations. Do not claim a test passed unless it
+    was actually run successfully.
+
+Do not stop after implementing the visual toggle. The server-side enforcement,
+navigation dependencies, background-job behavior, persistence, audit logging
+and regression tests are all part of the requirement.
+
+FINAL ACCEPTANCE CRITERIA
+-------------------------
+An authorized administrator can independently enable or disable Item Master
+and BP Master from one central settings page. Each state persists across
+sessions and application restarts. Disabling a module disables its entire
+dependent feature set throughout the application while leaving the other
+enabled module and genuinely shared platform services functional. Enabling a
+module restores access without data loss, rule loss, permission escalation or
+duplicate processing. All state changes are auditable and enforced by the
+server, not merely by the client UI.
+
+===============================================================================
+NEW ADDENDUM: GLOBAL MODULE ENABLE / DISABLE MANAGEMENT
+ITEM MASTER AND BUSINESS PARTNER MASTER
+===============================================================================
+
+PURPOSE
+-------
+Implement a centrally managed, administrator-controlled Enable/Disable option
+for each primary business module in the Kosh Innovations Global IT System.
+
+Initial primary modules:
+1. Item Master
+2. Business Partner Master (BP Master)
+
+This is a functional module feature flag and access-control gate, not merely a
+visual menu-hiding feature. Module state must control navigation, routes, pages,
+actions, APIs, imports/exports, approvals, scheduled processing, background
+jobs, and integrations.
+
+PROJECT PRESERVATION
+--------------------
+Preserve all existing application features, pages, field definitions, business
+rules, data, SAP mappings, integrations, workflows, layouts and previous
+requirements. Append this capability; do not rebuild the application or remove
+existing functionality.
+
+A. CENTRAL MODULE MANAGEMENT PAGE
+--------------------------------
+Create an administrator-only page named "Module Management" or
+"Module Enable / Disable" under the existing Settings / General Settings area.
+Follow the current portal design.
+
+Show a row/card for each module:
+- Item Master
+- Business Partner Master
+
+Display module name, description, Enabled/Disabled state, toggle or Enable and
+Disable actions, last changed timestamp, changed-by user, optional reason,
+dependencies and current availability. Require confirmation before disabling.
+
+Only users with a dedicated permission such as MODULE_CONFIGURATION_MANAGE may
+change states. Enforce this permission on the server, not only in the UI.
+
+Default states for a new installation:
+- Item Master: ENABLED
+- Business Partner Master: ENABLED
+
+If a registry or established module state already exists, preserve it. Do not
+reset existing configuration during migration.
+
+B. ITEM MASTER DEPENDENCY MAP
+-----------------------------
+When Item Master is ENABLED, show and permit access to all existing Item Master
+features allowed by the user's role. Inspect the actual project and include all
+related navigation entries and features, including but not limited to:
+
+- Item navigation group
+- Create Item / Item Creation Form
+- Global Item Master
+- Global Item Master search, sort, filters, pagination and actions
+- Item Master import, bulk import, export and templates
+- Item Master requests and request details
+- Item Master approval queues and actions
+- Item Master-specific Custom Specifications, including Customer /
+  Manufacturer / Brand (Master) and Customer / Part / Model Number where these
+  are implemented as Item Master configuration
+- Item Code & Description and its rule configuration
+- Classification Masters used by Item Master
+- Branch Item Availability
+- Item-specific validation, duplicate checks and code allocation
+- Item-specific governance, audit and rule-version history
+- Item-specific SAP creation/synchronization, scheduling, safe testing,
+  activation, monitoring, recovery and retry functions
+- Item-specific notifications, APIs and background jobs
+- Item-only dashboard cards, widgets, counts and quick actions
+- Every additional Item-only route, tab, dialog, action and setting discovered
+  in the current codebase
+
+When Item Master is DISABLED:
+- Hide the top-level Item navigation group and all its submenus.
+- Disable Item-specific configuration pages, including Item Code & Description
+  and Classification Masters that are exclusively used by Item Master.
+- Disable Item-specific Custom Specifications where they belong to Item Master.
+- Disable item creation, editing, submission, approval, import, export and SAP
+  synchronization actions.
+- Block direct navigation to Item Master routes even when a URL is pasted.
+- Reject Item Master API requests server-side.
+- Prevent Item Master schedulers/workers from claiming new jobs.
+- Preserve existing records, issued codes, rules, approvals, audit history and
+  SAP-created records. Do not delete or rewrite data.
+- Do not disable BP Master or shared services still needed by BP Master.
+
+If a user opens an Item Master URL while the module is disabled, show a clear
+"Item Master is currently disabled" message and expose no mutation actions.
+
+C. BUSINESS PARTNER MASTER DEPENDENCY MAP
+-----------------------------------------
+When Business Partner Master is ENABLED, show and permit access to all existing
+BP Master features allowed by the user's role. Inspect the project and include:
+
+- Business Partner Master navigation and pages
+- BP create/edit forms and list/search/sort/filter/pagination
+- Supported Customer, Supplier/Vendor, Lead and other BP types
+- General data, contacts, addresses, payment/accounting fields and properties
+- BP-specific Custom Specifications and field configuration
+- BP import, bulk import, export and templates
+- BP validation, duplicate detection and approvals
+- GSTIN/PAN validation and GST verification
+- BP governance and audit history
+- BP SAP Business One HANA create/update/sync, scheduling, monitoring, recovery
+  and retry functions
+- BP notifications, APIs, queues, jobs, dashboard widgets and quick actions
+- Every additional BP-specific route, tab, dialog, action and configuration
+
+When Business Partner Master is DISABLED:
+- Hide its navigation entry and all BP-only submenus.
+- Disable BP creation, editing, submission, approval, import/export and SAP sync.
+- Disable BP-specific Custom Specifications and field configuration.
+- Disable initiation of BP GST verification. Existing verification history may
+  remain available read-only to authorized audit/compliance roles if policy
+  permits.
+- Block direct BP routes and reject BP APIs server-side.
+- Prevent new BP jobs from starting.
+- Preserve BP records, SAP identifiers, GST verification history, approvals and
+  audit records.
+- Do not disable Item Master or services it needs.
+
+D. SHARED MENUS AND SHARED SERVICES
+-----------------------------------
+Inspect the existing route/navigation tree and explicitly classify each menu,
+route, API and job as one of:
+1. ITEM_MASTER_ONLY
+2. BUSINESS_PARTNER_MASTER_ONLY
+3. SHARED
+4. PLATFORM_ADMIN_ONLY
+5. OTHER_MODULE_ONLY, if applicable
+
+Potential shared areas include login/security, user and role administration,
+organization/branch management, dashboard shell, audit infrastructure,
+communication/notification infrastructure, SAP connection profiles, credential
+vault references and shared monitoring. Determine actual dependencies from the
+code; do not assume all settings belong to one module.
+
+If a shared page has separate Item and BP sections, disable only the section
+belonging to the disabled module. If a shared SAP Integration Management page
+contains both Item and BP jobs, keep the page available to authorized
+administrators and independently gate each module's job group.
+
+Examples:
+- Disabling Item Master must not disable BP GST verification if BP Master is on.
+- Disabling BP Master must not disable Item Code generation if Item Master is on.
+- Do not disable login, role management, platform audit or general SAP
+  connection health checks because one business module is disabled.
+- Do not leave a shared action available if it can mutate data belonging to a
+  disabled module.
+
+E. CENTRAL REGISTRY AND CONSISTENT ENFORCEMENT
+----------------------------------------------
+Use a central module registry and authoritative effective-state service. Avoid
+scattered hardcoded booleans and fragile checks based on menu label strings.
+
+Suggested configuration fields:
+- module_key (unique)
+- display_name
+- description
+- is_enabled
+- configuration_version
+- changed_at
+- changed_by
+- change_reason
+- created_at / updated_at
+
+Suggested keys:
+- ITEM_MASTER
+- BUSINESS_PARTNER_MASTER
+
+Reuse an existing equivalent registry if present; do not create duplicate
+configuration infrastructure unnecessarily. Use the project's current database
+and migration conventions.
+
+Client-side behavior:
+- Build sidebar navigation from module state plus user permissions.
+- Hide the disabled module's full navigation subtree by default.
+- Remove blank menu groups, orphaned separators and dead links.
+- Apply state to dashboard widgets, tabs, contextual actions and buttons.
+- Refresh effective state after a toggle and handle stale browser tabs.
+
+Server-side behavior:
+- Enforce state on every protected API and mutation endpoint.
+- Never rely on hidden menus as security enforcement.
+- Block direct URL/API access when the module is disabled.
+- Return a consistent error, for example HTTP 403 with stable code
+  MODULE_DISABLED and the module key, without leaking protected record data.
+- Make schedulers and background workers use the same authoritative state.
+- If module state cannot be verified because the state service/database fails,
+  fail closed for new writes and integration actions; do not silently assume
+  enabled.
+
+F. SAFE DISABLE AND ENABLE BEHAVIOR
+-----------------------------------
+Before disabling, show a confirmation dialog explaining:
+- Which module will be disabled
+- Menus/functions that become unavailable
+- Impact on new records, edits, approvals, import/export and SAP synchronization
+- Number of running/pending jobs, where available
+- How in-flight and queued work will be handled
+- Shared pages that remain available
+- Optional reason/comment and explicit confirmation
+
+When disabling:
+1. Persist the state transactionally.
+2. Block new module operations immediately after the state becomes effective.
+3. Tell workers to stop claiming new jobs for the module.
+4. Let in-flight work finish only if safe and policy-approved, or pause it at a
+   safe checkpoint; avoid partial database/SAP transactions.
+5. Mark paused jobs clearly, for example PAUSED_MODULE_DISABLED.
+6. Preserve retry counters, idempotency keys, payload references and audit logs.
+7. Do not delete or cancel queued records just because the module is disabled.
+8. Record the committed state change in audit history.
+
+When enabling:
+1. Verify the actor's permission.
+2. Persist the enabled state.
+3. Refresh navigation, route and API state.
+4. Allow eligible queued work to resume according to normal scheduling rules.
+5. Revalidate queued work and do not replay completed jobs.
+6. Do not automatically create/sync historical records unless an explicitly
+   configured recovery policy calls for it.
+7. Audit the committed change and report the actual result.
+
+Use transactions and optimistic concurrency/version checks or equivalent
+protection against conflicting administrator changes.
+
+G. PERMISSIONS AND AUDIT
+------------------------
+Reuse the existing role model where equivalent permissions exist. Otherwise
+define permissions such as:
+- MODULE_CONFIGURATION_VIEW
+- MODULE_CONFIGURATION_MANAGE
+- ITEM_MASTER_ACCESS / CREATE / UPDATE / APPROVE / IMPORT / EXPORT
+- BUSINESS_PARTNER_MASTER_ACCESS / CREATE / UPDATE / APPROVE / IMPORT / EXPORT
+- BUSINESS_PARTNER_GST_VERIFY
+
+Effective access requires BOTH the module to be enabled AND the user to have
+the appropriate permission. Enabling a module must not grant access to every
+user. Disabling a module must not remove role assignments or permissions.
+
+Audit each state transition with event ID, module key, previous/new state,
+actor, timestamp, reason, correlation/request ID, outcome and available job
+impact counts. Reuse the existing audit infrastructure if suitable.
+
+H. DASHBOARD AND NAVIGATION
+---------------------------
+- Hide Item-only cards, charts, counts, recent-record sections and shortcuts
+  when Item Master is disabled.
+- Hide BP-only cards, charts, counts, recent-record sections and shortcuts when
+  BP Master is disabled.
+- Keep shared SAP health monitoring when needed by an enabled module or for
+  authorized platform administrators.
+- Do not display fabricated zero counts for hidden/unavailable modules.
+- Label disabled, unavailable, paused and failed states accurately.
+- If both business modules are disabled, keep the platform shell and authorized
+  administrative recovery features accessible.
+
+I. REQUIRED ACCEPTANCE TESTS
+----------------------------
+1. New installation: both modules default to ENABLED; authorized existing
+   functionality remains available.
+2. Disable Item Master: Item menu and every Item-only submenu disappear;
+   Item routes/APIs/actions/jobs are blocked; data and audit history remain;
+   BP Master and BP GST verification continue working if BP is enabled.
+3. Re-enable Item Master: its menus return; data/rules remain intact; eligible
+   queued jobs resume safely without duplicate records.
+4. Disable BP Master: BP menus/routes/APIs/actions/jobs and new GST verification
+   are disabled; Item Master and code generation continue working if enabled.
+5. Re-enable BP Master: BP features return; existing BP/GST/SAP data remains;
+   jobs resume without duplicate processing.
+6. Shared pages: SAP Integration Management and platform health checks remain
+   available to authorized administrators; Item and BP jobs are independently
+   gated.
+7. Authorization: users lacking MODULE_CONFIGURATION_MANAGE cannot toggle via
+   UI or direct API. Enabled modules remain subject to normal role permissions.
+8. Stale session/race: stale tabs cannot submit writes after disable; concurrent
+   toggles are handled safely; workers stop claiming new jobs.
+9. Failure handling: no silent default-to-enabled on state-service failure;
+   errors and audit reflect the actual committed state.
+10. Regression: Item Master, BP Master, SAP HANA integration, GST verification,
+    import/export, governance, notifications and dashboard continue working
+    when their modules are enabled.
+
+J. IMPLEMENTATION WORKFLOW
+--------------------------
+1. Inspect actual source files, navigation, routes, APIs, permissions, models,
+   migrations, schedulers, workers, SAP jobs, dashboards and tests.
+2. Produce a dependency inventory mapping every route/menu/API/action/config
+   section/background job to its module key.
+3. Identify genuinely shared components.
+4. Implement registry and safe migration.
+5. Implement server-side state gates and permission checks.
+6. Implement the Module Management page and confirmation workflow.
+7. Apply effective state to navigation, routes, dashboards, configuration,
+   actions, imports/exports, approvals, schedules and workers.
+8. Implement safe pause/resume behavior.
+9. Run migrations, lint/type checks, unit/integration tests and acceptance tests.
+10. Inspect rendered enabled/disabled states.
+11. Report actual files changed, migration details, gated routes/jobs, test
+    commands/results and limitations. Never claim tests passed unless run.
+
+Do not stop after creating the visual toggle. Persistence, server-side
+enforcement, shared dependency handling, background-job behavior, audit logging
+and regression tests are mandatory.
+
+FINAL ACCEPTANCE CRITERION
+--------------------------
+An authorized administrator can independently enable/disable Item Master and
+BP Master from one central settings page. State persists across sessions and
+restarts. Disabling a module disables its complete dependent feature set while
+leaving the other enabled module and genuinely shared platform services usable.
+Enabling restores access without data loss, rule loss, permission escalation
+or duplicate processing. Every change is auditable and enforced server-side.
+
+================================================================================
+NEW ADDENDUM: CONFIGURABLE MODULE REGISTRY AND ADMINISTRATIVE MODULE BUILDER
+================================================================================
+
+PURPOSE
+Extend the existing Kosh Innovations Global Item Creation Portal so authorized
+administrators can add new business modules and configure the relevant menus,
+pages, features, fields, workflows, permissions, integrations, reports, and
+settings from within the portal. This is an additional requirement. Preserve all
+previous requirements and existing module functionality. Do not replace or
+shorten the existing specification.
+
+CURRENT MODULES
+The current first-class business modules are:
+1. Item Master
+2. Business Partner Master (BP Master)
+
+Treat these as existing registered modules. Do not recreate them or break their
+current functionality while introducing the configurable module registry.
+Existing module identifiers, records, routes, permissions, settings, data, audit
+history, and integrations must be preserved.
+
+CORE REQUIREMENT: ADD NEW MODULE
+Create an administrator-only "Module Management" page, preferably under Settings
+or Platform Administration, with the ability to:
+- View all registered modules and their status.
+- Add a new module using a guided wizard.
+- Edit the configuration of a module where permitted.
+- Enable, disable, suspend, archive, and reactivate a module according to
+  controlled lifecycle rules.
+- Configure module name, unique machine identifier, description, icon,
+  navigation group, display order, owning team, module owner, status, version,
+  and dependencies.
+- Define the module's menu tree, pages, sub-pages, actions, features, field
+  configuration, workflows, approvals, notifications, reports, dashboards,
+  import/export options, API integrations, and module settings.
+- Preview the navigation and page layout before publishing a module.
+- Save a draft, validate configuration, publish, and roll back to a prior
+  published configuration version.
+- View module version history, who changed it, when, what changed, approval
+  status, and audit events.
+- Display clear dependency and impact warnings before enabling, disabling,
+  archiving, or changing a module.
+- Search, sort, and filter the module registry by module name, identifier,
+  status, owner, version, and last-updated date.
+- Support multiple pages and server-side pagination for a large module registry.
+
+Do not imply that adding a module through metadata alone automatically creates
+arbitrary production business logic. The system must distinguish between:
+(A) configurable modules assembled from approved reusable platform components,
+and
+(B) modules that require new custom backend logic, database migrations, external
+    integrations, or specialist development.
+For case (B), generate a clear implementation checklist and mark unavailable
+capabilities as "Not implemented" until actual code, migrations, security checks,
+and tests have been completed.
+
+MODULE CREATION WIZARD
+Provide a multi-step wizard with save-and-resume capability:
+
+Step 1 — Module identity
+- Display name
+- Unique stable module key/slug
+- Description and business purpose
+- Icon
+- Navigation group and menu order
+- Owning department/team and module owner
+- Module category/type
+- Version and lifecycle status
+- Optional tags
+
+Step 2 — Dependencies and scope
+- List dependencies on existing modules and shared platform services.
+- Select required and optional dependencies.
+- Detect circular dependencies.
+- Validate whether dependent modules are enabled and available.
+- Identify shared resources such as classification masters, global search,
+  notification services, approval engine, audit service, and SAP integration.
+- Show a dependency graph and a readable impact summary.
+- Prevent publication if required dependencies are unresolved.
+- Do not silently enable another module as a side effect of enabling this one.
+
+Step 3 — Navigation menu and page tree
+Allow the administrator to create and arrange:
+- Top-level menu entries
+- Nested menus and sub-menus
+- Pages and sub-pages
+- Page labels, icons, order, grouping, route keys, and descriptions
+- Visibility rules based on module status and permissions
+- Breadcrumb labels and navigation behavior
+- Page-level feature/action entries
+- Optional badge counts, subject to authorized data access
+- Menu preview using the actual portal navigation style
+
+Validate unique route keys, valid parent references, no circular menu hierarchy,
+no orphan pages, and no duplicate/conflicting navigation identifiers.
+Do not permit arbitrary unsafe JavaScript, HTML, SQL, or executable code in
+configuration fields.
+
+Step 4 — Page and feature builder
+For each page, allow administrators to choose approved reusable page templates
+and components, where available, such as:
+- List/search page
+- Record detail page
+- Create/edit form
+- Approval inbox
+- Workflow queue
+- Dashboard/KPI page
+- Configuration/settings page
+- Import wizard
+- Export center
+- Reports page
+- Integration configuration page
+- Monitoring and recovery queue
+- Audit history page
+- Document/attachment page
+- Help/instructions page
+
+For each page configure:
+- Page name, route key, description, icon, order, and parent menu
+- Layout/template
+- Search fields, filters, sorting, and pagination
+- Table columns and display formats
+- Form sections and fields
+- Required/optional field rules and validation messages
+- Actions such as Create, View, Edit, Submit, Approve, Reject, Cancel,
+  Reprocess, Import, Export, Activate, and Deactivate
+- Row-level and bulk actions
+- Empty, loading, validation-error, permission-denied, and system-error states
+- Responsive behavior and accessibility
+- Feature flags and page availability
+- Required permissions and audit events
+
+Only show actions that the signed-in user is authorized to execute. A hidden
+button is not a security control; the backend must enforce authorization.
+
+Step 5 — Field and data model configuration
+Allow approved configuration of:
+- Field label, stable field key, type, description, and display order
+- Text, long text, integer, decimal, currency, date, date-time, Boolean,
+  single-select, multi-select, reference/lookup, and attachment field types
+- Required, optional, read-only, hidden, and conditionally visible states
+- Length, numeric range, format, allowed values, and validation rules
+- Default values only where safe and explicitly configured
+- Lookup source and reference integrity
+- Searchable, filterable, sortable, and exportable properties
+- Field-level permissions and sensitive-data classification
+- Help text, localization label, and error messages
+- Conditional field behavior based on supported declarative rules
+- Change history and configuration version
+
+Do not allow a UI configuration to silently change an existing production
+database column or destructive schema. Distinguish metadata-backed custom fields
+from fields requiring a database migration. Schema changes must be reviewed,
+versioned, backed up where appropriate, migrated using controlled migrations,
+and tested before production activation. Never allow arbitrary table or column
+access from user-provided configuration.
+
+Step 6 — Workflow and governance configuration
+Where supported by existing reusable platform services, configure:
+- Draft, submitted, under review, approved, rejected, cancelled, and completed
+  states as applicable to the module's business process
+- Workflow steps and authorized roles
+- Maker-checker separation
+- Required approvals and approval thresholds
+- Rejection reason and resubmission behavior
+- Notifications and escalation rules
+- SLA targets and overdue indicators
+- Duplicate checks and validation gates
+- Audit events and retention classifications
+- Exception handling, retry policy, and recovery queue behavior
+
+Workflows must be explicit, versioned, testable, and validated against the
+available workflow engine. Do not present an unimplemented workflow as active.
+
+Step 7 — Roles and permissions
+Configure module-level, page-level, action-level, and field-level permissions
+using the existing RBAC model. Include:
+- View module
+- View page
+- Search/list records
+- Create
+- Edit
+- Submit
+- Approve/reject
+- Delete/cancel, only if business rules permit
+- Import/export
+- Configure module
+- Manage permissions
+- Activate/deactivate
+- View audit logs
+- Administer integrations
+
+Apply least privilege and deny by default. Only designated platform
+administrators may register, publish, or change modules. Module owners may
+manage permitted module settings but must not grant themselves higher privileges.
+Permission changes must be audited. Enforce access on the server/API as well as
+in the user interface.
+
+Step 8 — Integrations and services
+Allow selection and configuration of approved integration types, such as:
+- SAP Business One HANA through the authorized Service Layer or another
+  approved supported interface
+- Internal REST APIs
+- Email/notification services
+- Official WhatsApp Business Platform or an approved provider
+- File import/export
+- Approved identity, storage, and reporting services
+
+Integration configuration must use protected credential references and a
+secrets vault or equivalent secure server-side secret store. Never store API
+keys, passwords, session cookies, or SAP credentials as plain-text module
+metadata. Do not permit browser-side secrets. Show integration readiness,
+configuration validation, connection-test results, and health status without
+exposing credentials.
+
+A configured integration must not be described as connected or operational
+unless a real server-side test has succeeded. For SAP, do not write directly to
+SAP database tables; use the supported integration interface.
+
+Step 9 — Preview, validation, and publication
+Before publishing, run a validation checklist covering:
+- Unique module key and route names
+- Valid menu/page hierarchy
+- Required dependencies
+- Component/template compatibility
+- Permissions and authorization policy
+- Field definitions and supported data types
+- Workflow completeness
+- Integration configuration and secret references
+- Accessibility and responsive layout
+- Navigation and broken-link checks
+- Migration requirements and schema safety
+- Audit coverage
+- Security and input validation
+- Automated test coverage and acceptance criteria
+
+Show findings by severity: blocking error, warning, or informational message.
+Do not publish when blocking errors exist. Allow saving as draft when the
+configuration is incomplete. Provide a preview mode that does not execute
+production writes, send real messages, or create SAP records.
+
+Step 10 — Approval and activation
+Support a controlled lifecycle:
+Draft -> Validation -> Pending Approval (when required) -> Published/Disabled
+-> Enabled, with explicit transitions and audit history.
+
+Require approval by a separate authorized approver for production publication
+when maker-checker governance is enabled. The module must not become enabled
+merely because its configuration was saved. Make activation a separate,
+explicit action with a confirmation showing impact, dependencies, permissions,
+and any required migrations or integration changes.
+
+MODULE ENABLE/DISABLE BEHAVIOR
+Use a consistent module registry as the source of truth for module status.
+When a module is disabled:
+- Hide or disable its top-level navigation entry and every child menu/page/action.
+- Deny direct navigation to its protected pages.
+- Reject backend/API operations for that module unless a specifically approved
+  administrative recovery operation is allowed.
+- Stop or pause new module-specific background jobs and scheduled processing.
+- Handle already-running jobs safely; do not abruptly corrupt a transaction.
+- Prevent new imports, exports, approvals, submissions, and outbound integration
+  operations for the disabled module.
+- Preserve all records, configuration, approvals, logs, audit history, and
+  existing identifiers.
+- Show an informative "Module is disabled" message to authorized administrators.
+- Do not delete data or uninstall the module.
+- Allow authorized administrators to re-enable it after dependency and health
+  checks.
+
+Disabling Item Master must disable its Item Master menus and its related Item
+Configuration menus and pages. Disabling BP Master must disable its BP menus,
+BP-specific settings, GST verification, BP approval workflows, and BP-specific
+SAP synchronization jobs. Shared platform settings must not be disabled unless
+they are exclusively owned by the disabled module.
+
+MODULE REGISTRY DATA MODEL
+Design a versioned, auditable registry using controlled migrations. At minimum,
+model the following logical entities, adapting naming to existing conventions:
+
+1. ModuleRegistry
+- id
+- module_key (unique, stable)
+- display_name
+- description
+- module_type
+- icon_key
+- navigation_group
+- display_order
+- owner_team
+- owner_user_id
+- lifecycle_status
+- enabled
+- current_published_version
+- configuration_version
+- created_by / created_at
+- updated_by / updated_at
+- published_by / published_at
+- disabled_by / disabled_at
+- optional archived_at
+
+2. ModuleDependency
+- id
+- module_id
+- dependency_module_id or service_key
+- dependency_type (required/optional)
+- minimum_compatible_version where relevant
+- created_at / updated_at
+
+3. ModulePage
+- id
+- module_id
+- stable_page_key
+- display_name
+- description
+- route_key
+- parent_page_id or menu_parent_id
+- page_template_key
+- display_order
+- enabled
+- configuration_json validated against a strict schema
+- permission_policy reference
+- created_at / updated_at
+
+4. ModuleFeature
+- id
+- module_id
+- page_id where applicable
+- stable_feature_key
+- display_name
+- feature_type
+- enabled
+- configuration_json validated against a strict schema
+- permission_policy reference
+- created_at / updated_at
+
+5. ModuleFieldDefinition
+- id
+- module_id
+- page_id
+- stable_field_key
+- display_label
+- field_type
+- required
+- read_only
+- searchable
+- filterable
+- sortable
+- exportable
+- validation_schema
+- visibility_rule
+- sensitivity_classification
+- display_order
+- configuration_version
+
+6. ModuleConfigurationVersion
+- id
+- module_id
+- version_number
+- configuration_snapshot
+- change_summary
+- validation_result
+- approval_status
+- created_by / created_at
+- approved_by / approved_at
+- published_by / published_at
+- rollback_from_version where applicable
+
+7. ModuleAuditEvent
+- id
+- module_id
+- actor_user_id
+- event_type
+- before_state / after_state where safe
+- reason
+- correlation_id
+- timestamp
+- source (UI/API/system)
+
+8. ModulePublicationJob / ModuleMigrationRecord, if needed
+- id
+- module_id
+- version_number
+- job_status
+- started_at / completed_at
+- validation_report
+- migration_report
+- error_summary
+- initiated_by
+
+Use suitable foreign keys, indexes, unique constraints, timestamps, and
+transactional rules. Do not store secrets in configuration snapshots. Redact
+sensitive values from logs and audit records.
+
+ARCHITECTURE AND SAFETY
+- Treat module configuration as data, not arbitrary executable code.
+- Use strict Pydantic schemas or equivalent validation on the server.
+- Apply safe allowlists for page templates, feature types, component types,
+  route patterns, and integration types.
+- Reject unrecognized configuration keys unless explicitly supported by a
+  versioned schema.
+- Do not evaluate user-provided JavaScript, Python, SQL, HTML, shell commands,
+  or templates as executable code.
+- Protect against cross-site scripting, injection, insecure direct object
+  references, privilege escalation, mass assignment, and path/route abuse.
+- Enforce tenant/organization/branch scope where the existing portal requires it.
+- Use CSRF protections where applicable, secure session handling, rate limits,
+  request validation, and server-side authorization.
+- Use optimistic locking or equivalent concurrency control for simultaneous
+  configuration edits.
+- Make publication and activation operations idempotent where practical.
+- Use transactional updates for registry state changes.
+- Record correlation IDs and structured logs for validation and publication jobs.
+- Do not log secrets, full credentials, or unnecessary personal data.
+- Back up configuration before a risky publication and provide controlled
+  rollback. Rollback of metadata must not falsely claim to reverse external
+  SAP changes, sent messages, or irreversible business transactions.
+- Provide clear health and readiness status for every enabled module.
+- Separate platform-wide services from module-owned services so a module toggle
+  does not unintentionally disable shared services.
+
+MODULE MANAGEMENT UI
+Add a "Module Management" administration page with:
+- Module registry table: name, key, description, status, version, owner,
+  dependencies, health/readiness, last updated, and available actions.
+- Search, sort, filters, and server-side pagination.
+- Actions: View, Edit Draft, Configure Pages, Configure Features, Configure
+  Fields, Configure Workflows, Configure Permissions, Configure Integrations,
+  Validate, Preview, Submit for Approval, Publish, Enable, Disable, Roll Back,
+  View History, and Archive, according to the user's permissions and lifecycle.
+- A "Create New Module" action.
+- Status indicators that distinguish Draft, Incomplete, Validation Failed,
+  Pending Approval, Published, Enabled, Disabled, Degraded, and Archived.
+- A dependency/impact preview before lifecycle changes.
+- A visual menu tree editor with reorder and nesting controls.
+- A page builder that uses approved templates/components rather than arbitrary
+  executable code.
+- Configuration validation report with field-level explanations.
+- Version comparison showing changed pages, fields, permissions, workflows,
+  and integrations.
+- Audit history with actor, timestamp, reason, outcome, and correlation ID.
+- Responsive UI, accessible controls, confirmation dialogs, and useful empty,
+  loading, and error states.
+
+PLATFORM-WIDE VS MODULE-SPECIFIC SETTINGS
+Classify settings as:
+1. Platform-wide: authentication, RBAC framework, audit framework, secrets
+   vault references, shared scheduler, global notification infrastructure,
+   and core security policies.
+2. Module-specific: module pages, fields, rules, approvals, imports/exports,
+   module-specific notifications, and module-owned integration jobs.
+3. Shared configurable service: used by multiple modules and protected from
+   accidental deactivation while dependents are active.
+
+Do not duplicate the same global setting for every module. Where a module
+overrides an inheritable setting, display the effective value, inherited
+source, override status, and reset-to-inherited action. Security restrictions
+and platform guardrails cannot be overridden by a module.
+
+EXISTING MODULE MIGRATION
+Register Item Master and BP Master in the new registry using their existing
+identifiers and current configurations. Do not create duplicate modules.
+Map existing menu entries, submenus, page routes, item configuration pages,
+BP-specific pages, SAP jobs, and permissions to their module ownership.
+Preserve existing records and configuration. If a mapping is ambiguous, report
+it for administrator review rather than silently moving or deleting anything.
+
+Provide a migration preview, backup/configuration snapshot, validation report,
+and post-migration verification. Make the migration repeatable and safe to
+rerun. Do not enable or disable modules unexpectedly during migration.
+
+ACCEPTANCE TESTS
+The implementation is not complete until the following tests have actually
+passed in the project:
+1. An authorized platform administrator can create a draft module with a unique
+   key and save/resume the wizard.
+2. Duplicate module keys and invalid route keys are rejected with clear errors.
+3. An administrator can add, reorder, nest, rename, and preview menus/pages.
+4. A supported page template can be assigned and its supported fields/actions
+   configured.
+5. Invalid field types, unsupported component types, circular dependencies,
+   and invalid workflow definitions are blocked.
+6. A published module appears in the correct navigation location only for users
+   with the necessary module/page permissions.
+7. Disabling a module removes/disables all its menus and rejects direct API/page
+   access, while preserving records and audit history.
+8. Re-enabling a module restores authorized access only after required health
+   and dependency checks.
+9. Disabling Item Master also disables its Item Configuration submenu and
+   module-specific jobs, without disabling unrelated BP Master functions.
+10. Disabling BP Master also disables BP-specific pages and jobs without
+    disabling Item Master functions or shared platform services.
+11. A user cannot gain access by editing a URL, request payload, or browser state.
+12. A module configuration change creates an audit event and a new version.
+13. An invalid configuration cannot be published; draft saving remains possible.
+14. Approval separation is enforced where maker-checker governance is enabled.
+15. Rollback restores supported module metadata/configuration without claiming
+    to reverse external or irreversible business transactions.
+16. Module listing search, sorting, filters, and pagination work correctly.
+17. Shared dependencies and in-flight jobs are handled safely on disable.
+18. No secrets are exposed in the UI, database configuration snapshots, or logs.
+19. Existing Item Master and BP Master data, routes, permissions, and integrations
+    remain intact after registry migration.
+20. All tests report real outcomes. Do not mark a test as passed unless it was
+    executed and the result was verified.
+
+IMPLEMENTATION WORKFLOW FOR GOOGLE AI STUDIO BUILD
+First inspect the existing application and identify its framework, routes,
+navigation, state management, database/API integration, RBAC model, background
+jobs, and existing Item Master/BP Master implementation. Do not assume that
+backend services, migrations, or SAP integration are real merely because a
+screen or mock result exists.
+
+Then provide a gap analysis mapping each requirement above to:
+- Existing and verified
+- Partially implemented
+- Missing
+- Blocked by unavailable backend/service
+- Requires database migration
+- Requires external credential/administrator action
+
+Implement in controlled increments:
+1. Module registry and migration plan.
+2. Module Management UI and backend authorization.
+3. Draft module wizard and strict configuration schemas.
+4. Menu/page/feature/field configuration using approved reusable components.
+5. Versioning, validation, audit, approval, publication, and rollback.
+6. Runtime navigation and API enforcement for enabled/disabled state.
+7. Background job and integration lifecycle controls.
+8. Existing Item Master/BP Master mapping and regression tests.
+9. Security, accessibility, concurrency, and acceptance tests.
+
+After each increment, run the available real checks and report the exact results.
+Ask for explicit acceptance before proceeding to the next page/major increment,
+unless the user explicitly authorizes a batch. Preserve all existing requirements
+and existing application work. Do not rebuild the portal from scratch, replace
+the existing design unnecessarily, or claim production readiness without
+verified implementation and tests.

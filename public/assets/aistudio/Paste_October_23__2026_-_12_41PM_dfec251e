@@ -1,0 +1,287 @@
+KOSH INNOVATIONS — PROJECT COMPLETION PROMPT ADDENDUM
+REPAIR AND COMPLETE THE ENTIRE COMMUNICATION & NOTIFICATION HUB
+Existing Google AI Studio Build project: My Kosh Innovations Global IT System
+Priority: Critical functional defect — every Communication & Notification Hub page currently renders a blank/empty content area.
+
+IMPORTANT EXECUTION RULE
+Do not merely describe, plan, redesign, or create mockups. Inspect the existing project code and state, identify the real cause of the blank pages, implement the correction in the existing project, and test it. Preserve all unrelated working functionality and previously established project requirements. Do not rebuild the entire application from scratch or replace the existing project with a disconnected demo.
+
+CONTEXT FROM THE EXISTING PROJECT AND PRIOR REQUIREMENTS
+The project is the Kosh Innovations Global IT System / Global Master Governance portal. The existing UI has a dark left navigation and header with organization, active branch, Email 2FA status, notification bell, and signed-in user. Existing navigation includes:
+- Communication & Notification Hub
+- Hub Overview
+- Notification Centre / Inbox
+- Email Templates
+- WhatsApp Configuration
+- WhatsApp Templates
+- Broadcast Campaigns
+- Notification Rules
+- Delivery Queues
+- Webhooks & Provider Health
+- Preferences & Consent
+- Delivery Reports
+There are currently blank/white content screens when opening these pages. The hub must be fully functional, not just visually populated.
+
+Other project requirements that remain in force:
+- Preserve the current application architecture, stack, branding, navigation shell, authentication, RBAC, branch/organization context, and existing modules.
+- Implement persistent data models, real APIs/service logic, validation, error handling, and functional buttons/actions.
+- No fake counts, hard-coded “connected” statuses, fabricated logs, fake verification, or success notifications without successful operations.
+- Reuse existing shared services, schemas, routes, and components where possible. Do not create duplicate or competing communication systems.
+- The communication hub should be modular and reusable by current and future modules.
+- The application must distinguish implemented/tested behavior from provider setup that still requires real credentials or external approval.
+
+PHASE 1 — ROOT-CAUSE DIAGNOSIS OF BLANK PAGES
+1. Inspect the actual source code and runtime errors for every hub route. Check route registration, page component exports/imports, navigation IDs, module registry and enabled-state checks, route guards, role/permission filtering, data-loading effects, API base URLs, network requests, schema mismatches, React render exceptions, unresolved promises, CSS overlays, content container sizing, and conditional rendering.
+2. Inspect browser console and network errors where available. Add appropriate diagnostic logging that excludes secrets and personal data.
+3. Determine whether blank screens are caused by missing page components, incorrect routes, failed API calls, invalid state assumptions, unhandled exceptions, missing permissions, or styling/layout. Fix the root cause rather than inserting arbitrary placeholder content.
+4. Ensure a route error cannot silently render an entirely blank screen. Add a shared page-level error boundary and useful loading, empty, permission-denied, and failure states.
+5. Do not conceal errors by swallowing exceptions. Show a concise user-facing error and provide safe retry where appropriate; retain diagnostic details for authorized administrators.
+6. Test direct route navigation, sidebar navigation, refresh/deep-link behavior, and switching among all hub pages.
+
+PHASE 2 — COMPLETE FUNCTIONAL HUB OVERVIEW
+Implement a real dashboard using persisted data and the current user's authorized organization/branch scope:
+- Message totals by channel and status over a selectable date range.
+- Queued, processing, sent/accepted, delivered, read (only when provider reports it), failed, suppressed, and manual-action-required counts.
+- Delivery success/failure trends and recent operational events.
+- Recent failures and actionable retry/configuration links for authorized users.
+- Provider health and webhook health based on actual health checks and stored results.
+- WhatsApp sender configuration state, with clear distinction among configured, verified, connected, unhealthy, and not configured.
+- Recent notifications and queue activity.
+- Useful filters for date range, module, branch, channel, status, and event type, subject to RBAC.
+- Meaningful first-run empty states that explain that no messages exist yet or configuration is incomplete. Do not fill the dashboard with invented data.
+- Every metric must derive from the database/API and agree with underlying message records. Clicking a metric should open the relevant filtered detail list.
+
+PHASE 3 — NOTIFICATION CENTRE / INBOX
+Build a functional notification inbox:
+- Tabs/filters for unread, read, all, actionable, failed or attention-required where appropriate.
+- Search, date filters, notification type, source module, branch and status filters.
+- Notification detail view with safe rendering of message content, source entity, creation time, channel and current state.
+- Mark read/unread, mark all read, archive/dismiss where supported, open related request/approval/item/BP record, and navigate to the correct entity.
+- Server-side persistence and per-user visibility. A user must not see another user's private notifications unless authorized.
+- Pagination or cursor-based loading, unread counts, loading indicators, retry on transient load errors, and useful empty states.
+- Do not confuse an in-app notification with an email or WhatsApp delivery record. Show the channel and delivery status separately.
+- The header bell must show a real unread count and open the relevant notification experience.
+
+PHASE 4 — EMAIL TEMPLATES
+The user has explicitly stated they do not want an Email Settings page. Do not add, expose, or require a standalone Email Settings page or navigation item. Do not remove existing required Email 2FA behavior. Keep email transport/provider configuration out of the visible navigation; use secure environment/secret configuration and an administrator-only integration health view if needed within an existing authorized administration area.
+- Email Templates page must work as a template registry and editor, not an email server settings page.
+- List templates with name, purpose/event, module, language, version, status, updated time, and actions.
+- Create, view, edit, duplicate, version, preview, validate, activate/deactivate and retire templates according to permissions.
+- Support subject and body, approved variables/placeholders, safe HTML/text content, locale where required, and sample-data preview.
+- Validate missing/unknown variables, malformed templates, unsafe content, and required fields before saving or activating.
+- Use version history and audit; do not overwrite historical template versions already used by sent messages.
+- Provide test-send only to an explicitly selected authorized test recipient and only when an actual mail provider is configured. Show actual success/failure results. Never claim a test email was sent when it was only previewed or queued.
+- If no mail provider is configured, the template management and preview functions should still work, while sending is clearly unavailable. Do not invent a provider or credentials.
+
+PHASE 5 — CENTRAL WHATSAPP BUSINESS CONFIGURATION
+Business requirement: Kosh Innovations configures ONE common company WhatsApp Business sender number. Application-originated outbound WhatsApp messages across enabled modules and branches must use this centrally configured company sender. Each message must be delivered to the correct intended recipient's own verified WhatsApp-enabled mobile number, resolved from the authoritative user/account contact record.
+
+WhatsApp Configuration must be a real working page:
+- Show company WhatsApp Business display name, masked sender number, provider/account/phone-number identifiers as safe metadata, verification/connection/health state, last health check and last successful provider message if actually available.
+- Allow only authorized administrators to set/update configuration. Keep access tokens, app secrets and webhook secrets server-side using secure environment/secret storage or encryption; never return secrets to the browser or log them.
+- Provide configuration validation and connection/health check based on real provider responses. Distinguish missing credentials, invalid credentials, unverified number, unavailable provider and successful connection.
+- Use the official supported WhatsApp Business Platform/Cloud API for automated sending. Do not use unofficial WhatsApp Web automation, scraping, session hijacking or personal-account automation.
+- Do not configure a different company sender number per branch, module, employee or recipient. Branch/module may control event rules, template, access and recipient eligibility, but the sender remains the shared company number unless an authorized future requirement explicitly changes the policy.
+- The current UI previously displayed “USER_ASSISTED / Click-to-Chat Work Queue” and “100% Policy Compliant (No API Keys Required).” Do not imply this mode automatically sends messages. In click-to-chat mode, clearly label it manual: it opens WhatsApp with a prefilled message for an operator to review and send. Record “manual action required” until the operator confirms the action; do not falsely mark sent/delivered. If automatic delivery is required, it needs the official provider and actual credentials/approval.
+- If provider setup is absent, show a clear not-configured state and instructions for authorized setup; do not claim connected or verified.
+
+PHASE 6 — WHATSAPP RECIPIENT VERIFICATION AND ROUTING
+- Reuse the mobile number already stored for the intended user/account where appropriate; avoid duplicate phone fields maintained independently by each module.
+- Store normalized E.164 phone numbers with country code and explicit verification state: Not Verified, Pending, Verified, Failed, Invalid, or Opted Out as appropriate.
+- A syntactically valid mobile number is not proof that WhatsApp is enabled. A verified number is not proof of consent to all message categories.
+- Provide a supported recipient verification/confirmation process. Do not invent provider capabilities or fabricate verification results.
+- Bind verification to the exact normalized number and user/account identity. When the number changes, invalidate verification for the previous number and require re-verification of the new number.
+- Each sending module passes a stable recipient account/user ID and event/template ID to the shared notification service. The server resolves the destination from the authoritative record. Never trust a browser-supplied destination number as final.
+- Before dispatch, validate authorization, recipient identity, current verification status, applicable consent/opt-in, preferences, account state, module rules, template policy and provider restrictions.
+- Route a notification only to its intended recipient or an explicitly authorized recipient list. Do not broadcast private notifications to all users by default.
+- For multi-recipient messages, maintain separate delivery records per recipient and mask numbers in views according to RBAC.
+- Record suppression reason when a message is not sent because the number is unverified, invalid, opted out, unauthorized or blocked by policy.
+
+PHASE 7 — WHATSAPP TEMPLATES
+- Implement list, create, edit, view, version, preview, validate, activate/deactivate and retire actions.
+- Store template name, language, category, variable schema, module/event association, provider approval status, provider template identifier, version and audit metadata.
+- Distinguish locally drafted templates from templates submitted to and approved by the provider. Never represent a locally saved template as provider-approved.
+- Validate placeholders against the event payload schema and preview with safe sample data.
+- Enforce applicable WhatsApp rules for approved templates and customer-service windows using current provider configuration/policy. Do not promise delivery when the template is not approved or the message is not permitted.
+- Preserve the version used by each message for audit and reproduction.
+
+PHASE 8 — BROADCAST CAMPAIGNS
+- Implement authorized creation, draft, preview, validation, scheduling, cancellation before dispatch, approval if required, recipient selection, execution and reporting.
+- Support only permitted and consented audiences. Require explicit confirmation of audience size and sample preview before dispatch.
+- Apply RBAC, branch scope, suppression/opt-out, rate limits, provider policy, duplicate prevention and idempotency.
+- Use per-recipient delivery records. Do not send to every user unless the authorized operator explicitly selected a permitted audience and passed confirmation/approval.
+- No campaign should be sent automatically merely by opening or saving its form.
+- If bulk/automated provider delivery is not configured, show that execution is unavailable and preserve the campaign as a draft or blocked state.
+
+PHASE 9 — NOTIFICATION RULES
+Implement a reusable, configurable event-to-notification rules engine for current and future modules:
+- Module, event, organization/branch scope, recipient resolver, channel, template/version, enablement, conditions, priority, quiet hours if required, approval requirement, and retry policy.
+- Support in-app, email and WhatsApp independently. A failure in one channel must not silently mark another channel as successful.
+- Provide create/edit/clone/enable/disable/version/test-simulate and audit operations under RBAC.
+- Provide a rule simulator that shows the resolved recipients, selected template, eligible channels, policy checks and reasons for sending/suppression without sending a real message.
+- Validate conflicting or duplicate rules and define deterministic precedence.
+- Future modules should call the shared notification service through a documented event/recipient contract instead of implementing separate channel code.
+- Do not let branch-level settings change the centrally configured company WhatsApp sender number.
+- Rule changes must not retroactively alter historical delivery records.
+
+PHASE 10 — DELIVERY QUEUES
+Implement a persisted queue/worker workflow:
+- Lists for queued, processing, retry scheduled, sent/accepted, delivered, failed, suppressed and manual-action-required messages.
+- Filter/search by message ID, correlation ID, recipient/account, module, branch, channel, template, status, created time and error category.
+- Detail view with state history, attempt history, provider IDs, sanitized request/response metadata, timestamps and next retry.
+- Authorized retry of eligible transient failures, cancel queued messages where safe, and dead-letter handling.
+- Enforce idempotency and deduplication so repeated clicks, job restarts, duplicate events and webhook retries do not create duplicate sends.
+- Use bounded retries with backoff. Do not endlessly retry invalid recipients, opt-outs, permanent provider errors or policy rejections.
+- Persist every state transition. “Queued,” “accepted by provider,” “sent,” “delivered,” and “read” are not interchangeable.
+- Only show “delivered” or “read” when supported by real provider status callbacks. Show “accepted by provider” if that is all the provider confirmed.
+- If no background worker infrastructure exists in the current environment, implement a compatible persistent queue abstraction and clearly document the required worker process. Do not simulate delivery as successful.
+
+PHASE 11 — WEBHOOKS & PROVIDER HEALTH
+- Implement provider configuration metadata, health status, last check, webhook endpoint status, last successful callback, callback failure counts and actionable diagnostics.
+- Verify webhook authenticity/signatures according to the provider's official specification, use constant-time comparison where appropriate, reject forged requests and process duplicate events idempotently.
+- Verify webhook subscription/challenge according to the provider's documented protocol.
+- Store event IDs or stable deduplication keys and prevent replay/duplicate processing.
+- Persist status callbacks and reconcile them with the correct outbound message/provider message ID.
+- Do not expose secrets or full provider payloads to unauthorized users. Sanitize error details and provide authorized diagnostic access.
+- Separate “provider health check passed” from “recipient message delivered.”
+- Where a public HTTPS webhook endpoint is required but unavailable in the current preview environment, implement the endpoint and test it locally with documented limitations; do not claim external webhook delivery was tested.
+
+PHASE 12 — PREFERENCES & CONSENT
+- Create a functional preferences page scoped to the signed-in user, with authorized administration where required.
+- Manage channel preferences, message categories, opt-in/opt-out status, consent source, timestamp, scope and audit trail.
+- A verified phone number is not automatically consent for every message category.
+- Respect opt-outs and applicable legal/provider requirements. Distinguish essential transactional/security messages from optional communications according to a documented policy.
+- Prevent unauthorized users from changing another user's preferences except through an authorized audited administration workflow.
+- Ensure suppression decisions are recorded and visible to authorized operators.
+
+PHASE 13 — DELIVERY REPORTS
+- Build database-backed reporting for date range, module, branch, channel, template, recipient, status, provider and error category.
+- Show accurate totals and delivery funnel; define each status precisely.
+- Provide message-level drill-down and export (CSV at minimum if consistent with the existing stack), with permission checks, masking and audit.
+- Ensure reports reconcile to persisted message/delivery records and do not double-count attempts as unique messages.
+- Display the timezone used for timestamps and filters.
+- Handle no data, partial provider status, failed queries and large result sets appropriately.
+
+PHASE 14 — SHARED BACKEND, DATA MODEL AND API CONTRACT
+Inspect and reuse existing database models and APIs. Add safe migrations only where needed. Provide equivalents for:
+- Notification/in-app event and per-user read state.
+- Channel delivery record, per-recipient message, message state history and delivery attempts.
+- Shared template registry with immutable/retained versions.
+- Notification rules and rule versions.
+- Central WhatsApp sender configuration metadata; secrets remain in secret storage or encrypted server-side.
+- Recipient phone normalization, verification history and consent/preferences.
+- Provider template metadata and approval state.
+- Campaign and campaign-recipient execution records.
+- Queue/dead-letter records and retry schedule.
+- Webhook event deduplication/processing records.
+- Provider health check history.
+- Audit events and correlation/idempotency identifiers.
+
+Use appropriate foreign keys, unique constraints, indexes, tenant/organization/branch scope, transaction-safe updates and authorization checks. Do not create duplicate user/account contact masters if one already exists. Do not use direct writes to SAP system tables for communication-related integration; if a future notification depends on SAP B1, use the supported configured integration/service layer.
+
+Create clear service/API boundaries for:
+- Query dashboard metrics.
+- List/read/update in-app notifications.
+- Manage templates and versions.
+- Manage central WhatsApp configuration and perform real health checks.
+- Verify recipient numbers through a supported process.
+- Manage notification rules and simulate dispatch.
+- Create/preview/approve/schedule/cancel campaigns.
+- Query/retry/cancel eligible delivery jobs.
+- Receive and reconcile provider webhooks.
+- Manage preferences/consent.
+- Query/export reports.
+All API operations must enforce server-side RBAC and organization/branch scope; hiding a button in the UI is not sufficient.
+
+PHASE 15 — AUTHORIZATION AND AUDIT
+- Reuse existing authentication, roles, permission model, organization and active-branch context.
+- Define explicit permissions for viewing message content, managing templates, changing the company sender configuration, verifying recipients, managing consent, launching campaigns, retrying deliveries, inspecting provider diagnostics and exporting reports.
+- Scope data to the user's authorized organization and branches. The central company sender is global to the configured organization; branch context affects rule scope and authorization, not sender selection.
+- Audit create/update/activate/deactivate/delete-or-retire, send attempts, suppression, retries, recipient verification, consent changes, provider configuration changes, webhook failures and privileged access.
+- Never store access tokens, OTPs, webhook secrets or full credentials in ordinary audit logs.
+- Avoid hard deletion of operational history. Use retention/archival rules and controlled deactivation.
+
+PHASE 16 — FUNCTIONAL UI QUALITY
+For every Communication & Notification Hub page:
+- No blank white screen.
+- Real page title, concise purpose, actions, data table/cards/forms, and loading/empty/error/permission states appropriate to that page.
+- Every visible button, tab, filter, dropdown, row action, modal and pagination control must work and have a meaningful outcome.
+- No decorative controls that do nothing. If an action is not available due to missing setup/permissions, disable it with a clear reason or hide it according to the application's existing UI policy.
+- Validate forms both client-side and server-side. Display field-level errors and preserve user input when a recoverable API call fails.
+- Show confirmation for destructive, bulk, broadcast, or high-impact actions.
+- Use consistent layout, spacing, accessible labels, keyboard navigation, focus handling, responsive behavior and existing dark/light design conventions.
+- Avoid a global spinner that leaves the user staring at an empty page indefinitely.
+- Use pagination/virtualization for large datasets and server-side filters where appropriate.
+- Do not expose an “Email Settings” page. Email Templates is template management only; email transport credentials must remain in secure server configuration and any diagnostics must live in an existing restricted administration area.
+- Keep Communication & Notification Hub navigation labels consistent and routes mapped to their actual pages.
+
+PHASE 17 — TESTS AND ACCEPTANCE CRITERIA
+Implement and actually run relevant unit, integration and UI tests. Report the commands and real results. At minimum test:
+
+A. Route and rendering tests
+1. Every listed hub route loads its correct page component.
+2. No route silently renders blank when data/API calls fail.
+3. Loading, empty, permission-denied and error states are rendered correctly.
+4. Direct URL refresh and sidebar route transitions work.
+5. Disabled modules and unauthorized roles cannot bypass access through direct URLs/API calls.
+
+B. Data/API tests
+6. Dashboard metrics match persisted records and filter scope.
+7. Notification read/unread actions persist and unread counts update.
+8. Templates validate variables, version correctly and preserve historical versions.
+9. Notification rules simulate recipient/channel/template resolution deterministically.
+10. Queue retries are bounded and idempotent.
+11. Reports reconcile with persisted delivery records without double-counting attempts.
+
+C. WhatsApp tests
+12. One centrally configured sender is used across modules/branches.
+13. Each recipient resolves to the correct verified number from the authoritative account.
+14. Browser-supplied phone numbers cannot override the server-resolved destination.
+15. Number change invalidates old verification.
+16. Unverified/invalid/opted-out recipients are suppressed as policy requires.
+17. Click-to-chat mode never claims automated delivery.
+18. API mode only reports the actual provider response; live tests are marked unverified if credentials are absent.
+19. Forged/invalid webhook signatures are rejected.
+20. Duplicate webhook callbacks do not duplicate state transitions or sends.
+21. Provider outages and timeouts do not create false delivery success.
+22. No secrets are exposed in UI responses, logs or reports.
+
+D. Campaign and consent tests
+23. Saving a campaign does not send it.
+24. Campaign execution requires authorized action and any configured approval.
+25. Suppressed recipients are excluded and the reason is recorded.
+26. Recipient-specific delivery records are created independently.
+
+E. Security and audit tests
+27. RBAC is enforced at API level for each sensitive action.
+28. Organization/branch data isolation works.
+29. Sensitive configuration changes and operational actions are audited.
+30. Unauthorized users cannot view full recipient numbers or protected message content.
+
+PHASE 18 — IMPLEMENTATION SEQUENCE
+Execute without waiting for the user to approve each page:
+1. Inspect existing repository/code and document the root cause of blank hub screens.
+2. Fix the shared route/rendering/API error that causes blank pages.
+3. Implement the persistent shared notification/data/service layer.
+4. Implement each of the twelve listed hub pages end-to-end.
+5. Wire navigation, filters, forms, actions, API calls, error handling and authorization.
+6. Add migrations, seed only safe reference/configuration data, and never seed fake delivery history that appears real.
+7. Add and run tests; fix failures.
+8. Perform a complete route-by-route smoke test and report results.
+9. Continue until all possible in-environment work is completed. Do not stop after creating a checklist or completing only the overview.
+
+FINAL RESPONSE REQUIRED FROM GEMINI
+Provide:
+- Root cause(s) found for the blank pages.
+- Exact files/components/routes/services changed.
+- Database migrations/models added or updated.
+- Each hub page and its implemented functionality.
+- Buttons/actions tested and actual results.
+- Tests executed, commands, pass/fail counts, and unresolved failures.
+- Provider setup still required for live email/WhatsApp operation.
+- Any environment limitation preventing a real integration test.
+- A clear distinction between implemented code, automated-test simulation, provider-connected verification, and actual live delivery.
+Do not claim production-ready or fully tested if material items remain incomplete.
+
+DEFINITION OF DONE
+Every Communication & Notification Hub menu item opens a useful, fully functional page and never an empty white screen. Each page is connected to real application state and persistent backend operations, enforces permissions, has loading/empty/error handling, and is covered by executed tests. WhatsApp uses one centrally configured company sender and server-resolved verified recipients. Click-to-chat is clearly manual. Email Templates is available without an Email Settings page. Metrics, delivery statuses and provider health reflect real evidence, not placeholders.
