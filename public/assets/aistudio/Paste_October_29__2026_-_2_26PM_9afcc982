@@ -1,0 +1,488 @@
+A. Menu and landing page
+- Remove the unnecessary Dashboard menu and replace it with a global Menu Search option.
+- Replace SAP Business One and SAP B1 with SAP.
+- Use Short Name instead of Foreign Name throughout the UI.
+- Include all  industries and groups use any indian govt site.
+
+
+B. Branch and Business Partner identification
+- Add GSTIN ID before Branch.
+- Add Branch selection before BP Type.
+- Support Customer, Supplier and Lead classifications.
+- Generate a non-editable CardCode using the specified format: K + BP type (C/S/L) + 3digit branch code shortcode + sequence number.
+- Keep sequences separate for the relevant BP type and location combination, with server-side uniqueness checks.
+- Permit users to type any valid Business Partner Name.
+
+
+
+
+C. GST verification and compliance
+- Retrieve the GST legal name and trade name from an authorized GST data source and display use trade name  as the registered name, Regisgtration Status, Tax Player Type, Address & Return Filing History. - GSTIN to Contact Details: Get the registered mobile number and email for each GSTIN on a list. 
+-
+- Verify GSTIN and registration classification before saving.
+- Populate PAN GST then do the  PAN Verification: Check a PAN's registered name or find every GSTIN registered under it.  Check a PAN's registered name or find every GSTIN registered under it. 
+- Support GST certificate retrieval and parsing, including REG-06 through an Api.
+- Verify GST registrations for additional shipping addresses also.
+- Watch a vendor list and be notified when a registration is cancelled, stops filing, or changes. 
+- Keep government verification logs in a separate module, not in the live verification screen.
+
+
+
+
+D. MSME / Udyam verification
+- Provide an MSME Yes/No field.
+- When Yes, accept and validate the Udyam registration identifier
+Retrive the follwoing from MSME 
+- Enterprise name. The registered name of the MSME.
+- Enterprise type. Proprietorship, partnership, LLP, private limited, public limited, HUF, trust, co-operative, and other types recognised in the MSME framework.
+- Date of incorporation. The registration date of the enterprise.
+- Date of commencement. The date the business commenced operations.
+- Retrive Activity type. Manufacturing or services, and in some cases both.
+- MSME classification. Micro, Small, or Medium based on current investment and turnover.
+- Investment category. The investment bracket the enterprise falls into.
+- Turnover category. The turnover bracket the enterprise falls into.
+- All NIC code. The National Industrial Classification code for the enterprise's primary activity.
+- Major activity. A description of the main business activity.
+- Schedule periodic revalidation of status and category.
+- Maintain timestamped verification history and audit records.
+- State and district. The registered location.
+- PAN linkage. For registrations post-July 2020, the PAN of the enterprise is cross-referenced.
+- Udyam Registration  Period Check and updtate its status.
+ 
+
+E. Address management
+- Move Bill-to Address to the General tab and make its required details mandatory.
+- Rename the existing Address section to Shipping Address.
+- Create a one default shipping address from the billing address.
+- Support additional shipping addresses with GST verification where required.
+- Implement cascading Country → State/Province → District → City → Postal Code fields. and Load All the indian State, Districts, City 
+ 
+
+
+F. Banking and accounting
+- Keep Assigned Price List empty by default while retaining the selection option.
+- Remove the unnecessary Down Payment Advance Account field from its current location.
+- Place IFSC, IBAN and SWIFT under the intended banking/accounting section.
+- After this allow the user type their account number.
+- Display bank and branch names based on validated banking details where supported.
+- Allow multiple bank accounts and selection of one default account.
+- Require a cancelled cheque for every bank account.
+- Require an approval workflow for modifications to existing bank details, including account-number changes.
+
+
+
+
+G. Approval and audit governance
+- Require at least one contact with a mobile number and email address.
+- Lock all approved BP data against direct editing.
+- Route amendments through a separate configurable approval workflow.
+- Record old and new values, requester, approver, timestamps and reasons.
+- Retain a complete audit trail of approvals, changes, rejected requests and re-verifications.
+
+
+
+
+H. Field Configuration Module
+
+Create a separate configuration module Level controlling:
+- User Based
+- Field visibility: Active/Inactive.
+- Mandatory versus optional fields.
+- Field and tab order.
+- Validation rules and error messages.
+- API validation frequency and retry policy.
+- Branch-specific and module-specific configurations.
+- User permissions and configuration audit history.
+
+
+
+2. Three technical points to resolve before implementation
+These are important because implementing the wrong assumptions will create compliance or data-integrity problems.
+
+1. GST classification: Regular, Composition and SEZ should not automatically be treated as three values of the same GST field. Registration type, composition status and SEZ-related attributes may need separate fields, based on the official source and applicable rules.
+
+2. Udyam identifier: Do not validate Udyam registration numbers using an assumed fixed 16- or 19-digit rule. Validate against the official identifier format and the verification service actually available. API access and periodic revalidation must be confirmed before promising automated retrieval.
+
+3. Approved BP locking: A disabled form alone is not sufficient. The backend must also reject unauthorized changes, including changes submitted directly through APIs or concurrent sessions.
+
+3. Recommended implementation sequence
+Phase	Deliverable
+1	Remove Dashboard, add Menu Search, correct headings and terminology
+2	Redesign BP creation form, branch selection and CardCode generation
+3	Implement GSTIN verification, PAN extraction and certificate processing
+4	Implement MSME/Udyam verification and periodic revalidation
+5	Implement billing/shipping address management
+6	Implement multi-bank accounts, cancelled-cheque requirements and approvals
+7	Implement approval locking, amendment workflows and audit trails
+8	Build the configurable field-validation module
+9	Execute functional, security, integration and regression tests
+
+
+
+ 
+
+## 1. Objective
+
+Inspect the existing source code and implement configurable GST registration status governance across the existing SAP-aligned user interface.
+
+Do not create a standalone or duplicate application. Extend the current application, existing navigation, design system, configuration framework, validation engine, authentication, roles, and audit infrastructure.
+
+The solution must support:
+
+- Automatic transaction blocking when a GST registration is not ACTIVE.
+- Administrator-only control over authorized exceptions.
+- Central configuration of mandatory fields, activation rules, validation frequency, applicable screens, and enforcement behaviour.
+- Consistent validation on the UI, backend APIs, imports, scheduled jobs, and SAP integration paths.
+
+Do not claim integration with SAP or the GST portal is functional unless the existing connection is inspected and tested successfully.
+
+## 2. First inspect the existing project
+
+Before changing code:
+
+1. Inspect the complete repository structure and identify the actual frontend framework, backend, database, authentication, role management, routing, API clients, configuration modules, and audit implementation.
+2. Locate the existing screens for:
+   - Organization, Branch and Plant Management.
+   - Branch creation and editing.
+   - Business Partner creation and editing.
+   - GSTIN verification and GST registration details.
+   - SAP Integration Management.
+   - Mandatory Field / Field Validation Configuration.
+   - Approval Workflows.
+   - Audit Logs.
+3. Identify existing SAP Business One screen mappings for Business Partners, Branches, Warehouses and relevant transaction forms.
+4. Reuse the existing UI components, naming conventions, design tokens and service patterns.
+5. Identify the current database schema and existing migrations before designing any new tables.
+
+Produce a brief implementation plan identifying the actual files to modify before making changes. Do not replace working features or invent filenames, APIs, schemas or configuration mechanisms.
+
+## 3. GST status policy
+
+Maintain separate fields for:
+
+- GST source status.
+- Normalized internal GST status.
+- Last verified timestamp.
+- Next verification timestamp.
+- Verification source and evidence reference.
+- Transaction eligibility.
+- Administrative exception status, if enabled.
+
+Normalize the source response into controlled internal states, including:
+
+`ACTIVE`, `SUSPENDED`, `CANCELLED`, `INVALID`, `PENDING`, `UNVERIFIED`, `VERIFICATION_FAILED`, `VERIFICATION_UNAVAILABLE`, and `STALE`.
+
+Map source-specific status values explicitly. Never assume that an unavailable response means ACTIVE.
+
+### Mandatory default rule
+
+If the normalized GST status is anything other than `ACTIVE`, block relevant transactions by default.
+
+This includes a missing status, failed verification, stale verification beyond the configured freshness limit, or unavailable verification service.
+
+When a transaction is blocked, display a clear message identifying the GST registration, status, reason, and last verification time.
+
+A GST status of ACTIVE only establishes GST-status eligibility; it does not bypass other transaction validations, approval requirements, credit controls, user permissions or SAP business rules.
+
+## 4. Apply the rule to existing SAP-related screens
+
+Integrate the control into the existing screens and workflows rather than adding a duplicate GST screen.
+
+### A. Branch Management
+
+On the existing Organization, Branch and Plant Management screen:
+
+- Display the branch GSTIN and verified legal name.
+- Display GST registration status and last verification time.
+- Display transaction eligibility.
+- Automatically mark the GST registration as blocked for transactions when status is not ACTIVE.
+- Prevent ordinary users from changing the block state.
+- Allow authorized administrators to review the reason, verification evidence and audit history.
+- Keep the portal Branch Code separate from the actual SAP Branch ID and warehouse codes.
+
+### B. Business Partner Management
+
+For each customer, supplier or lead:
+
+- Validate the applicable GST registration.
+- Show GST status in the existing Business Partner form.
+- Enforce GST eligibility when a transaction uses that Business Partner.
+- Where multiple GST registrations or ship-to GST registrations exist, validate the registration applicable to the transaction.
+- Do not assume that the Business Partner's primary GSTIN applies to every branch or ship-to address.
+- Prevent users from bypassing the validation by changing the address or selecting another registration without validation.
+
+### C. Transaction screens
+
+Identify the transaction forms actually present in the project and the corresponding SAP Business One documents.
+
+Apply the configurable rule to applicable transaction operations, such as document creation, save, posting, release, submission, or synchronization with SAP.
+
+Do not indiscriminately block every transaction type. Use an explicit configuration list for applicable document types and actions, approved by the business and tax teams.
+
+For blocked transactions:
+
+- Stop the operation before it is committed or posted.
+- Show an actionable validation message.
+- Record the rule identifier and transaction correlation ID.
+- Do not silently bypass the rule during bulk upload, background processing, or SAP integration.
+
+Where the application cannot intercept a native SAP Business One operation, document the required SAP-side enforcement mechanism and implementation dependency. Do not represent a portal-only check as complete SAP enforcement.
+
+## 5. Mandatory Field and Validation Configuration module
+
+Extend the existing Mandatory Field / Field Validation Configuration module. If the module does not exist, add it within the existing configuration navigation and design framework.
+
+Provide a configurable rule-management interface with these fields:
+
+| Configuration field | Purpose |
+|---|---|
+| Rule ID | Unique system-generated identifier |
+| Rule Name | Human-readable rule description |
+| Module | Branch, Business Partner, GST, Warehouse or Transaction |
+| Screen / Form | Existing application screen or SAP form mapping |
+| Field / Data Element | Field or business attribute being validated |
+| Rule Type | Mandatory, status validation, permission, transaction block or freshness check |
+| Enabled | Enable or disable the rule, subject to protected system controls |
+| Mandatory | Required or optional, where applicable |
+| Active / Inactive | Whether the rule is operational |
+| Enforcement Level | UI, backend API, import, integration or all applicable paths |
+| Applicable Document Types | Explicit list of transaction types |
+| Applicable Actions | Create, update, save, post, release or synchronize |
+| Validation Frequency | On field change, on save, before posting, scheduled or configurable interval |
+| Maximum Verification Age | Maximum permitted age of GST verification |
+| Failure Behaviour | Block, warn or controlled exception, as allowed by policy |
+| Effective From / To | Rule validity period |
+| Configuration Version | Version and change history |
+| Approval Required | Whether rule changes require approval |
+
+Provide search, filtering, sorting, pagination, and a rule-detail view using the existing application's UI conventions.
+
+### Protected GST rules
+
+The GST non-ACTIVE transaction-blocking rule must be enabled by default and protected against accidental or unauthorized disabling.
+
+Do not allow a normal configuration administrator to disable a mandatory statutory or security control merely by switching off a checkbox.
+
+If a legally approved exception policy exists, implement it as a separate, explicit, time-limited exception workflow. Do not implement an unrestricted bypass.
+
+Rule changes affecting GST enforcement must use the configured approval workflow, with separation of duties where supported.
+
+Record every rule creation, change, activation, deactivation, approval and rejection in the audit trail.
+
+## 6. Administrator permissions
+
+Enforce role-based access control in the backend, not only by hiding buttons.
+
+### Ordinary users
+
+- Can view GST status and the transaction-blocking reason.
+- Cannot change the source GST status.
+- Cannot activate or deactivate the GST block manually.
+- Cannot create or approve GST exceptions.
+- Cannot disable protected validation rules.
+- Cannot modify verification timestamps or evidence.
+
+### Authorized administrators
+
+- Can inspect verification details and initiate permitted revalidation.
+- Can manage configuration within their assigned permissions.
+- Can request or approve an exception only if the approved policy explicitly permits it.
+- Must provide a reason and supporting evidence for every permitted exception.
+- Must have every action recorded in the audit trail.
+
+A user must not approve their own exception or rule change when the configured separation-of-duties policy prohibits it.
+
+## 7. Audit trail
+
+Use the existing audit infrastructure if available.
+
+Capture:
+
+- GSTIN and applicable Business Partner / branch identifier.
+- Source and normalized status.
+- Verification timestamp and source reference.
+- Previous and new transaction eligibility.
+- Rule ID and configuration version.
+- User, role, timestamp and action.
+- Exception reason, approver, evidence reference and expiry.
+- Blocked transaction type and correlation ID.
+- API, import or integration enforcement result.
+- Rule changes, approvals and rejections.
+
+Audit records must be append-only or protected against unauthorized modification.
+
+Keep detailed provider request/response logs in the restricted GST verification audit area, separate from the live GST status display. Avoid storing unnecessary sensitive data.
+
+## 8. GST revalidation scheduler
+
+Extend the existing scheduling infrastructure if available.
+
+- Make verification frequency configurable.
+- Track the next scheduled verification.
+- Revalidate registrations according to the configured interval.
+- Record status transitions.
+- Recalculate transaction eligibility after every verification.
+- Retry transient failures according to a bounded retry policy.
+- If verification remains unavailable or becomes stale, apply the configured fail-closed policy.
+- Prevent duplicate concurrent verification jobs.
+- Provide monitoring and a recovery queue for failed checks.
+
+Do not invent a GST API endpoint or assume the provider supports a particular verification frequency. Inspect the configured provider and its documented capabilities first.
+
+## 9. Data integrity and implementation safety
+
+- Follow the existing database and migration strategy.
+- Preserve existing branch, Business Partner, warehouse and SAP mappings.
+- Do not overwrite GST source status with an internal administrative status.
+- Do not automatically alter unrelated SAP master data.
+- Use server-side authorization and transaction-level validation.
+- Make status transitions idempotent.
+- Handle race conditions between GST revalidation and transaction submission.
+- Do not hard-code secrets or provider credentials.
+- Do not log passwords, authentication tokens or unnecessary personal data.
+- Make configuration changes versioned and auditable.
+- Preserve existing application behaviour outside the approved scope.
+
+## 10. Acceptance tests
+
+Implement automated tests covering at least:
+
+1. ACTIVE GST status permits progression only when other validations pass.
+2. SUSPENDED GST status blocks applicable transactions.
+3. CANCELLED GST status blocks applicable transactions.
+4. INVALID, PENDING, UNVERIFIED and missing statuses block by default.
+5. Verification unavailable or stale beyond the configured limit blocks by default.
+6. An ordinary user cannot change the block state through the UI or direct API requests.
+7. An ordinary user cannot disable the protected GST rule.
+8. A permitted administrator exception requires authorization, reason, evidence and expiry.
+9. An exception does not rewrite the source GST status.
+10. The same rule is enforced for UI submissions, API calls, imports and integrations.
+11. The applicable ship-to GST registration is validated when required.
+12. Rule configuration changes create audit records and follow the approval policy.
+13. Scheduled revalidation updates status and transaction eligibility correctly.
+14. Existing branch and warehouse mappings remain intact.
+15. Unauthorized direct API calls fail securely.
+16. Concurrent verification and transaction requests cannot bypass the rule.
+
+## 11. Deliverables
+
+After implementation:
+
+1. Summarize the existing architecture discovered.
+2. List all files created or modified.
+3. Provide database migrations and rollback instructions.
+4. Document the new configurable rules and default values.
+5. Document administrator and ordinary-user permissions.
+6. Provide test commands and actual test results.
+7. Run the existing type checks, linting, build and automated tests where available.
+8. Identify any SAP-side or GST-provider dependencies that remain unimplemented.
+9. Provide screenshots or a walkthrough of the modified existing screens, if the available tooling supports it.
+10. Update the project documentation.
+
+Do not report tests as passed unless they were actually executed. Do not claim production readiness without evidence.
+
+## 12. Completion criteria
+
+The work is complete only when the existing screens use the new GST governance rules, the Mandatory Field / Validation Configuration module exposes the approved settings, backend enforcement prevents unauthorized bypasses, audit records are generated, and automated tests demonstrate the required behaviour.
+
+Start by inspecting the existing repository and reporting the implementation plan. Then implement the changes incrementally without replacing the existing application.
+
+
+# SAP Business One — Common Warehouse Master Automation
+
+## Objective
+Implement configurable common warehouse creation and mapping in the Mandatory Module of our existing SAP Business One application. Integrate with the current screens, database entities, branch configuration and authorization framework. Do not create a separate, disconnected warehouse management module.
+
+## 1. Common Warehouse Configuration
+
+Maintain the following configurable warehouse types:
+
+| Warehouse Type | Short Code | Default | Accept Warehouse | Rejection Warehouse |
+|---|---|---|---|---|
+| Stores | STR | Yes | Y | N |
+| Finished Goods | FG | No | Y | N |
+| Finished Goods QC | FGQ | No | Y | N |
+| Waiting for QC | INQ | No | Y | N |
+| Incoming Rejection | IRJ | No | N | Y |
+| Process Rejection | PRJ | No | N | Y |
+| QC Hold | QCH | No | Y | N |
+| Regrind/Reprocess | RG | No | Y | N |
+| Scrap Yard | SCY | No | Y | N |
+| WIP | WIP | No | Y | N |
+| WIP QC | WQC | No | Y | N |
+
+Provide an administrator-controlled configuration screen to maintain the warehouse type, short code, default flag, acceptance flag, rejection flag, mandatory status and active status.
+
+## 2. Automatic Warehouse Creation
+
+When a new branch/location is saved successfully, automatically create the configured common warehouses for that branch.
+
+Warehouse Code:
+`BranchCode + "-" + ShortCode`
+
+Warehouse Description:
+`LocationName + "-" + WarehouseType`
+
+Examples:
+- PDY-STR — Puducherry-Stores
+- PDY-FG — Puducherry-Finished Goods
+- PDY-FGQ — Puducherry-Finished Goods QC
+- CHE-WIP — Chennai-WIP
+
+Use the actual branch code and location name stored in the existing master records.
+
+## 3. Default Warehouse Mapping
+
+The Stores warehouse must be the default warehouse for the branch by default.
+
+Requirements:
+- Permit only one default warehouse per branch for the applicable default scope.
+- Validate uniqueness before saving.
+- Do not assign a rejection warehouse as the default unless an administrator explicitly changes the configuration and the business rules permit it.
+- Allow authorized administrators to change the default warehouse.
+- Apply default values only where a transaction screen has not already received an explicit valid warehouse selection.
+- Respect branch, user and transaction authorization.
+
+## 4. Acceptance and Rejection Mapping
+
+Map the flags from the warehouse type configuration:
+
+- Accept Warehouse = Y: eligible for acceptance-related transactions, subject to transaction-specific validation.
+- Rejection Warehouse = Y: eligible for rejection-related transactions, subject to transaction-specific validation.
+
+Do not infer these flags from the warehouse name. Do not allow a warehouse to be used for an unauthorized transaction solely because it exists.
+
+## 5. Validation and Error Handling
+
+Before creating warehouses:
+- Verify that the branch code and location name are valid.
+- Verify that each short code is unique in the configuration.
+- Check that the generated warehouse code meets SAP Business One's actual field-length and character restrictions.
+- Check for existing warehouse codes to prevent duplicates.
+- Prevent duplicate default assignments.
+- Log creation failures and show actionable errors.
+- Use a transaction or equivalent safe processing mechanism so failures do not leave inconsistent mappings.
+- Support safe retries without duplicating previously created warehouses.
+
+If a warehouse already exists, do not overwrite its configuration silently. Report the existing record and require the appropriate reconciliation or administrator action.
+
+## 6. Existing Branches and Warehouses
+
+Provide a controlled reconciliation operation for existing branches. Preview missing warehouses before creation. Never delete existing warehouses, overwrite warehouse settings or move inventory automatically.
+
+## 7. Permissions and Audit
+
+Only authorized administrators may change common warehouse configuration, default assignments and acceptance/rejection mappings. Record who changed the configuration, when it changed, and the previous and new values.
+
+## 8. Acceptance Criteria
+
+1. Creating a branch generates all active common warehouse types exactly once.
+2. Warehouse codes and descriptions follow the specified naming rules.
+3. Stores is selected as the default warehouse initially.
+4. Acceptance and rejection flags match the configuration table.
+5. Duplicate codes and conflicting defaults are rejected safely.
+6. Existing inventory and warehouse settings remain unchanged unless explicitly authorized.
+7. Transaction screens use the configured defaults without overriding a valid user selection.
+8. The implementation uses the existing application's screens, database and SAP Business One integration.
+9. Test successful creation, duplicate creation, retry, invalid branch, mapping changes and unauthorized changes before release.
+

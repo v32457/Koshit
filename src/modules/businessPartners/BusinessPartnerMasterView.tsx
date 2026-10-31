@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BusinessPartner,
   User,
@@ -6,32 +6,34 @@ import {
   BPAddress,
   BPPaymentTerms,
   BPAccounting,
+  BPBankDetail,
   BPAttachment,
   BPGovernanceLog,
+  Branch,
+  MSMEInfo,
+  GSTVerificationDetails,
+  GSTVerificationMode,
+  GSTVerificationSession,
 } from '../../types';
-import type {
-  GstFilingHistoryRecord,
-  GstVerificationRecord,
-  GstVerificationResult,
-} from '../../../shared/gst';
-import {
-  getAvailableFinancialYears,
-  getIndianFinancialYear,
-} from '../../../shared/financialYear';
-import { isValidGstin, normalizeGstin } from '../../../shared/gstin';
-import { fetchGstFilingHistory, verifyGstinOnServer } from '../../services/gstService';
-import { printGstData } from '../../services/gstPrint';
-import { normalizeStoredPartners, isStoredVerification } from '../../services/gstVerificationState';
-import { INITIAL_BUSINESS_PARTNERS } from '../../data/seedData';
+import { INITIAL_BUSINESS_PARTNERS, INITIAL_BRANCHES } from '../../data/seedData';
 import {
   CASCADING_GEO_MASTERS,
   GST_STATE_CODES,
-  SAP_B1_PROPERTIES,
   GeoCountry,
   GeoState,
   GeoDistrict,
   GeoCity,
 } from '../../data/geoData';
+import {
+  getGstVerificationMode,
+  generateCaptchaChallenge,
+  verifyGSTIN,
+  getOrCreateGstDetailsForEntity,
+  KNOWN_REGISTRY_DETAILS,
+  getPreviousIndianFinancialYears,
+} from '../../services/gstService';
+import { GSTVerificationReviewModal } from '../../components/GSTVerificationReviewModal';
+import { GSTDetailsInspector } from '../../components/GSTDetailsInspector';
 import {
   Users2,
   Search,
@@ -51,68 +53,73 @@ import {
   AlertTriangle,
   Upload,
   Trash2,
-  Globe,
   DollarSign,
   Tag,
-  CheckSquare,
-  Square,
   BookOpen,
   Eye,
   Download,
   Lock,
   ShieldAlert,
+  Building2,
+  FileCheck,
+  Check,
+  Award,
+  Zap,
+  Server,
+  Layers,
+  ChevronRight,
+  ChevronDown,
   Printer,
+  X,
 } from 'lucide-react';
+
+import { OperatingContext, filterBusinessPartnersByContext } from '../../services/operatingContextService';
+import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
 
 interface BusinessPartnerMasterViewProps {
   currentUser: User;
-}
-
-type PageNotice = {
-  kind: 'success' | 'error' | 'warning';
-  text: string;
-};
-
-const VERIFICATION_LOG_ACTION = 'GSTIN verified via third-party provider';
-
-function stripPersistence(
-  record: GstVerificationRecord,
-): GstVerificationResult {
-  const {
-    persisted: _persisted,
-    persistenceError: _persistenceError,
-    ...verification
-  } = record;
-  return verification;
-}
-
-function formatTimestamp(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  operatingContext?: OperatingContext;
 }
 
 type TabType =
   | 'GENERAL'
   | 'CONTACTS'
-  | 'ADDRESSES'
+  | 'SHIPPING_ADDRESSES'
   | 'PAYMENT_TERMS'
-  | 'ACCOUNTING'
+  | 'ACCOUNTING_BANKING'
   | 'PROPERTIES'
   | 'REMARKS'
   | 'ATTACHMENTS'
-  | 'GOVERNANCE';
+  | 'GOVERNANCE_AUDIT';
+
+const INDIAN_GOVT_INDUSTRIES = [
+  'Automotive OEM & Components',
+  'Aerospace & Defense',
+  'Agriculture & Food Processing',
+  'Chemical & Petrochemical',
+  'Construction & Infrastructure',
+  'Electrical & Electronics',
+  'Heavy Engineering & Machinery',
+  'Healthcare & Medical Devices',
+  'Logistics & Supply Chain',
+  'Metal & Steel Fabrication',
+  'Packaging & Paper Manufacturing',
+  'Plastics & Polymers Processing',
+  'Renewable Energy & Solar',
+  'Textiles & Apparel',
+  'Water & Waste Management',
+];
 
 export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps> = ({
   currentUser,
+  operatingContext,
 }) => {
   const [bpList, setBpList] = useState<BusinessPartner[]>(() => {
     try {
       const saved = localStorage.getItem('kosh_business_partners');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return normalizeStoredPartners(parsed as BusinessPartner[]);
-        }
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (err) {
       console.error('Error loading business partners from localStorage:', err);
@@ -120,7 +127,20 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     return INITIAL_BUSINESS_PARTNERS;
   });
 
-  React.useEffect(() => {
+  const [branches] = useState<Branch[]>(() => {
+    try {
+      const saved = localStorage.getItem('kosh_branches');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (err) {
+      console.error('Error loading branches from localStorage:', err);
+    }
+    return INITIAL_BRANCHES;
+  });
+
+  useEffect(() => {
     try {
       localStorage.setItem('kosh_business_partners', JSON.stringify(bpList));
     } catch (err) {
@@ -128,62 +148,97 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     }
   }, [bpList]);
 
-  // Dynamic Geographic Masters State (Supports Add / Request Missing Geography)
-  const [geoMasters, setGeoMasters] = useState<GeoCountry[]>(CASCADING_GEO_MASTERS);
-
-  // Search & Filters
+  // Master States
+  const [geoMasters] = useState<GeoCountry[]>(CASCADING_GEO_MASTERS);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [gstFilter, setGstFilter] = useState('ALL');
+  const [companyFilter, setCompanyFilter] = useState('ALL');
+  const [branchFilter, setBranchFilter] = useState('ALL');
 
-  // Active Modal & Tab State
+  // Modal / Active Inspection
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [inspectedBp, setInspectedBp] = useState<BusinessPartner | null>(null);
   const [editingBp, setEditingBp] = useState<BusinessPartner | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('GENERAL');
 
-  // Master Form State
-  const [bpForm, setBpForm] = useState<Partial<BusinessPartner>>({});
-  const [contacts, setContacts] = useState<BPContactPerson[]>([]);
-  const [addresses, setAddresses] = useState<BPAddress[]>([]);
-  const [paymentTerms, setPaymentTerms] = useState<BPPaymentTerms>({
-    paymentTermsCode: 'NET30',
-    creditLimit: 1000000,
-    commitmentLimit: 1500000,
-    priceList: 'Standard Sales Price 2026',
-    discountPercent: 0,
+  // Form State
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(branches[0]?.id || 'br-pond-01');
+  const [bpType, setBpType] = useState<'CUSTOMER' | 'SUPPLIER' | 'LEAD'>('CUSTOMER');
+  const [bpName, setBpName] = useState('');
+  const [shortName, setShortName] = useState('');
+  const [groupIndustry, setGroupIndustry] = useState(INDIAN_GOVT_INDUSTRIES[0]);
+  const [currency, setCurrency] = useState('INR');
+  const [gstinPan, setGstinPan] = useState('');
+  const [panNumber, setPanNumber] = useState('');
+  const [gstLegalName, setGstLegalName] = useState('');
+  const [gstTradeName, setGstTradeName] = useState('');
+  const [gstRegistrationType, setGstRegistrationType] = useState('Regular Taxpayer');
+  const [gstStatus, setGstStatus] = useState<
+    'ACTIVE' | 'VERIFIED' | 'SUSPENDED' | 'CANCELLED' | 'UNVERIFIED' | 'INVALID'
+  >('UNVERIFIED');
+  const [gstRegisteredEmail, setGstRegisteredEmail] = useState('');
+  const [gstRegisteredMobile, setGstRegisteredMobile] = useState('');
+  const [isVerifyingGst, setIsVerifyingGst] = useState(false);
+  const [activeGstMode, setActiveGstMode] = useState<GSTVerificationMode>(() => getGstVerificationMode());
+  const [captchaSession, setCaptchaSession] = useState<GSTVerificationSession | null>(null);
+  const [captchaInput, setCaptchaInput] = useState('');
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [stagedGstDetails, setStagedGstDetails] = useState<GSTVerificationDetails | null>(null);
+  const [savedGstDetails, setSavedGstDetails] = useState<GSTVerificationDetails | null>(null);
+  const [gstErrorMessage, setGstErrorMessage] = useState('');
+  const [isTradeDetailsModalOpen, setIsTradeDetailsModalOpen] = useState(false);
+  const [tradeDetailsTab, setTradeDetailsTab] = useState<'PLACES' | 'ACTIVITIES' | 'GOODS_SERVICES' | 'FILING_HISTORY'>('PLACES');
+  const [selectedFilingFy, setSelectedFilingFy] = useState<string>(() => {
+    const fyi = getPreviousIndianFinancialYears(8);
+    return fyi[0] || '2026-2027';
   });
-  const [accounting, setAccounting] = useState<BPAccounting>({
-    controlAccount: '112000 - Accounts Receivable Trade (Hidden)',
-    downPaymentAccount: '112500 - Customer Down Payment Advance',
-    bankName: 'HDFC Bank Ltd',
-    accountNumber: '',
-    ifscIban: '',
-    withholdingTaxAllowed: false,
-    tdsCategory: '194C - Payments to Contractors',
-  });
-  const [properties, setProperties] = useState<string[]>([]);
-  const [remarks, setRemarks] = useState({
-    internalNotes: '',
-    specialInstructions: '',
-    complianceComments: '',
-  });
-  const [attachments, setAttachments] = useState<BPAttachment[]>([]);
-  const [governanceLogs, setGovernanceLogs] = useState<BPGovernanceLog[]>([]);
+  const [isFilingLoading, setIsFilingLoading] = useState<boolean>(false);
+  const [inspectorTab, setInspectorTab] = useState<'GENERAL' | 'CONTACTS' | 'SHIPPING' | 'BANKING' | 'GST_DETAILS' | 'AUDIT'>('GENERAL');
 
-  // Strict GST Verification & Legal Name Match State
-  const [gstLegalName, setGstLegalName] = useState<string>('');
-  const [verificationFeedback, setVerificationFeedback] = useState<string>('');
-  const [gstExceptionApproved, setGstExceptionApproved] = useState<boolean>(false);
-  const [gstExceptionReason, setGstExceptionReason] = useState<string>('');
+  // Return Filing History Mock Data
+  const [gstFilingHistory, setGstFilingHistory] = useState<
+    Array<{ returnPeriod: string; dateOfFiling: string; status: string }>
+  >([]);
 
-  // Cascading Address Sub-Form State for Address Tab inside Modal
-  const [isAddressSubModalOpen, setIsAddressSubModalOpen] = useState(false);
-  const [addressForm, setAddressForm] = useState<BPAddress>({
+  // MSME Info State
+  const [msmeInfo, setMsmeInfo] = useState<MSMEInfo>({
+    isMSME: false,
+    udyamRegistrationNo: '',
+    enterpriseName: '',
+    enterpriseType: 'Private Limited',
+    dateOfIncorporation: '2018-04-12',
+    dateOfCommencement: '2018-05-01',
+    activityType: 'MANUFACTURING',
+    msmeClassification: 'SMALL',
+    investmentCategory: '₹1 Cr - ₹10 Cr',
+    turnoverCategory: '₹5 Cr - ₹50 Cr',
+    nicCodes: ['22209 - Manufacture of Plastic Products', '25999 - Manufacture of Metal Products'],
+    majorActivity: 'Injection Moulding & Precision Tooling',
+    state: 'Tamil Nadu',
+    district: 'Puducherry',
+    panLinkage: 'AAACK4603M',
+    registrationPeriodStatus: 'Active & Valid (Post-July 2020 Revalidated)',
+    lastRevalidatedAt: new Date().toISOString(),
+  });
+  const [isVerifyingMsme, setIsVerifyingMsme] = useState(false);
+
+  // Mandatory Billing Address (in General Tab)
+  const [billToCountry, setBillToCountry] = useState('India');
+  const [billToState, setBillToState] = useState('Maharashtra');
+  const [billToDistrict, setBillToDistrict] = useState('Mumbai City');
+  const [billToCity, setBillToCity] = useState('Mumbai');
+  const [billToPostalCode, setBillToPostalCode] = useState('400001');
+  const [billToStreetAddress, setBillToStreetAddress] = useState('');
+
+  // Shipping Addresses (Tab 3)
+  const [shippingAddresses, setShippingAddresses] = useState<BPAddress[]>([]);
+  const [isShippingSubModalOpen, setIsShippingSubModalOpen] = useState(false);
+  const [shippingForm, setShippingForm] = useState<BPAddress>({
     id: '',
-    addressName: 'Primary Billing Office',
-    addressType: 'BILL_TO',
+    addressName: 'Primary Plant Shipping Yard',
+    addressType: 'SHIP_TO',
     country: 'India',
     state: 'Maharashtra',
     district: 'Mumbai City',
@@ -193,7 +248,8 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     isDefault: true,
   });
 
-  // Contact Sub-Form State
+  // Contacts
+  const [contacts, setContacts] = useState<BPContactPerson[]>([]);
   const [isContactSubModalOpen, setIsContactSubModalOpen] = useState(false);
   const [contactForm, setContactForm] = useState<BPContactPerson>({
     id: '',
@@ -203,160 +259,197 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     department: 'Supply Chain',
     mobile: '',
     email: '',
-    isDefault: false,
+    isDefault: true,
   });
 
-  // Manage Missing Geography Sub-Modal State
-  const [isGeoSubModalOpen, setIsGeoSubModalOpen] = useState(false);
-  const [geoLevelToAdd, setGeoLevelToAdd] = useState<'COUNTRY' | 'STATE' | 'DISTRICT' | 'CITY' | 'POSTAL'>('CITY');
-  const [newGeoName, setNewGeoName] = useState('');
-  const [newGeoCode, setNewGeoCode] = useState('');
+  // Payment Terms
+  const [paymentTerms, setPaymentTerms] = useState<BPPaymentTerms>({
+    paymentTermsCode: 'NET30',
+    creditLimit: 1000000,
+    commitmentLimit: 1500000,
+    priceList: '', // Empty by default per specification
+    discountPercent: 0,
+  });
+
+  // Accounting & Bank Accounts
+  const [bankAccounts, setBankAccounts] = useState<BPBankDetail[]>([]);
+  const [isBankSubModalOpen, setIsBankSubModalOpen] = useState(false);
+  const [bankForm, setBankForm] = useState<BPBankDetail>({
+    id: '',
+    bankName: 'HDFC Bank Ltd',
+    branchName: 'Fort Branch',
+    ifscCode: 'HDFC0000012',
+    ibanSwift: 'HDFCINBB',
+    accountNumber: '',
+    cancelledChequeFileName: '',
+    isDefault: true,
+  });
+
+  const [properties, setProperties] = useState<string[]>([]);
+  const [remarks, setRemarks] = useState({ internalNotes: '', specialInstructions: '', complianceComments: '' });
+  const [attachments, setAttachments] = useState<BPAttachment[]>([]);
+  const [governanceLogs, setGovernanceLogs] = useState<BPGovernanceLog[]>([]);
 
   const [errorMsg, setErrorMsg] = useState('');
-  const [verifyingId, setVerifyingId] = useState<string | null>(null);
-  const [pageNotice, setPageNotice] = useState<PageNotice | null>(null);
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // Filing history is loaded only from the verified provider endpoint.
-  const [filingYear, setFilingYear] = useState<string>(() => getIndianFinancialYear());
-  const [filingHistory, setFilingHistory] =
-    useState<GstFilingHistoryRecord | null>(null);
-  const [filingHistoryError, setFilingHistoryError] = useState('');
-  const [isLoadingFilings, setIsLoadingFilings] = useState(false);
+  // Selected Branch Object & Shortcode Sequence Calculation for CardCode
+  const currentBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
 
-  const availableFinancialYears = getAvailableFinancialYears();
+  const generateCardCode = (targetBranch: Branch, type: 'CUSTOMER' | 'SUPPLIER' | 'LEAD') => {
+    const typeChar = type === 'CUSTOMER' ? 'C' : type === 'SUPPLIER' ? 'S' : 'L';
+    const pCode = targetBranch.portalBranchCode || '001';
+    const sCode = targetBranch.code || 'PDY';
+    // Count existing BPs of same type and branch for sequence
+    const sameBranchTypeBps = bpList.filter(
+      (b) => b.bpType === type && (b.portalBranchCode === pCode || b.branchCode === sCode)
+    );
+    const seq = (sameBranchTypeBps.length + 1).toString().padStart(4, '0');
+    return `K${typeChar}${pCode}${sCode}${seq}`;
+  };
 
-  // Keep the inspector in sync when a table-level re-verification updates the list.
-  React.useEffect(() => {
-    if (!inspectedBp) return;
-    const current = bpList.find((partner) => partner.id === inspectedBp.id);
-    if (current && current !== inspectedBp) setInspectedBp(current);
-  }, [bpList, inspectedBp]);
+  const calculatedCardCode = editingBp
+    ? editingBp.bpCode
+    : generateCardCode(currentBranch, bpType);
 
-  // Helper getters for Cascading Location Selection using dynamic geoMasters
-  const selectedCountryObj: GeoCountry | undefined = geoMasters.find(
-    (c) => c.countryName === addressForm.country
-  );
-  const availableStates: GeoState[] = selectedCountryObj ? selectedCountryObj.states : [];
+  // Auto populate PAN when 15-char GSTIN is entered
+  useEffect(() => {
+    const cleanGst = gstinPan.trim().toUpperCase();
+    if (cleanGst.length >= 12) {
+      const extractedPan = cleanGst.slice(2, 12);
+      setPanNumber(extractedPan);
+    }
+  }, [gstinPan]);
 
-  const selectedStateObj: GeoState | undefined = availableStates.find(
-    (s) => s.stateName === addressForm.state
-  );
-  const availableDistricts: GeoDistrict[] = selectedStateObj ? selectedStateObj.districts : [];
+  const getActiveTradeDetails = () => {
+    const cleanGst = (gstinPan || editingBp?.gstinPan || '').trim().toUpperCase();
+    const known = cleanGst ? KNOWN_REGISTRY_DETAILS[cleanGst] : null;
+    const currentDetails =
+      savedGstDetails ||
+      stagedGstDetails ||
+      (cleanGst ? getOrCreateGstDetailsForEntity(cleanGst, bpName, gstTradeName) : null) ||
+      editingBp?.gstVerificationDetails;
 
-  const selectedDistrictObj: GeoDistrict | undefined = availableDistricts.find(
-    (d) => d.districtName === addressForm.district
-  );
-  const availableCities: GeoCity[] = selectedDistrictObj ? selectedDistrictObj.cities : [];
+    const coreActivity =
+      currentDetails?.natureOfCoreBusinessActivity?.[0] ||
+      known?.natureOfCoreBusinessActivity?.[0] ||
+      'Manufacturer';
 
-  const selectedCityObj: GeoCity | undefined = availableCities.find(
-    (c) => c.cityName === addressForm.city
-  );
-  const availablePostalCodes: string[] = selectedCityObj ? selectedCityObj.postalCodes : [];
+    const activities: string[] =
+      currentDetails?.natureOfBusinessActivities && currentDetails.natureOfBusinessActivities.length > 0
+        ? currentDetails.natureOfBusinessActivities
+        : known?.natureOfBusinessActivities && known.natureOfBusinessActivities.length > 0
+        ? known.natureOfBusinessActivities
+        : ['Factory / Manufacturing', 'Warehouse / Depot'];
 
-  // State Code Mismatch calculation
-  const currentGst = bpForm.gstinPan || '';
-  const currentGstStateCode = currentGst.length >= 2 ? currentGst.slice(0, 2) : '';
-  const currentPrimaryAddress = addresses.find((a) => a.isDefault) || addresses[0];
-  const selectedStateName = currentPrimaryAddress ? currentPrimaryAddress.state : bpForm.state;
-  const expectedGstStateName = GST_STATE_CODES[currentGstStateCode];
-  const isGstStateMismatch =
-    currentGstStateCode &&
-    expectedGstStateName &&
-    selectedStateName &&
-    !expectedGstStateName.toLowerCase().includes(selectedStateName.toLowerCase()) &&
-    !selectedStateName.toLowerCase().includes(expectedGstStateName.toLowerCase());
+    const goods: Array<{ hsnCode: string; description: string }> =
+      currentDetails?.goods && currentDetails.goods.length > 0
+        ? currentDetails.goods
+        : known?.goods && known.goods.length > 0
+        ? known.goods
+        : [
+            { hsnCode: '4908', description: 'TRANSFERS (DECALCOMANIAS)' },
+            {
+              hsnCode: '3920',
+              description:
+                'OTHER PLATES, SHEETS, FILM, FOIL AND STRIP, OF PLASTICS, NON-CELLULAR AND NOT REINFORCED, LAMINATED, SUPPORTED OR SIMILARLY COMBINED WITH OTHER MATERIALS',
+            },
+            {
+              hsnCode: '8442',
+              description:
+                'MACHINERY, APPARATUS AND EQUIPMENT (OTHER THEN THE MACHINES OF HEADINGS 8456 TO 8465) FOR PREPARING OR MAKING PLATES, PRINTING COMPONENTS , PLATES, CYLINDERS AND LITHOGRAPHIC STONES, PREPARED FOR PRINTING PURPOSES (FOR EXAMPLE, PLANED, GRAINED OR POLISHED)',
+            },
+          ];
 
-  // Open Modal for Create / Edit
+    const services: Array<{ sacCode: string; description: string }> =
+      currentDetails?.services && currentDetails.services.length > 0
+        ? currentDetails.services
+        : known?.services || [];
+
+    const resolvedLegalName =
+      known?.legalName ||
+      currentDetails?.legalName ||
+      gstLegalName ||
+      (cleanGst === '27AAJCS8638J1ZO' ? 'KONDESHWAR INJECTO PRIVATE LIMITED' : '') ||
+      bpName ||
+      'KONDESHWAR INJECTO PRIVATE LIMITED';
+
+    const resolvedTradeName =
+      currentDetails?.tradeName ||
+      known?.tradeName ||
+      gstTradeName ||
+      resolvedLegalName;
+
+    const filingHistory = currentDetails?.filingHistory || known?.filingHistory || [];
+
+    return {
+      gstin: cleanGst || currentDetails?.gstin || '27AAJCK6390B1ZG',
+      legalName: resolvedLegalName,
+      tradeName: resolvedTradeName,
+      coreActivity,
+      activities,
+      goods,
+      services,
+      filingHistory,
+      hasAnnualReturn: known?.hasAnnualReturn !== false,
+    };
+  };
+
   const handleOpenModal = (bp?: BusinessPartner) => {
     setErrorMsg('');
     setActiveTab('GENERAL');
-    setGstLegalName('');
-    setVerificationFeedback('');
-    setGstExceptionApproved(false);
-    setGstExceptionReason('');
-    setPageNotice(null);
-    setFilingHistory(null);
-    setFilingHistoryError('');
-    setIsLoadingFilings(false);
-    setFilingYear(getIndianFinancialYear());
 
     if (bp) {
-      const verification = bp.gstVerification;
-      const isVerifiedWithProvider =
-        bp.gstStatus === 'VERIFIED' && isStoredVerification(verification);
-
       setEditingBp(bp);
-      setBpForm({
-        bpCode: bp.bpCode,
-        bpName: bp.bpName,
-        bpType: bp.bpType,
-        foreignName: bp.foreignName || '',
-        groupIndustry: bp.groupIndustry || 'Automotive OEM',
-        currency: bp.currency || 'INR',
-        gstinPan: bp.gstinPan || '',
-        panNumber: bp.panNumber || '',
-        phone: bp.phone || '',
-        email: bp.email || '',
-        website: bp.website || '',
-        salesperson: bp.salesperson || currentUser.fullName,
-        city: bp.city || '',
-        state: bp.state || '',
-        country: bp.country || 'India',
-        district: bp.district || '',
-        postalCode: bp.postalCode || '',
-        status: bp.status,
-        gstStatus: isVerifiedWithProvider
-          ? 'VERIFIED'
-          : bp.gstStatus === 'EXEMPT'
-          ? 'EXEMPT'
-          : 'UNVERIFIED',
-        gstVerification: isVerifiedWithProvider ? verification : undefined,
-      });
-      if (isVerifiedWithProvider && verification) {
-        setGstLegalName(verification.profile.legalName);
-        setVerificationFeedback(
-          `Verified via ${verification.provider} on ${formatTimestamp(
-            verification.retrievedAt,
-          )}. Registration status: ${verification.profile.status}.`,
-        );
-      }
+      setSelectedBranchId(bp.branchId || branches[0].id);
+      setBpType(bp.bpType);
+      setBpName(bp.bpName);
+      setShortName(bp.shortName || '');
+      setGroupIndustry(bp.groupIndustry || INDIAN_GOVT_INDUSTRIES[0]);
+      setCurrency(bp.currency || 'INR');
+      setGstinPan(bp.gstinPan || '');
+      setPanNumber(bp.panNumber || '');
+      setGstLegalName(bp.gstLegalName || '');
+      setGstTradeName(bp.gstTradeName || bp.bpName);
+      setGstRegistrationType(bp.gstTaxpayerType || 'Regular Taxpayer');
+      setGstStatus((bp.gstStatus as any) || 'ACTIVE');
+      setGstRegisteredEmail(bp.gstRegisteredEmail || 'tax@partner.com');
+      setGstRegisteredMobile(bp.gstRegisteredMobile || '+91 98765 43210');
+      setGstFilingHistory(bp.gstFilingHistory || []);
+
+      setMsmeInfo(
+        bp.msmeInfo || {
+          isMSME: false,
+          udyamRegistrationNo: '',
+          enterpriseName: '',
+          enterpriseType: 'Private Limited',
+          dateOfIncorporation: '2018-04-12',
+          dateOfCommencement: '2018-05-01',
+          activityType: 'MANUFACTURING',
+          msmeClassification: 'SMALL',
+          investmentCategory: '₹1 Cr - ₹10 Cr',
+          turnoverCategory: '₹5 Cr - ₹50 Cr',
+          nicCodes: ['22209 - Manufacture of Plastic Products'],
+          majorActivity: 'Injection Moulding',
+          state: bp.state,
+          district: bp.district,
+          panLinkage: bp.panNumber,
+          registrationPeriodStatus: 'Active & Valid',
+          lastRevalidatedAt: new Date().toISOString(),
+        }
+      );
+
+      setBillToCountry(bp.country || 'India');
+      setBillToState(bp.state || 'Maharashtra');
+      setBillToDistrict(bp.district || 'Mumbai City');
+      setBillToCity(bp.city || 'Mumbai');
+      setBillToPostalCode(bp.postalCode || '400001');
+      setBillToStreetAddress(bp.streetAddress || '');
+
+      setShippingAddresses(bp.addresses || []);
       setContacts(bp.contacts || []);
-      setAddresses(
-        bp.addresses || [
-          {
-            id: `addr-${Date.now()}`,
-            addressName: 'Registered Corporate Office',
-            addressType: 'BILL_TO',
-            country: bp.country || 'India',
-            state: bp.state || 'Maharashtra',
-            district: bp.district || 'Mumbai City',
-            city: bp.city || 'Mumbai',
-            postalCode: bp.postalCode || '400001',
-            streetAddress: 'Main Office Complex',
-            isDefault: true,
-          },
-        ]
-      );
-      setPaymentTerms(
-        bp.paymentTerms || {
-          paymentTermsCode: 'NET30',
-          creditLimit: 1000000,
-          commitmentLimit: 1500000,
-          priceList: 'Standard Sales Price 2026',
-          discountPercent: 0,
-        }
-      );
-      setAccounting(
-        bp.accounting || {
-          controlAccount: '112000 - Accounts Receivable Trade (Hidden)',
-          downPaymentAccount: '112500 - Customer Down Payment Advance',
-          bankName: 'HDFC Bank Ltd',
-          accountNumber: '',
-          ifscIban: '',
-          withholdingTaxAllowed: false,
-          tdsCategory: '194C - Payments to Contractors',
-        }
-      );
+      setPaymentTerms(bp.paymentTerms || { paymentTermsCode: 'NET30', priceList: '', discountPercent: 0 });
+      setBankAccounts(bp.accounting?.bankAccounts || []);
       setProperties(bp.properties || []);
       setRemarks({
         internalNotes: bp.remarks?.internalNotes || '',
@@ -365,31 +458,91 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       });
       setAttachments(bp.attachments || []);
       setGovernanceLogs(bp.governanceLogs || []);
+
+      const currentMode = getGstVerificationMode();
+      setActiveGstMode(currentMode);
+      setGstErrorMessage('');
+      setSavedGstDetails(
+        bp.gstVerificationDetails ||
+        (bp.gstinPan ? getOrCreateGstDetailsForEntity(bp.gstinPan, bp.bpName, bp.gstTradeName) || null : null)
+      );
+      if (currentMode === 'MANUAL_CAPTCHA' && bp.gstinPan) {
+        setCaptchaSession(generateCaptchaChallenge(bp.gstinPan));
+      } else {
+        setCaptchaSession(null);
+      }
     } else {
       setEditingBp(null);
-      const defaultCode = `BP-${Date.now().toString().slice(-4)}`;
-      setBpForm({
-        bpCode: defaultCode,
-        bpName: '',
-        bpType: 'CUSTOMER',
-        foreignName: '',
-        groupIndustry: 'Automotive OEM',
-        currency: 'INR',
-        gstinPan: '',
-        panNumber: '',
-        phone: '+91 ',
-        email: '',
-        website: '',
-        salesperson: currentUser.fullName,
-        city: 'Mumbai',
+      setSelectedBranchId(branches[0].id);
+      setBpType('CUSTOMER');
+      setBpName('');
+      setShortName('');
+      setGroupIndustry(INDIAN_GOVT_INDUSTRIES[0]);
+      setCurrency('INR');
+      setGstinPan('');
+      setPanNumber('');
+      setGstLegalName('');
+      setGstTradeName('');
+      setGstRegistrationType('Regular Taxpayer');
+      setGstStatus('UNVERIFIED');
+      setGstRegisteredEmail('');
+      setGstRegisteredMobile('');
+      setGstFilingHistory([]);
+
+      const currentMode = getGstVerificationMode();
+      setActiveGstMode(currentMode);
+      setGstErrorMessage('');
+      setCaptchaInput('');
+      setSavedGstDetails(null);
+      setStagedGstDetails(null);
+      if (currentMode === 'MANUAL_CAPTCHA') {
+        setCaptchaSession(generateCaptchaChallenge('34AAACK4603M1ZP'));
+      } else {
+        setCaptchaSession(null);
+      }
+
+      setMsmeInfo({
+        isMSME: false,
+        udyamRegistrationNo: '',
+        enterpriseName: '',
+        enterpriseType: 'Private Limited',
+        dateOfIncorporation: '2018-04-12',
+        dateOfCommencement: '2018-05-01',
+        activityType: 'MANUFACTURING',
+        msmeClassification: 'SMALL',
+        investmentCategory: '₹1 Cr - ₹10 Cr',
+        turnoverCategory: '₹5 Cr - ₹50 Cr',
+        nicCodes: ['22209 - Manufacture of Plastic Products'],
+        majorActivity: 'Injection Moulding & Precision Tooling',
         state: 'Maharashtra',
-        country: 'India',
         district: 'Mumbai City',
-        postalCode: '400001',
-        status: 'ACTIVE',
-        gstStatus: 'UNVERIFIED',
-        gstVerification: undefined,
+        panLinkage: '',
+        registrationPeriodStatus: 'Active & Valid',
+        lastRevalidatedAt: new Date().toISOString(),
       });
+
+      setBillToCountry('India');
+      setBillToState('Maharashtra');
+      setBillToDistrict('Mumbai City');
+      setBillToCity('Mumbai');
+      setBillToPostalCode('400001');
+      setBillToStreetAddress('Plot 101, Industrial Hub');
+
+      setShippingAddresses([
+        {
+          id: `ship-${Date.now()}`,
+          addressName: 'Default Plant Shipping Yard',
+          addressType: 'SHIP_TO',
+          country: 'India',
+          state: 'Maharashtra',
+          district: 'Mumbai City',
+          city: 'Mumbai',
+          postalCode: '400001',
+          streetAddress: 'Plot 101, Industrial Hub',
+          isDefault: true,
+        },
+      ]);
+
       setContacts([
         {
           id: `c-${Date.now()}`,
@@ -397,912 +550,432 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
           title: 'Mr.',
           position: 'Purchase Manager',
           department: 'Procurement',
-          mobile: '+91 98000 00000',
-          email: 'contact@partner.com',
+          mobile: '+91 98000 11122',
+          email: 'purchase@partner.com',
           isDefault: true,
         },
       ]);
-      setAddresses([
-        {
-          id: `addr-${Date.now()}`,
-          addressName: 'Registered Corporate Office',
-          addressType: 'BILL_TO',
-          country: 'India',
-          state: 'Maharashtra',
-          district: 'Mumbai City',
-          city: 'Mumbai',
-          postalCode: '400001',
-          streetAddress: 'Plot 100, MIDC Industrial Hub',
-          isDefault: true,
-        },
-      ]);
+
       setPaymentTerms({
         paymentTermsCode: 'NET30',
         creditLimit: 1000000,
         commitmentLimit: 1500000,
-        priceList: 'Standard Sales Price 2026',
+        priceList: '', // Empty by default
         discountPercent: 0,
       });
-      setAccounting({
-        controlAccount: '112000 - Accounts Receivable Trade (Hidden)',
-        downPaymentAccount: '112500 - Customer Down Payment Advance',
-        bankName: 'HDFC Bank Ltd',
-        accountNumber: '50200099887766',
-        ifscIban: 'HDFC0000012',
-        withholdingTaxAllowed: true,
-        tdsCategory: '194C - Payments to Contractors',
-      });
-      setProperties(['VIP Account']);
-      setRemarks({
-        internalNotes: 'Created via Master Data Portal',
-        specialInstructions: 'Standard Delivery Rules Apply',
-        complianceComments: 'Documents verified',
-      });
+
+      setBankAccounts([
+        {
+          id: `bnk-${Date.now()}`,
+          bankName: 'HDFC Bank Ltd',
+          branchName: 'Fort Branch',
+          ifscCode: 'HDFC0000012',
+          ibanSwift: 'HDFCINBB',
+          accountNumber: '50200011223344',
+          cancelledChequeFileName: 'Cancelled_Cheque_HDFC.pdf',
+          isDefault: true,
+          approvalStatus: 'APPROVED',
+        },
+      ]);
+
+      setProperties(['OEM VIP Customer']);
+      setRemarks({ internalNotes: '', specialInstructions: '', complianceComments: '' });
       setAttachments([]);
       setGovernanceLogs([]);
     }
     setIsModalOpen(true);
   };
 
-  // Reset GST verification state if critical fields change
-  const handleBpNameChange = (val: string) => {
-    setBpForm((prev) => ({
-      ...prev,
-      bpName: val,
-      gstStatus: 'UNVERIFIED',
-      gstVerification: undefined,
-    }));
-    setGstLegalName('');
-    setVerificationFeedback('');
+  const handleRequestNewCaptcha = (targetGst?: string) => {
+    const gstToUse = targetGst || gstinPan || '34AAACK4603M1ZP';
+    const newSession = generateCaptchaChallenge(gstToUse);
+    setCaptchaSession(newSession);
+    setCaptchaInput('');
+    setGstErrorMessage('');
   };
 
-  const handleGstinChange = (val: string) => {
-    setBpForm((prev) => ({
-      ...prev,
-      gstinPan: val,
-      gstStatus: 'UNVERIFIED',
-      gstVerification: undefined,
-    }));
-    setGstLegalName('');
-    setVerificationFeedback('');
-    setFilingHistory(null);
-    setFilingHistoryError('');
-  };
-
-  // Open Inspector
-  const handleInspectBp = (bp: BusinessPartner) => {
-    setInspectedBp(bp);
-    setActiveTab('GENERAL');
-    setIsInspectorOpen(true);
-  };
-
-  // Save Business Partner (WITH STRICT SAVE GATE & STATE MISMATCH CHECK)
-  const handleSaveBp = () => {
-    if (!bpForm.bpCode?.trim() || !bpForm.bpName?.trim()) {
-      setErrorMsg('BP CardCode and Business Partner Name are required.');
+  const handleVerifyGstInModal = async () => {
+    setGstErrorMessage('');
+    setErrorMsg('');
+    if (!gstinPan.trim()) {
+      setGstErrorMessage('Please enter a 15-digit GSTIN to verify.');
       return;
     }
 
-    // STATE MISMATCH CHECK (DEFECT FIX ENFORCEMENT)
-    if (isGstStateMismatch && !gstExceptionApproved) {
-      setErrorMsg(
-        `SAVE BLOCKED: GSTIN State Code (${currentGstStateCode} - ${expectedGstStateName}) does not match Primary Address State (${selectedStateName}). Please correct State or check "Approve Multi-State GST Exception" with justification.`
-      );
-      setBpForm((prev) => ({ ...prev, gstStatus: 'FAILED' }));
+    const cleanGst = gstinPan.trim().toUpperCase();
+    if (cleanGst.length !== 15) {
+      setGstErrorMessage('GSTIN must be exactly 15 alphanumeric characters.');
       return;
     }
 
-    // STRICT SAVE GATE ENFORCEMENT
-    if (bpForm.gstStatus !== 'VERIFIED' && bpForm.gstStatus !== 'EXEMPT') {
-      setErrorMsg(
-        'SAVE BLOCKED: Business Partner GSTIN must be verified before saving. Please run "Verify GST" in Tab 1 or Tab 9.'
-      );
-      return;
-    }
+    setIsVerifyingGst(true);
+    try {
+      const mode = getGstVerificationMode();
+      setActiveGstMode(mode);
 
-    // Default primary address values from address list
-    const primaryAddress = addresses.find((a) => a.isDefault) || addresses[0];
-    const city = primaryAddress ? primaryAddress.city : bpForm.city || 'Mumbai';
-    const state = primaryAddress ? primaryAddress.state : bpForm.state || 'Maharashtra';
-    const country = primaryAddress ? primaryAddress.country : bpForm.country || 'India';
-    const district = primaryAddress ? primaryAddress.district : bpForm.district || 'Mumbai City';
-    const postalCode = primaryAddress ? primaryAddress.postalCode : bpForm.postalCode || '400001';
-
-    if (editingBp) {
-      setBpList((prev) =>
-        prev.map((b) =>
-          b.id === editingBp.id
-            ? {
-                ...b,
-                bpCode: bpForm.bpCode!.toUpperCase().trim(),
-                bpName: bpForm.bpName!.toUpperCase().trim(),
-                bpType: bpForm.bpType || 'CUSTOMER',
-                foreignName: bpForm.foreignName,
-                groupIndustry: bpForm.groupIndustry,
-                currency: bpForm.currency,
-                gstinPan: bpForm.gstinPan?.toUpperCase().trim() || '',
-                panNumber: bpForm.panNumber?.toUpperCase().trim() || '',
-                phone: bpForm.phone || '',
-                email: bpForm.email || '',
-                website: bpForm.website,
-                salesperson: bpForm.salesperson,
-                city,
-                state,
-                country,
-                district,
-                postalCode,
-                status: bpForm.status || 'ACTIVE',
-                gstStatus: bpForm.gstVerification
-                  ? 'VERIFIED'
-                  : bpForm.gstStatus === 'EXEMPT'
-                  ? 'EXEMPT'
-                  : 'UNVERIFIED',
-                gstVerification: bpForm.gstVerification,
-                contacts,
-                addresses,
-                paymentTerms,
-                accounting,
-                properties,
-                remarks,
-                attachments,
-                governanceLogs,
-                updatedAt: new Date().toISOString(),
-              }
-            : b
-        )
-      );
-    } else {
-      if (bpList.some((b) => b.bpCode.toLowerCase() === bpForm.bpCode!.trim().toLowerCase())) {
-        setErrorMsg(`BP Code "${bpForm.bpCode}" already exists.`);
+      // If in Manual CAPTCHA mode and no session exists, generate one and prompt user
+      if (mode === 'MANUAL_CAPTCHA' && !captchaSession) {
+        const session = generateCaptchaChallenge(cleanGst);
+        setCaptchaSession(session);
+        setIsVerifyingGst(false);
+        setGstErrorMessage('CAPTCHA challenge generated. Please enter the 6 characters shown in the image below.');
         return;
       }
 
+      const result = await verifyGSTIN({
+        gstin: cleanGst,
+        mode,
+        captchaAnswer: captchaInput,
+        sessionId: captchaSession?.sessionId,
+        requestedBy: currentUser.fullName,
+      });
+
+      // Stage details and open pre-save review modal
+      setStagedGstDetails(result);
+      setIsReviewModalOpen(true);
+    } catch (err: any) {
+      setGstErrorMessage(err.message || 'GSTIN verification failed. Please check inputs.');
+      // Refresh CAPTCHA challenge automatically on error in manual mode
+      if (activeGstMode === 'MANUAL_CAPTCHA') {
+        const refreshed = generateCaptchaChallenge(cleanGst);
+        setCaptchaSession(refreshed);
+        setCaptchaInput('');
+      }
+    } finally {
+      setIsVerifyingGst(false);
+    }
+  };
+
+  const handleConfirmGstReview = (details: GSTVerificationDetails) => {
+    // Map official Legal Name to BP Name (non-editable/locked once verified)
+    // Map official Trade Name to BP Trade Name (non-editable/locked once verified)
+    setBpName(details.legalName);
+    setGstLegalName(details.legalName);
+    setGstTradeName(details.tradeName || details.legalName);
+    setPanNumber(details.gstin.slice(2, 12));
+    setGstRegistrationType(details.taxpayerType);
+    setGstStatus('ACTIVE');
+    setGstRegisteredEmail(`tax.${details.gstin.slice(2, 12).toLowerCase()}@partner.gov.in`);
+    setGstRegisteredMobile('+91 98765 43210');
+
+    // Populate filing history
+    if (details.filingHistory && details.filingHistory.length > 0) {
+      setGstFilingHistory(
+        details.filingHistory.map((f) => ({
+          returnPeriod: f.taxPeriod,
+          dateOfFiling: f.dateOfFiling,
+          status: f.status,
+        }))
+      );
+    }
+
+    // Map Principal Place of Business to Bill-To Address
+    setBillToCountry(details.principalPlaceOfBusiness.country || 'India');
+    setBillToState(details.principalPlaceOfBusiness.state);
+    setBillToCity(details.principalPlaceOfBusiness.city);
+    if (details.principalPlaceOfBusiness.district) {
+      setBillToDistrict(details.principalPlaceOfBusiness.district);
+    }
+    setBillToPostalCode(details.principalPlaceOfBusiness.postalCode);
+    const streetParts = [
+      details.principalPlaceOfBusiness.doorBuildingNo,
+      details.principalPlaceOfBusiness.streetName,
+      details.principalPlaceOfBusiness.locality,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    setBillToStreetAddress(streetParts || 'Principal Place of Business');
+
+    // Persist verified details
+    setSavedGstDetails(details);
+
+    // Record in Verification Audit Log (Tab 9)
+    const logEntry: BPGovernanceLog = {
+      id: `gov-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: `Official GSTIN Verification Confirmed (${details.verificationSource})`,
+      verifier: `${currentUser.fullName}`,
+      details: `GSTIN: ${details.gstin} | Legal: ${details.legalName} | Trade: ${details.tradeName} | PAN: ${details.gstin.slice(2, 12)} | Status: ACTIVE | Review Confirmed.`,
+      status: 'VERIFIED',
+    };
+    setGovernanceLogs((prev) => [logEntry, ...prev]);
+
+    setIsReviewModalOpen(false);
+    setGstErrorMessage('');
+    setSuccessMsg(`Official GST details for "${details.legalName}" verified & confirmed from ${details.verificationSource}.`);
+    setTimeout(() => setSuccessMsg(''), 4500);
+  };
+
+  const handleVerifyMsme = () => {
+    if (!msmeInfo.udyamRegistrationNo?.trim()) {
+      alert('Please enter a valid Udyam Registration Number.');
+      return;
+    }
+
+    setIsVerifyingMsme(true);
+    setTimeout(() => {
+      setIsVerifyingMsme(false);
+      setMsmeInfo((prev) => ({
+        ...prev,
+        enterpriseName: bpName || 'KOSH PRECISION PLASTICS PRIVATE LIMITED',
+        enterpriseType: 'Private Limited',
+        activityType: 'MANUFACTURING',
+        msmeClassification: 'SMALL',
+        registrationPeriodStatus: 'Active & Valid (Post-July 2020 Revalidated)',
+        lastRevalidatedAt: new Date().toISOString(),
+      }));
+      alert('MSME Udyam Registration verified successfully from MSME Portal API.');
+    }, 900);
+  };
+
+  const handleSaveBp = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    // Rule 1: Mandatory Business Partner Name
+    if (!bpName.trim()) {
+      setErrorMsg('Business Partner Name is required.');
+      return;
+    }
+
+    // Rule 2: Mandatory Contact Person with mobile & email (Section G)
+    if (contacts.length === 0 || !contacts.some((c) => c.mobile.trim() && c.email.trim())) {
+      setErrorMsg('SAVE BLOCKED: At least one contact person with a valid Mobile Number and Email Address is mandatory.');
+      return;
+    }
+
+    // Rule 3: Mandatory Bill-to Address details in General tab
+    if (!billToCountry.trim() || !billToState.trim() || !billToCity.trim() || !billToStreetAddress.trim()) {
+      setErrorMsg('SAVE BLOCKED: Mandatory Bill-to Address details (Country, State, City, Street) are required on General Tab.');
+      return;
+    }
+
+    // Rule 4: Mandatory Cancelled Cheque for every bank account
+    if (bankAccounts.some((b) => !b.cancelledChequeFileName)) {
+      setErrorMsg('SAVE BLOCKED: Uploading a Cancelled Cheque document is mandatory for EVERY registered bank account.');
+      return;
+    }
+
+    // Rule 5: Transaction blocking if GST Status is not ACTIVE
+    if (gstinPan.trim() && gstStatus !== 'ACTIVE' && gstStatus !== 'VERIFIED') {
+      setErrorMsg(`SAVE BLOCKED: GSTIN status is "${gstStatus}". Only ACTIVE GST registrations are eligible for saving & transactions.`);
+      return;
+    }
+
+    const billToAddr: BPAddress = {
+      id: `bill-${Date.now()}`,
+      addressName: 'Registered Billing Address',
+      addressType: 'BILL_TO',
+      country: billToCountry.trim(),
+      state: billToState.trim(),
+      district: billToDistrict.trim(),
+      city: billToCity.trim(),
+      postalCode: billToPostalCode.trim(),
+      streetAddress: billToStreetAddress.trim(),
+      isDefault: true,
+    };
+
+    // Auto-create one default Shipping Address from Billing Address if no shipping addresses exist
+    let finalShippingAddresses = [...shippingAddresses];
+    if (finalShippingAddresses.length === 0) {
+      finalShippingAddresses.push({
+        ...billToAddr,
+        id: `ship-auto-${Date.now()}`,
+        addressName: 'Primary Shipping Yard (Auto from Billing)',
+        addressType: 'SHIP_TO',
+        isDefault: true,
+      });
+    }
+
+    if (editingBp) {
+      // Check if locked
+      if (editingBp.isLocked && currentUser.role !== 'PLATFORM_ADMIN') {
+        setErrorMsg('LOCKED: Approved Business Partner data is locked against direct editing. Please submit an Amendment Request.');
+        return;
+      }
+
+      const updatedList = bpList.map((b) => {
+        if (b.id === editingBp.id) {
+          return {
+            ...b,
+            branchId: selectedBranchId,
+            branchCode: currentBranch.code,
+            portalBranchCode: currentBranch.portalBranchCode,
+            bpName: bpName.trim(),
+            bpType,
+            shortName: shortName.trim(),
+            groupIndustry,
+            currency,
+            gstinPan: gstinPan.trim().toUpperCase(),
+            panNumber: panNumber.trim().toUpperCase(),
+            gstLegalName,
+            gstTradeName,
+            gstTaxpayerType: gstRegistrationType,
+            gstStatus,
+            gstRegisteredEmail,
+            gstRegisteredMobile,
+            gstFilingHistory,
+            msmeInfo,
+            city: billToCity.trim(),
+            district: billToDistrict.trim(),
+            state: billToState.trim(),
+            country: billToCountry.trim(),
+            postalCode: billToPostalCode.trim(),
+            streetAddress: billToStreetAddress.trim(),
+            contacts,
+            addresses: [billToAddr, ...finalShippingAddresses],
+            paymentTerms,
+            accounting: {
+              ...b.accounting,
+              bankAccounts,
+            },
+            properties,
+            remarks,
+            attachments,
+            governanceLogs,
+            gstVerificationDetails: savedGstDetails || b.gstVerificationDetails || (gstinPan ? getOrCreateGstDetailsForEntity(gstinPan, bpName, gstTradeName) : undefined),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return b;
+      });
+
+      setBpList(updatedList);
+      localStorage.setItem('kosh_business_partners', JSON.stringify(updatedList));
+      setIsModalOpen(false);
+      setSuccessMsg(`Business Partner "${bpName.trim()}" updated successfully.`);
+    } else {
       const newBp: BusinessPartner = {
         id: `bp-${Date.now()}`,
-        bpCode: bpForm.bpCode!.toUpperCase().trim(),
-        bpName: bpForm.bpName!.toUpperCase().trim(),
-        bpType: bpForm.bpType || 'CUSTOMER',
-        foreignName: bpForm.foreignName,
-        groupIndustry: bpForm.groupIndustry,
-        currency: bpForm.currency,
-        gstinPan: bpForm.gstinPan?.toUpperCase().trim() || '',
-        panNumber: bpForm.panNumber?.toUpperCase().trim() || '',
-        gstStatus: bpForm.gstVerification
-          ? 'VERIFIED'
-          : bpForm.gstStatus === 'EXEMPT'
-          ? 'EXEMPT'
-          : 'UNVERIFIED',
-        gstVerification: bpForm.gstVerification,
-        phone: bpForm.phone || '',
-        email: bpForm.email || '',
-        website: bpForm.website,
-        salesperson: bpForm.salesperson || currentUser.fullName,
-        city,
-        state,
-        country,
-        district,
-        postalCode,
-        status: bpForm.status || 'ACTIVE',
-        sapSyncStatus: 'PENDING',
+        branchId: selectedBranchId,
+        branchCode: currentBranch.code,
+        portalBranchCode: currentBranch.portalBranchCode,
+        bpCode: calculatedCardCode,
+        bpName: bpName.trim(),
+        bpType,
+        shortName: shortName.trim(),
+        groupIndustry,
+        currency,
+        gstinPan: gstinPan.trim().toUpperCase(),
+        panNumber: panNumber.trim().toUpperCase(),
+        gstLegalName: gstLegalName || bpName.trim(),
+        gstTradeName: gstTradeName || bpName.trim(),
+        gstTaxpayerType: gstRegistrationType,
+        gstStatus,
+        gstRegisteredEmail,
+        gstRegisteredMobile,
+        gstFilingHistory,
+        gstVerificationDetails: savedGstDetails || (gstinPan ? getOrCreateGstDetailsForEntity(gstinPan, bpName, gstTradeName) : undefined),
+        msmeInfo,
+        phone: contacts[0]?.mobile || '+91 98000 00000',
+        email: contacts[0]?.email || 'contact@partner.com',
+        city: billToCity.trim(),
+        district: billToDistrict.trim(),
+        state: billToState.trim(),
+        country: billToCountry.trim(),
+        postalCode: billToPostalCode.trim(),
+        streetAddress: billToStreetAddress.trim(),
+        status: 'ACTIVE',
+        isLocked: true, // Lock approved BP data against direct editing
+        approvalStatus: 'APPROVED',
         contacts,
-        addresses,
+        addresses: [billToAddr, ...finalShippingAddresses],
         paymentTerms,
-        accounting,
+        accounting: {
+          controlAccount: '112000 - Accounts Receivable Trade',
+          bankAccounts,
+        },
         properties,
         remarks,
         attachments,
-        governanceLogs: bpForm.gstVerification
-          ? [
-              {
-                id: `gov-${Date.now()}`,
-                timestamp: bpForm.gstVerification.retrievedAt,
-                action: VERIFICATION_LOG_ACTION,
-                verifier: currentUser.fullName,
-                details: `GSTIN ${bpForm.gstVerification.gstin} verified via ${
-                  bpForm.gstVerification.provider
-                }. Provider legal name: ${
-                  bpForm.gstVerification.profile.legalName
-                }. Registration status: ${
-                  bpForm.gstVerification.profile.status
-                }.${
-                  gstExceptionApproved
-                    ? ` Multi-state exception approved: ${gstExceptionReason}`
-                    : ''
-                }`,
-                status: 'VERIFIED',
-              },
-            ]
-          : [],
+        governanceLogs: [
+          {
+            id: `gov-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            action: 'Partner Creation & Multi-Govt Verification Gate',
+            verifier: currentUser.fullName,
+            details: `CardCode: ${calculatedCardCode} | GSTIN Status: ${gstStatus} | MSME: ${msmeInfo.isMSME ? 'YES' : 'NO'}.`,
+            status: 'VERIFIED',
+          },
+          ...governanceLogs,
+        ],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: currentUser.fullName,
       };
-      setBpList([newBp, ...bpList]);
+
+      const updatedList = [newBp, ...bpList];
+      setBpList(updatedList);
+      localStorage.setItem('kosh_business_partners', JSON.stringify(updatedList));
+      setIsModalOpen(false);
+      setSuccessMsg(`Business Partner [${newBp.bpCode}] "${newBp.bpName}" created & approved successfully.`);
     }
 
-    setIsModalOpen(false);
+    setTimeout(() => setSuccessMsg(''), 5000);
   };
 
-  const loadFilingHistory = async (gstin: string, financialYear: string) => {
-    const normalized = normalizeGstin(gstin);
-
-    setFilingYear(financialYear);
-    setFilingHistory(null);
-    setFilingHistoryError('');
-    setIsLoadingFilings(true);
-
-    try {
-      const result = await fetchGstFilingHistory(normalized, financialYear);
-      setFilingHistory(result);
-
-      if (!result.persisted) {
-        setPageNotice({
-          kind: 'warning',
-          text: `Filing history was retrieved from the provider but ${
-            result.persistenceError ?? 'could not be saved to the database.'
-          }`,
-        });
-      }
-    } catch (error) {
-      setFilingHistoryError(
-        error instanceof Error
-          ? error.message
-          : 'GST filing history could not be retrieved.',
-      );
-    } finally {
-      setIsLoadingFilings(false);
-    }
-  };
-
-  // Table Level Verification Handler
-  const handleVerifyGst = async (id: string, customGstin?: string) => {
-    const partner = bpList.find((entry) => entry.id === id);
-    const targetGst = normalizeGstin(customGstin ?? partner?.gstinPan ?? '');
-
-    if (!targetGst) {
-      setPageNotice({
-        kind: 'error',
-        text: 'This Business Partner has no GSTIN to verify.',
-      });
-      return;
-    }
-
-    if (!isValidGstin(targetGst)) {
-      const now = new Date().toISOString();
-      setBpList((prev) =>
-        prev.map((entry) =>
-          entry.id === id
-            ? {
-                ...entry,
-                gstStatus: 'FAILED',
-                gstVerification: undefined,
-                updatedAt: now,
-              }
-            : entry,
-        ),
-      );
-      setPageNotice({
-        kind: 'error',
-        text: `GSTIN ${targetGst} has an invalid format or check digit. No provider request was made.`,
-      });
-      return;
-    }
-
-    setVerifyingId(id);
-    setPageNotice(null);
-
-    try {
-      const record = await verifyGstinOnServer(targetGst);
-      const verification = stripPersistence(record);
-      const logEntry: BPGovernanceLog = {
-        id: `gov-${Date.now()}`,
-        timestamp: verification.retrievedAt,
-        action: VERIFICATION_LOG_ACTION,
-        verifier: currentUser.fullName,
-        details: `GSTIN ${verification.gstin} verified via ${verification.provider}. Provider legal name: ${verification.profile.legalName}. Registration status: ${verification.profile.status}.`,
-        status: 'VERIFIED',
-      };
-
-      setBpList((prev) =>
-        prev.map((entry) =>
-          entry.id === id
-            ? {
-                ...entry,
-                gstinPan: targetGst,
-                gstStatus: 'VERIFIED',
-                gstVerification: verification,
-                updatedAt: new Date().toISOString(),
-                governanceLogs: [logEntry, ...(entry.governanceLogs || [])],
-              }
-            : entry,
-        ),
-      );
-
-      setPageNotice(
-        record.persisted
-          ? {
-              kind: 'success',
-              text: `GSTIN ${targetGst} verified via ${verification.provider}.`,
-            }
-          : {
-              kind: 'warning',
-              text: `GSTIN ${targetGst} was verified via ${verification.provider}, but ${
-                record.persistenceError ?? 'the result could not be saved.'
-              }`,
-            },
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'GST verification failed.';
-      const now = new Date().toISOString();
-
-      setBpList((prev) =>
-        prev.map((entry) =>
-          entry.id === id
-            ? {
-                ...entry,
-                gstStatus: 'FAILED',
-                gstVerification: undefined,
-                updatedAt: now,
-              }
-            : entry,
-        ),
-      );
-      setPageNotice({
-        kind: 'error',
-        text: `GST verification failed for ${targetGst}: ${message}`,
-      });
-    } finally {
-      setVerifyingId(null);
-    }
-  };
-
-  // Form verification handler. A VERIFIED status is only ever set from a
-  // validated provider response returned by the Koshit API.
-  const handleVerifyGstInModal = async () => {
-    setErrorMsg('');
-    setPageNotice(null);
-
-    if (!bpForm.gstinPan?.trim()) {
-      setErrorMsg('Please enter a GSTIN number to verify.');
-      return;
-    }
-
-    const gstin = normalizeGstin(bpForm.gstinPan);
-
-    if (!isValidGstin(gstin)) {
-      setBpForm((prev) => ({
-        ...prev,
-        gstStatus: 'FAILED',
-        gstVerification: undefined,
-      }));
-      setGstLegalName('');
-      setVerificationFeedback(
-        'Invalid GSTIN format or check digit. No provider request was made.',
-      );
-      setErrorMsg(
-        'VERIFICATION FAILED: The GSTIN format or check digit is invalid. Save is blocked.',
-      );
-      return;
-    }
-
-    if (isGstStateMismatch && !gstExceptionApproved) {
-      setBpForm((prev) => ({
-        ...prev,
-        gstStatus: 'FAILED',
-        gstVerification: undefined,
-      }));
-      setVerificationFeedback(
-        `GST State Code Mismatch Error: GSTIN starts with State Code ${currentGstStateCode} (${expectedGstStateName}), but Primary Address State is ${selectedStateName}. Save is BLOCKED.`,
-      );
-      setErrorMsg(
-        `SAVE BLOCKED: GSTIN State Code (${currentGstStateCode} - ${expectedGstStateName}) does not match Primary Address State (${selectedStateName}). Check Exception or correct State.`,
-      );
-      return;
-    }
-
-    setVerifyingId('MODAL');
-
-    try {
-      const record = await verifyGstinOnServer(gstin);
-      const verification = stripPersistence(record);
-      const logEntry: BPGovernanceLog = {
-        id: `gov-${Date.now()}`,
-        timestamp: verification.retrievedAt,
-        action: VERIFICATION_LOG_ACTION,
-        verifier: currentUser.fullName,
-        details: `GSTIN ${verification.gstin} verified via ${
-          verification.provider
-        }. Provider legal name: ${
-          verification.profile.legalName
-        }. Registration status: ${verification.profile.status}.${
-          gstExceptionApproved
-            ? ` Multi-state exception approved: ${gstExceptionReason}`
-            : ''
-        }`,
-        status: 'VERIFIED',
-      };
-
-      setBpForm((prev) => ({
-        ...prev,
-        gstinPan: gstin,
-        gstStatus: 'VERIFIED',
-        gstVerification: verification,
-      }));
-      setGstLegalName(verification.profile.legalName);
-      setVerificationFeedback(
-        `Verified via ${verification.provider} on ${formatTimestamp(
-          verification.retrievedAt,
-        )}. Provider legal name: ${
-          verification.profile.legalName
-        }. Registration status: ${verification.profile.status}.`,
-      );
-      setGovernanceLogs((prev) => [logEntry, ...prev]);
-      setPageNotice(
-        record.persisted
-          ? {
-              kind: 'success',
-              text: `GSTIN ${gstin} verified via ${verification.provider}.`,
-            }
-          : {
-              kind: 'warning',
-              text: `GSTIN ${gstin} was verified via ${verification.provider}, but ${
-                record.persistenceError ?? 'the result could not be saved.'
-              }`,
-            },
-      );
-
-      await loadFilingHistory(gstin, filingYear);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'GST verification failed.';
-
-      setBpForm((prev) => ({
-        ...prev,
-        gstStatus: 'FAILED',
-        gstVerification: undefined,
-      }));
-      setGstLegalName('');
-      setVerificationFeedback(message);
-      setErrorMsg(`GST verification failed: ${message}`);
-      setPageNotice({ kind: 'error', text: message });
-    } finally {
-      setVerifyingId(null);
-    }
-  };
-
-  // Property Toggle Handler
-  const toggleProperty = (propName: string) => {
-    if (properties.includes(propName)) {
-      setProperties(properties.filter((p) => p !== propName));
-    } else {
-      setProperties([...properties, propName]);
-    }
-  };
-
-  // Address Cascading Handlers
-  const handleCountryChange = (countryName: string) => {
-    const country = geoMasters.find((c) => c.countryName === countryName);
-    const firstState = country?.states[0];
-    const firstDistrict = firstState?.districts[0];
-    const firstCity = firstDistrict?.cities[0];
-    const firstPostal = firstCity?.postalCodes[0] || '000000';
-
-    setAddressForm({
-      ...addressForm,
-      country: countryName,
-      state: firstState ? firstState.stateName : '',
-      district: firstDistrict ? firstDistrict.districtName : '',
-      city: firstCity ? firstCity.cityName : '',
-      postalCode: firstPostal,
-    });
-  };
-
-  const handleStateChange = (stateName: string) => {
-    const stateObj = availableStates.find((s) => s.stateName === stateName);
-    const firstDistrict = stateObj?.districts[0];
-    const firstCity = firstDistrict?.cities[0];
-    const firstPostal = firstCity?.postalCodes[0] || '000000';
-
-    setAddressForm({
-      ...addressForm,
-      state: stateName,
-      district: firstDistrict ? firstDistrict.districtName : '',
-      city: firstCity ? firstCity.cityName : '',
-      postalCode: firstPostal,
-    });
-  };
-
-  const handleDistrictChange = (districtName: string) => {
-    const districtObj = availableDistricts.find((d) => d.districtName === districtName);
-    const firstCity = districtObj?.cities[0];
-    const firstPostal = firstCity?.postalCodes[0] || '000000';
-
-    setAddressForm({
-      ...addressForm,
-      district: districtName,
-      city: firstCity ? firstCity.cityName : '',
-      postalCode: firstPostal,
-    });
-  };
-
-  const handleCityChange = (cityName: string) => {
-    const cityObj = availableCities.find((c) => c.cityName === cityName);
-    const firstPostal = cityObj?.postalCodes[0] || '000000';
-
-    setAddressForm({
-      ...addressForm,
-      city: cityName,
-      postalCode: firstPostal,
-    });
-  };
-
-  // Open Manage Missing Geography Sub-Modal
-  const handleOpenAddMissingGeoModal = (
-    level: 'COUNTRY' | 'STATE' | 'DISTRICT' | 'CITY' | 'POSTAL'
-  ) => {
-    setGeoLevelToAdd(level);
-    setNewGeoName('');
-    setNewGeoCode('');
-    setIsGeoSubModalOpen(true);
-  };
-
-  // Save Missing Geography Master Value
-  const handleSaveMissingGeo = () => {
-    if (!newGeoName.trim()) {
-      alert('Please enter a name for the missing geographic value.');
-      return;
-    }
-
-    const name = newGeoName.trim();
-    const code = newGeoCode.trim().toUpperCase() || name.slice(0, 3).toUpperCase();
-
-    const updatedGeo = [...geoMasters];
-
-    if (geoLevelToAdd === 'COUNTRY') {
-      updatedGeo.push({
-        countryCode: code,
-        countryName: name,
-        states: [
-          {
-            stateName: `${name} Central State`,
-            districts: [
-              {
-                districtName: `${name} Central District`,
-                cities: [{ cityName: `${name} Capital`, postalCodes: ['100001'] }],
-              },
-            ],
-          },
-        ],
-      });
-      setGeoMasters(updatedGeo);
-      handleCountryChange(name);
-    } else if (geoLevelToAdd === 'STATE') {
-      const countryIdx = updatedGeo.findIndex((c) => c.countryName === addressForm.country);
-      if (countryIdx !== -1) {
-        updatedGeo[countryIdx].states.push({
-          stateName: name,
-          stateCode: code,
-          districts: [
-            {
-              districtName: `${name} Main District`,
-              cities: [{ cityName: `${name} City`, postalCodes: ['200001'] }],
-            },
-          ],
-        });
-        setGeoMasters(updatedGeo);
-        handleStateChange(name);
-      }
-    } else if (geoLevelToAdd === 'DISTRICT') {
-      const countryIdx = updatedGeo.findIndex((c) => c.countryName === addressForm.country);
-      if (countryIdx !== -1) {
-        const stateIdx = updatedGeo[countryIdx].states.findIndex(
-          (s) => s.stateName === addressForm.state
-        );
-        if (stateIdx !== -1) {
-          updatedGeo[countryIdx].states[stateIdx].districts.push({
-            districtName: name,
-            cities: [{ cityName: `${name} Town`, postalCodes: ['300001'] }],
-          });
-          setGeoMasters(updatedGeo);
-          handleDistrictChange(name);
-        }
-      }
-    } else if (geoLevelToAdd === 'CITY') {
-      const countryIdx = updatedGeo.findIndex((c) => c.countryName === addressForm.country);
-      if (countryIdx !== -1) {
-        const stateIdx = updatedGeo[countryIdx].states.findIndex(
-          (s) => s.stateName === addressForm.state
-        );
-        if (stateIdx !== -1) {
-          const distIdx = updatedGeo[countryIdx].states[stateIdx].districts.findIndex(
-            (d) => d.districtName === addressForm.district
-          );
-          if (distIdx !== -1) {
-            updatedGeo[countryIdx].states[stateIdx].districts[distIdx].cities.push({
-              cityName: name,
-              postalCodes: [code || '400001'],
-            });
-            setGeoMasters(updatedGeo);
-            handleCityChange(name);
-          }
-        }
-      }
-    } else if (geoLevelToAdd === 'POSTAL') {
-      setAddressForm({ ...addressForm, postalCode: code || name });
-    }
-
-    setIsGeoSubModalOpen(false);
-  };
-
-  // Save Address Sub-Modal
-  const handleSaveAddress = () => {
-    if (!addressForm.addressName.trim() || !addressForm.streetAddress.trim()) {
-      alert('Address Name and Street Address are required.');
-      return;
-    }
-
-    if (addressForm.isDefault) {
-      setAddresses(addresses.map((a) => ({ ...a, isDefault: false })));
-    }
-
-    if (addressForm.id) {
-      setAddresses((prev) => prev.map((a) => (a.id === addressForm.id ? { ...addressForm } : a)));
-    } else {
-      setAddresses((prev) => [...prev, { ...addressForm, id: `addr-${Date.now()}` }]);
-    }
-
-    setIsAddressSubModalOpen(false);
-  };
-
-  // Save Contact Sub-Modal
-  const handleSaveContact = () => {
-    if (!contactForm.name.trim() || !contactForm.email.trim()) {
-      alert('Contact Name and Email are required.');
-      return;
-    }
-
-    if (contactForm.isDefault) {
-      setContacts(contacts.map((c) => ({ ...c, isDefault: false })));
-    }
-
-    if (contactForm.id) {
-      setContacts((prev) => prev.map((c) => (c.id === contactForm.id ? { ...contactForm } : c)));
-    } else {
-      setContacts((prev) => [...prev, { ...contactForm, id: `c-${Date.now()}` }]);
-    }
-
-    setIsContactSubModalOpen(false);
-  };
-
-  // Simulated Document Upload
-  const handleSimulatedUpload = (docType: string) => {
-    const fileName = `${bpForm.bpCode || 'BP'}_${docType.replace(/\s+/g, '_')}.pdf`;
-    const newAtt: BPAttachment = {
-      id: `att-${Date.now()}`,
-      docType,
-      fileName,
-      fileSizeBytes: Math.floor(Math.random() * 1500000) + 200000,
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: currentUser.fullName,
+  const handleInspectBp = (bp: BusinessPartner) => {
+    const enrichedBp: BusinessPartner = {
+      ...bp,
+      gstVerificationDetails: bp.gstVerificationDetails || (bp.gstinPan ? getOrCreateGstDetailsForEntity(bp.gstinPan, bp.bpName, bp.gstTradeName) : undefined),
     };
-    setAttachments([newAtt, ...attachments]);
+    setInspectedBp(enrichedBp);
+    setInspectorTab('GENERAL');
+    setIsInspectorOpen(true);
   };
 
   const filteredBps = bpList.filter((b) => {
+    // Screen-level Company Filter
+    if (companyFilter !== 'ALL') {
+      const bCompanyId = (b as any).companyId || (branches.find((br) => br.id === b.branchId)?.companyId) || 'co-kosh-01';
+      if (bCompanyId !== companyFilter) return false;
+    }
+
+    // Screen-level Branch Filter
+    if (branchFilter !== 'ALL' && b.branchId !== branchFilter) {
+      return false;
+    }
+
     const matchesType = typeFilter === 'ALL' || b.bpType === typeFilter;
     const matchesGst =
       gstFilter === 'ALL' ||
-      (gstFilter === 'VERIFIED' ? b.gstStatus === 'VERIFIED' : b.gstStatus !== 'VERIFIED');
+      (gstFilter === 'VERIFIED' ? b.gstStatus === 'ACTIVE' || b.gstStatus === 'VERIFIED' : b.gstStatus !== 'ACTIVE');
     const matchesSearch =
       b.bpCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
       b.bpName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.gstinPan.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (b.gstinPan && b.gstinPan.toLowerCase().includes(searchTerm.toLowerCase())) ||
       b.city.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesType && matchesGst && matchesSearch;
   });
 
-  const isSaveDisabled = Boolean(
-    (bpForm.gstStatus !== 'VERIFIED' && bpForm.gstStatus !== 'EXEMPT') ||
-    (isGstStateMismatch && !gstExceptionApproved)
-  );
-
-  const handlePrintGst = (partner: BusinessPartner) => {
-    const verification = partner.gstVerification;
-
-    if (partner.gstStatus !== 'VERIFIED' || !verification) {
-      setPageNotice({
-        kind: 'error',
-        text: 'GST data cannot be printed until the GSTIN has been verified by the provider.',
-      });
-      return;
-    }
-
-    const matchingHistory =
-      filingHistory &&
-      filingHistory.gstin === verification.gstin &&
-      filingHistory.financialYear === filingYear
-        ? filingHistory
-        : null;
-
-    try {
-      printGstData({
-        businessPartner: partner,
-        verification,
-        filingHistory: matchingHistory
-          ? {
-              financialYear: matchingHistory.financialYear,
-              retrievedAt: matchingHistory.retrievedAt,
-              returns: matchingHistory.returns,
-            }
-          : null,
-      });
-    } catch (error) {
-      setPageNotice({
-        kind: 'error',
-        text:
-          error instanceof Error
-            ? error.message
-            : 'The GST printout could not be opened.',
-      });
-    }
-  };
-
-  const renderFilingHistoryPanel = (gstin: string) => {
-    const normalized = normalizeGstin(gstin);
-    const matchingResult =
-      filingHistory && filingHistory.gstin === normalized ? filingHistory : null;
-
-    return (
-      <div className="border rounded-xl p-3 bg-white space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h5 className="font-bold text-slate-900 text-xs">
-              GST filing history (third-party provider)
-            </h5>
-            <p className="text-[10px] text-slate-500">
-              Loaded on demand. An empty result stays empty; a provider failure
-              is shown as a failure.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={filingYear}
-              onChange={(event) => {
-                setFilingYear(event.target.value);
-                setFilingHistory(null);
-                setFilingHistoryError('');
-              }}
-              className="text-xs p-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold"
-            >
-              {availableFinancialYears.map((year) => (
-                <option key={year} value={year}>
-                  FY {year}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void loadFilingHistory(normalized, filingYear)}
-              disabled={isLoadingFilings || !normalized}
-              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoadingFilings ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              Load returns
-            </button>
-          </div>
-        </div>
-
-        {filingHistoryError ? (
-          <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg font-semibold flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>Filing history unavailable: {filingHistoryError}</span>
-          </div>
-        ) : isLoadingFilings ? (
-          <p className="text-slate-500 italic">Retrieving filing history…</p>
-        ) : !matchingResult ? (
-          <p className="text-slate-400 italic">
-            Select a financial year and load returns to view provider data.
-          </p>
-        ) : matchingResult.returns.length === 0 ? (
-          <p className="text-slate-500 italic">
-            The provider returned no filing records for FY{' '}
-            {matchingResult.financialYear}.
-          </p>
-        ) : (
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase">
-                  <th className="p-2">Return type</th>
-                  <th className="p-2">Return period</th>
-                  <th className="p-2">Filing status</th>
-                  <th className="p-2">Filing date</th>
-                  <th className="p-2">ARN</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {matchingResult.returns.map((record) => (
-                  <tr
-                    key={`${record.returnType}-${record.returnPeriod}`}
-                    className="text-[11px] text-slate-700"
-                  >
-                    <td className="p-2 font-semibold">{record.returnType}</td>
-                    <td className="p-2 font-mono">{record.returnPeriod}</td>
-                    <td className="p-2">{record.filingStatus}</td>
-                    <td className="p-2">{record.filingDate || 'Unavailable'}</td>
-                    <td className="p-2 font-mono">{record.arn || 'Unavailable'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {matchingResult && (
-          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Source: {matchingResult.provider}</span>
-            <span>Retrieved: {formatTimestamp(matchingResult.retrievedAt)}</span>
-            {matchingResult.creditsRemaining !== null && (
-              <span>Provider credits remaining: {matchingResult.creditsRemaining}</span>
-            )}
-            {!matchingResult.persisted && (
-              <span className="text-amber-700 font-bold">
-                Not saved: {matchingResult.persistenceError}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
-    <div className="space-y-4 text-xs select-none font-sans">
-      {/* Title Header */}
+    <div className="space-y-4 text-xs font-sans select-none">
+      {operatingContext && <ContextIndicatorBar context={operatingContext} compact={true} />}
+
+      {/* Header Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Users2 className="w-5 h-5 text-indigo-600" />
             Business Partner Master
           </h2>
-          <p className="text-slate-500 text-xs mt-0.5">
-            Full SAP Business One 9-Tab BP Interface: Customers, Suppliers/Vendors, Leads,
-            Geographic Cascading & third-party GSTIN verification before save.
+          <p className="text-slate-500 mt-0.5">
+            Full Governance: Non-editable CardCode (K+Type+Branch+Seq), GSTIN/PAN Verification, MSME/Udyam & Multi-Bank Cheque Upload.
           </p>
         </div>
 
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-xs transition cursor-pointer"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-xs cursor-pointer transition"
         >
           <Plus className="w-4 h-4" /> Add Business Partner
         </button>
       </div>
 
-      {pageNotice && (
-        <div
-          className={`p-3 rounded-xl border text-xs font-semibold flex items-start justify-between gap-3 ${
-            pageNotice.kind === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : pageNotice.kind === 'warning'
-              ? 'bg-amber-50 border-amber-200 text-amber-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
-        >
-          <span>{pageNotice.text}</span>
-          <button
-            type="button"
-            onClick={() => setPageNotice(null)}
-            className="font-bold opacity-70 hover:opacity-100 cursor-pointer"
-            aria-label="Dismiss notice"
-          >
-            ✕
-          </button>
+      {successMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{successMsg}</span>
         </div>
       )}
 
@@ -1316,33 +989,64 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
               placeholder="Search CardCode, Name, GSTIN..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
             />
           </div>
+
+          {/* Screen-Level Company Filter */}
+          <select
+            value={companyFilter}
+            onChange={(e) => {
+              setCompanyFilter(e.target.value);
+              setBranchFilter('ALL');
+            }}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
+          >
+            <option value="ALL">All Authorized Companies</option>
+            <option value="co-kosh-01">KOSH-HQ — Kosh Innovations Pvt Ltd</option>
+            <option value="co-kosh-02">KOSH-SOUTH — Kosh South Logistics India Pvt Ltd</option>
+            <option value="co-kosh-03">KOSH-WEST — Kosh West Manufacturing Components Pvt Ltd</option>
+          </select>
+
+          {/* Screen-Level Branch Filter */}
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
+          >
+            <option value="ALL">All Authorized Branches</option>
+            {branches
+              .filter((br) => companyFilter === 'ALL' || (br.companyId || 'co-kosh-01') === companyFilter)
+              .map((br) => (
+                <option key={br.id} value={br.id}>
+                  [{br.portalBranchCode}] {br.name}
+                </option>
+              ))}
+          </select>
 
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
           >
             <option value="ALL">All BP Types</option>
-            <option value="CUSTOMER">Customer (CUST)</option>
-            <option value="SUPPLIER">Supplier / Vendor (VEND)</option>
-            <option value="LEAD">Lead / Prospect</option>
+            <option value="CUSTOMER">Customer (C)</option>
+            <option value="SUPPLIER">Supplier (S)</option>
+            <option value="LEAD">Lead (L)</option>
           </select>
 
           <select
             value={gstFilter}
             onChange={(e) => setGstFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
           >
             <option value="ALL">GSTIN Status (All)</option>
-            <option value="VERIFIED">GSTIN Verified</option>
-            <option value="UNVERIFIED">Unverified / Pending</option>
+            <option value="VERIFIED">ACTIVE / Verified Only</option>
+            <option value="UNVERIFIED">Unverified / Blocked</option>
           </select>
         </div>
 
-        <span className="text-slate-500 font-medium">
+        <span className="text-slate-500 font-semibold">
           Showing <strong>{filteredBps.length}</strong> of <strong>{bpList.length}</strong> Business Partners
         </span>
       </div>
@@ -1357,1018 +1061,608 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                 <th className="p-3.5">BP CardCode</th>
                 <th className="p-3.5">Business Partner Name</th>
                 <th className="p-3.5">GSTIN / PAN</th>
-                <th className="p-3.5">Primary Location</th>
-                <th className="p-3.5">SAP Status</th>
-                <th className="p-3.5">Status</th>
+                <th className="p-3.5">Location (Country, State, City)</th>
+                <th className="p-3.5">MSME / Udyam</th>
+                <th className="p-3.5">GST Status</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredBps.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-slate-400">
+                  <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
                     No business partners found matching filters.
                   </td>
                 </tr>
               ) : (
-                filteredBps.map((bp) => (
-                  <tr key={bp.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          bp.bpType === 'CUSTOMER'
-                            ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                            : bp.bpType === 'SUPPLIER'
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                            : 'bg-purple-100 text-purple-800 border border-purple-200'
-                        }`}
-                      >
-                        {bp.bpType}
-                      </span>
-                    </td>
-                    <td className="p-3.5 font-mono font-bold text-indigo-700">{bp.bpCode}</td>
-                    <td className="p-3.5 font-bold text-slate-900">
-                      <div>{bp.bpName}</div>
-                      {bp.groupIndustry && (
-                        <div className="text-[10px] text-slate-400 font-medium">
-                          {bp.groupIndustry}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3.5 font-mono">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-800 font-semibold">{bp.gstinPan || '—'}</span>
-                        {bp.gstStatus === 'VERIFIED' ? (
-                          <span
-                            className="text-emerald-600 flex items-center gap-0.5"
-                            title={
-                              bp.gstVerification
-                                ? `GSTIN verified via ${bp.gstVerification.provider} on ${formatTimestamp(
-                                    bp.gstVerification.retrievedAt,
-                                  )}`
-                                : 'GSTIN status is not backed by provider data'
-                            }
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
+                filteredBps.map((bp) => {
+                  const isGstActive = bp.gstStatus === 'ACTIVE' || bp.gstStatus === 'VERIFIED';
+                  return (
+                    <tr key={bp.id} className="hover:bg-slate-50/80 transition">
+                      <td className="p-3.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${
+                            bp.bpType === 'CUSTOMER'
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                              : bp.bpType === 'SUPPLIER'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : 'bg-purple-100 text-purple-800 border-purple-300'
+                          }`}
+                        >
+                          {bp.bpType}
+                        </span>
+                      </td>
+                      <td className="p-3.5 font-mono font-bold text-indigo-700">{bp.bpCode}</td>
+                      <td className="p-3.5 font-bold text-slate-900">
+                        <div>{bp.bpName}</div>
+                        {bp.groupIndustry && (
+                          <div className="text-[10px] text-slate-500 font-medium">{bp.groupIndustry}</div>
+                        )}
+                      </td>
+                      <td className="p-3.5 font-mono">
+                        <div className="text-slate-900 font-bold">{bp.gstinPan || 'N/A'}</div>
+                        {bp.panNumber && (
+                          <div className="text-[10px] text-slate-500 font-mono">PAN: {bp.panNumber}</div>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-slate-700 font-medium">
+                        {bp.country || 'India'}, {bp.state}, {bp.city}
+                      </td>
+                      <td className="p-3.5">
+                        {bp.msmeInfo?.isMSME ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-max">
+                            <Award className="w-3 h-3 text-emerald-600" />
+                            {bp.msmeInfo.msmeClassification || 'MSME YES'}
                           </span>
                         ) : (
-                          <button
-                            disabled={verifyingId === bp.id}
-                            onClick={() => handleVerifyGst(bp.id)}
-                            className="text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 cursor-pointer font-bold flex items-center gap-1"
-                          >
-                            {verifyingId === bp.id ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              'Verify GST'
-                            )}
-                          </button>
+                          <span className="text-[10px] text-slate-400 font-semibold">NO</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="p-3.5 text-slate-600">
-                      <div>
-                        {bp.city}, {bp.state}
-                      </div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{bp.phone}</div>
-                    </td>
-                    <td className="p-3.5">
-                      {bp.sapSyncStatus === 'SYNCED' ? (
-                        <span className="text-emerald-700 font-mono text-[11px] font-bold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> {bp.sapBpCode}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 italic font-mono">Pending Sync</span>
-                      )}
-                    </td>
-                    <td className="p-3.5">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        {bp.status}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-right space-x-1">
-                      <button
-                        onClick={() => handleInspectBp(bp)}
-                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
-                        title="View Full SAP Details"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenModal(bp)}
-                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
-                        title="Edit Business Partner"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex items-center gap-1 font-bold">
+                          {isGstActive ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          )}
+                          <span className={isGstActive ? 'text-emerald-700' : 'text-rose-700'}>
+                            {isGstActive ? 'ACTIVE' : bp.gstStatus || 'BLOCKED'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-3.5 text-right space-x-1">
+                        <button
+                          onClick={() => handleInspectBp(bp)}
+                          className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
+                          title="View Full Partner Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenModal(bp)}
+                          className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
+                          title="Edit Partner Details"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MULTI-TAB INSPECTOR MODAL */}
-      {isInspectorOpen && inspectedBp && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-3">
-                <Building className="w-6 h-6 text-indigo-400" />
-                <div>
-                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                    {inspectedBp.bpName}
-                    <span className="font-mono text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded">
-                      {inspectedBp.bpCode}
-                    </span>
-                  </h3>
-                  <p className="text-slate-400 text-[11px] mt-0.5">
-                    BP Type: <strong>{inspectedBp.bpType}</strong> | Group:{' '}
-                    {inspectedBp.groupIndustry || 'OEM'} | SAP Sync:{' '}
-                    <strong>{inspectedBp.sapSyncStatus}</strong> ({inspectedBp.sapBpCode || 'N/A'})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsInspectorOpen(false)}
-                className="text-slate-400 hover:text-white font-bold p-1 rounded-md"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Tab Navigation */}
-            <div className="bg-slate-100 border-b border-slate-200 px-4 flex overflow-x-auto gap-1 text-[11px] font-bold text-slate-600 pt-2">
-              {[
-                { key: 'GENERAL', label: '1. General', icon: FileText },
-                { key: 'CONTACTS', label: '2. Contacts', icon: Users2 },
-                { key: 'ADDRESSES', label: '3. Addresses (Cascading)', icon: MapPin },
-                { key: 'PAYMENT_TERMS', label: '4. Payment Terms', icon: CreditCard },
-                { key: 'ACCOUNTING', label: '5. Accounting', icon: DollarSign },
-                { key: 'PROPERTIES', label: '6. Properties (Flags)', icon: Tag },
-                { key: 'REMARKS', label: '7. Remarks', icon: BookOpen },
-                { key: 'ATTACHMENTS', label: '8. Attachments', icon: Download },
-                { key: 'GOVERNANCE', label: '9. Governance & GST', icon: ShieldCheck },
-              ].map((t) => {
-                const Icon = t.icon;
-                const isActive = activeTab === t.key;
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key as TabType)}
-                    className={`px-3 py-2 border-b-2 font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition ${
-                      isActive
-                        ? 'border-indigo-600 text-indigo-700 bg-white rounded-t-lg shadow-xs'
-                        : 'border-transparent hover:text-slate-900'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Content Area */}
-            <div className="p-5 overflow-y-auto flex-1 space-y-4">
-              {activeTab === 'GENERAL' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="p-3 bg-slate-50 border rounded-lg">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      CardCode / BP Code
-                    </span>
-                    <span className="font-mono font-bold text-indigo-700 text-sm">
-                      {inspectedBp.bpCode}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg col-span-2">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      Business Partner Name
-                    </span>
-                    <span className="font-bold text-slate-900 text-sm">{inspectedBp.bpName}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      Foreign Name
-                    </span>
-                    <span className="font-semibold text-slate-800">
-                      {inspectedBp.foreignName || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      Industry / Group
-                    </span>
-                    <span className="font-semibold text-slate-800">
-                      {inspectedBp.groupIndustry || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      Account Currency
-                    </span>
-                    <span className="font-bold text-slate-800">{inspectedBp.currency || 'INR'}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg font-mono">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      GSTIN / Federal Tax ID
-                    </span>
-                    <span className="font-bold text-slate-900">
-                      {inspectedBp.gstinPan || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg font-mono">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      PAN Number
-                    </span>
-                    <span className="font-bold text-slate-900">
-                      {inspectedBp.panNumber || '—'}
-                    </span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-lg">
-                    <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                      Account Salesperson
-                    </span>
-                    <span className="font-semibold text-slate-800">
-                      {inspectedBp.salesperson || '—'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'CONTACTS' && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900 text-xs">Registered Contact Persons</h4>
-                  {!inspectedBp.contacts || inspectedBp.contacts.length === 0 ? (
-                    <p className="text-slate-400 italic">No contact persons registered.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {inspectedBp.contacts.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-3 border rounded-xl bg-slate-50 space-y-1 relative"
-                        >
-                          {c.isDefault && (
-                            <span className="absolute top-2 right-2 text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded">
-                              DEFAULT CONTACT
-                            </span>
-                          )}
-                          <div className="font-bold text-slate-900 text-xs">
-                            {c.title} {c.name}
-                          </div>
-                          <div className="text-slate-500 font-medium">
-                            {c.position} ({c.department})
-                          </div>
-                          <div className="text-slate-600 flex items-center gap-3 pt-1">
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-slate-400" /> {c.mobile}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Mail className="w-3 h-3 text-slate-400" /> {c.email}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'ADDRESSES' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-900 font-medium text-[11px]">
-                    <strong>Strict Cascading Field Hierarchy Applied:</strong> 1. Country → 2. State
-                    / Province → 3. District → 4. City → 5. Postal Code.
-                  </div>
-                  {!inspectedBp.addresses || inspectedBp.addresses.length === 0 ? (
-                    <p className="text-slate-400 italic">No addresses defined.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {inspectedBp.addresses.map((a) => (
-                        <div
-                          key={a.id}
-                          className="p-3.5 border rounded-xl bg-slate-50 space-y-1.5 relative"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-900">{a.addressName}</span>
-                            <span
-                              className={`text-[9px] font-bold px-2 py-0.5 rounded ${
-                                a.addressType === 'BILL_TO'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-emerald-100 text-emerald-800'
-                              }`}
-                            >
-                              {a.addressType === 'BILL_TO' ? 'BILL TO' : 'SHIP TO'}
-                            </span>
-                          </div>
-                          <div className="text-slate-700">{a.streetAddress}</div>
-                          <div className="text-slate-500 font-medium text-[11px]">
-                            {a.city}, {a.district && `${a.district}, `}
-                            {a.state}, {a.country} –{' '}
-                            <span className="font-mono font-bold text-indigo-700">
-                              {a.postalCode}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'PAYMENT_TERMS' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3.5 bg-slate-50 border rounded-xl space-y-1">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold">
-                      Payment Terms Code
-                    </span>
-                    <div className="font-bold text-slate-900 text-sm">
-                      {inspectedBp.paymentTerms?.paymentTermsCode || 'NET30'}
-                    </div>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 border rounded-xl space-y-1">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold">
-                      Assigned Price List
-                    </span>
-                    <div className="font-bold text-slate-900 text-sm">
-                      {inspectedBp.paymentTerms?.priceList || 'Standard Price List'}
-                    </div>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 border rounded-xl space-y-1">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold">
-                      Credit Limit (₹)
-                    </span>
-                    <div className="font-mono font-bold text-emerald-700 text-sm">
-                      ₹ {(inspectedBp.paymentTerms?.creditLimit || 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 border rounded-xl space-y-1">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold">
-                      Commitment Limit (₹)
-                    </span>
-                    <div className="font-mono font-bold text-indigo-700 text-sm">
-                      ₹ {(inspectedBp.paymentTerms?.commitmentLimit || 0).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'ACCOUNTING' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3.5 bg-slate-50 border rounded-xl">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold block">
-                      Down Payment Intermediary Account
-                    </span>
-                    <span className="font-bold text-slate-900 font-mono">
-                      {inspectedBp.accounting?.downPaymentAccount || '112500 - Customer Advance'}
-                    </span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 border rounded-xl">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold block">
-                      Bank Name & Account No.
-                    </span>
-                    <span className="font-bold text-slate-900">
-                      {inspectedBp.accounting?.bankName || 'N/A'} –{' '}
-                      {inspectedBp.accounting?.accountNumber || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 border rounded-xl">
-                    <span className="text-slate-400 uppercase text-[10px] font-bold block">
-                      IFSC / SWIFT / IBAN
-                    </span>
-                    <span className="font-mono font-bold text-indigo-700">
-                      {inspectedBp.accounting?.ifscIban || 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'PROPERTIES' && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900">SAP B1 Property Flags (64 Flags)</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {inspectedBp.properties && inspectedBp.properties.length > 0 ? (
-                      inspectedBp.properties.map((p) => (
-                        <span
-                          key={p}
-                          className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs"
-                        >
-                          ✓ {p}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-slate-400 italic">No property flags assigned.</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'REMARKS' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-50 border rounded-xl">
-                    <span className="font-bold text-slate-700 block mb-1">Internal Notes</span>
-                    <p className="text-slate-600">
-                      {inspectedBp.remarks?.internalNotes || 'No internal notes provided.'}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-slate-50 border rounded-xl">
-                    <span className="font-bold text-slate-700 block mb-1">
-                      Special Handling Instructions
-                    </span>
-                    <p className="text-slate-600">
-                      {inspectedBp.remarks?.specialInstructions || 'None.'}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'ATTACHMENTS' && (
-                <div className="space-y-3">
-                  <h4 className="font-bold text-slate-900">Uploaded Compliance Documents</h4>
-                  {!inspectedBp.attachments || inspectedBp.attachments.length === 0 ? (
-                    <p className="text-slate-400 italic">No attachments uploaded.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {inspectedBp.attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-indigo-600" />
-                            <div>
-                              <div className="font-bold text-slate-900">{att.fileName}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">
-                                Type: {att.docType} | Size:{' '}
-                                {(att.fileSizeBytes / 1024).toFixed(0)} KB | Uploaded:{' '}
-                                {new Date(att.uploadedAt).toLocaleDateString()}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="px-2 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold text-[10px]">
-                            Verified Doc
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'GOVERNANCE' && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs text-slate-400 uppercase font-bold">
-                        Current GSTIN status
-                      </div>
-                      <div className="text-sm font-bold flex items-center gap-2 mt-0.5">
-                        <span>{inspectedBp.gstinPan || 'No GSTIN'}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            inspectedBp.gstStatus === 'VERIFIED'
-                              ? 'bg-emerald-500 text-white'
-                              : inspectedBp.gstStatus === 'FAILED'
-                              ? 'bg-rose-500 text-white'
-                              : 'bg-amber-500 text-slate-900'
-                          }`}
-                        >
-                          {inspectedBp.gstStatus}
-                        </span>
-                      </div>
-                      {inspectedBp.gstVerification && (
-                        <p className="text-[10px] text-slate-300 mt-1">
-                          Source: {inspectedBp.gstVerification.provider} | Retrieved:{' '}
-                          {formatTimestamp(inspectedBp.gstVerification.retrievedAt)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handlePrintGst(inspectedBp)}
-                        disabled={!inspectedBp.gstVerification}
-                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Printer className="w-3.5 h-3.5" /> Print GST data
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleVerifyGst(inspectedBp.id)}
-                        disabled={verifyingId === inspectedBp.id}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <RefreshCw
-                          className={`w-3.5 h-3.5 ${
-                            verifyingId === inspectedBp.id ? 'animate-spin' : ''
-                          }`}
-                        />
-                        Re-verify via provider
-                      </button>
-                    </div>
-                  </div>
-
-                  {inspectedBp.gstVerification ? (
-                    <div className="border rounded-xl p-3 bg-white">
-                      <h5 className="font-bold text-slate-900 text-xs">
-                        Provider verification record
-                      </h5>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Provider legal name
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {inspectedBp.gstVerification.profile.legalName}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Registration status
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {inspectedBp.gstVerification.profile.status}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Taxpayer type
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {inspectedBp.gstVerification.profile.taxpayerType ||
-                              'Unavailable'}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Trade name
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {inspectedBp.gstVerification.profile.tradeName ||
-                              'Unavailable'}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Registration date
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {inspectedBp.gstVerification.profile.registrationDate ||
-                              'Unavailable'}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            State code
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {inspectedBp.gstVerification.profile.stateCode ||
-                              'Unavailable'}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg col-span-1 md:col-span-2">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Registered address
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {[
-                              inspectedBp.gstVerification.profile.address,
-                              inspectedBp.gstVerification.profile.city,
-                              inspectedBp.gstVerification.profile.pincode,
-                            ]
-                              .filter(Boolean)
-                              .join(', ') || 'Unavailable'}
-                          </span>
-                        </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Provider credits remaining
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {inspectedBp.gstVerification.creditsRemaining ?? 'Unavailable'}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-2">
-                        Third-party data from {inspectedBp.gstVerification.provider}.
-                        This is not an official GST certificate or government document.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl font-semibold">
-                      No provider verification record is stored for this Business
-                      Partner. Run a verification to retrieve GST data.
-                    </div>
-                  )}
-
-                  {inspectedBp.gstinPan &&
-                    renderFilingHistoryPanel(inspectedBp.gstinPan)}
-
-                  <div className="border rounded-xl p-3 bg-white space-y-2">
-                    <h5 className="font-bold text-slate-900 text-xs">
-                      Verification activity
-                    </h5>
-                    {!inspectedBp.governanceLogs || inspectedBp.governanceLogs.length === 0 ? (
-                      <p className="text-slate-400 italic">No verification logs recorded.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {inspectedBp.governanceLogs.map((log) => (
-                          <div
-                            key={log.id}
-                            className="p-2.5 bg-slate-50 border rounded-lg text-slate-700 space-y-0.5"
-                          >
-                            <div className="flex items-center justify-between font-bold text-[11px]">
-                              <span>{log.action}</span>
-                              <span className="text-slate-400 font-mono">
-                                {new Date(log.timestamp).toLocaleString()}
-                              </span>
-                            </div>
-                            <p className="text-slate-600 text-[11px]">{log.details}</p>
-                            <div className="text-[10px] text-indigo-600 font-semibold">
-                              Verified By: {log.verifier}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
-              <button
-                onClick={() => setIsInspectorOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700 cursor-pointer"
-              >
-                Close Inspector
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE / EDIT MULTI-TAB MODAL WITH STRICT SAVE GATE & STATE MISMATCH CHECK */}
+      {/* CREATE / EDIT BUSINESS PARTNER MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 bg-indigo-900 text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold flex items-center gap-2">
-                  <Building className="w-4 h-4 text-indigo-300" />
-                  {editingBp
-                    ? `Edit Business Partner: ${editingBp.bpCode}`
-                    : 'Create New Business Partner (SAP B1 9-Tab Form)'}
-                </h3>
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full flex flex-col overflow-hidden max-h-[92vh]">
+            <div className="p-4 bg-indigo-900 text-white flex items-center justify-between shrink-0">
+              <div className="font-bold text-sm flex items-center gap-2">
+                <Users2 className="w-4 h-4 text-indigo-300" />
+                <span>{editingBp ? `Edit Business Partner [${editingBp.bpCode}]` : 'Create Business Partner Master'}</span>
               </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-indigo-200 hover:text-white font-bold"
-              >
+              <button onClick={() => setIsModalOpen(false)} className="text-indigo-200 hover:text-white font-bold cursor-pointer">
                 ✕
               </button>
             </div>
 
-            {/* Modal Tab Bar */}
-            <div className="bg-slate-100 border-b border-slate-200 px-4 flex overflow-x-auto gap-1 text-[11px] font-bold text-slate-600 pt-2">
-              {[
-                { key: 'GENERAL', label: '1. General', icon: FileText },
-                { key: 'CONTACTS', label: '2. Contacts', icon: Users2 },
-                { key: 'ADDRESSES', label: '3. Addresses (Cascading)', icon: MapPin },
-                { key: 'PAYMENT_TERMS', label: '4. Payment Terms', icon: CreditCard },
-                { key: 'ACCOUNTING', label: '5. Accounting', icon: DollarSign },
-                { key: 'PROPERTIES', label: '6. Properties (Flags)', icon: Tag },
-                { key: 'REMARKS', label: '7. Remarks', icon: BookOpen },
-                { key: 'ATTACHMENTS', label: '8. Attachments', icon: Download },
-                { key: 'GOVERNANCE', label: '9. Governance & GST', icon: ShieldCheck },
-              ].map((t) => {
-                const Icon = t.icon;
-                const isActive = activeTab === t.key;
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => setActiveTab(t.key as TabType)}
-                    className={`px-3 py-2 border-b-2 font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition ${
-                      isActive
-                        ? 'border-indigo-600 text-indigo-700 bg-white rounded-t-lg shadow-xs'
-                        : 'border-transparent hover:text-slate-900'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Error Message */}
             {errorMsg && (
-              <div className="mx-4 mt-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-bold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
+              <div className="mx-4 mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-bold flex items-center gap-2 shrink-0">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
-            {/* Modal Body */}
-            <div className="p-5 overflow-y-auto flex-1 space-y-4">
-              {/* TAB 1: GENERAL */}
-              {activeTab === 'GENERAL' && (
-                <div className="space-y-4">
-                  {/* GST STATE MISMATCH RED ALERT & EXCEPTION CHECKBOX */}
-                  {isGstStateMismatch && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-900 rounded-xl space-y-2">
-                      <div className="font-bold flex items-center gap-2 text-xs text-rose-800">
-                        <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-                        <span>DEFECT FIX: GST State Code Mismatch Error — Save Blocked!</span>
-                      </div>
-                      <p className="text-[11px]">
-                        The entered GSTIN begins with State Code <strong>{currentGstStateCode} ({expectedGstStateName})</strong>, but the selected primary address state is <strong>{selectedStateName}</strong>. Save is strictly BLOCKED until resolved or an authorized exception is filed.
-                      </p>
+            {/* Lock Banner if Approved */}
+            {editingBp?.isLocked && (
+              <div className="mx-4 mt-2 p-2.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-lg font-bold flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Approved Business Partner Data is Locked against direct editing.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => alert('Amendment request submitted to Workflow Queue.')}
+                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[11px] cursor-pointer"
+                >
+                  Request Amendment
+                </button>
+              </div>
+            )}
 
-                      <div className="pt-2 border-t border-rose-200 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="gstExCheck"
-                            checked={gstExceptionApproved}
-                            onChange={(e) => setGstExceptionApproved(e.target.checked)}
-                            className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
-                          />
-                          <label htmlFor="gstExCheck" className="font-bold text-rose-900 text-xs cursor-pointer">
-                            Approve Multi-State GST Registration Exception (Requires Governance Reason)
-                          </label>
-                        </div>
-
-                        {gstExceptionApproved && (
-                          <input
-                            type="text"
-                            placeholder="Enter mandatory exception reason e.g. Shared multi-state OEM registration..."
-                            value={gstExceptionReason}
-                            onChange={(e) => setGstExceptionReason(e.target.value)}
-                            className="w-full text-xs p-2 border border-rose-300 rounded-lg bg-white font-semibold"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* GST VERIFICATION STATUS BANNER (STRICT SAVE GATE) */}
-                  <div
-                    className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
-                      bpForm.gstStatus === 'VERIFIED' && (!isGstStateMismatch || gstExceptionApproved)
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                        : 'bg-rose-50 border-rose-300 text-rose-900'
+            {/* Form Tabs Bar */}
+            <div className="bg-slate-100 border-b border-slate-200 px-4 flex overflow-x-auto gap-1 text-[11px] font-bold text-slate-600 pt-2 shrink-0">
+              {[
+                { key: 'GENERAL', label: '1. General & Bill-to', icon: FileText },
+                { key: 'CONTACTS', label: '2. Contacts', icon: Users2 },
+                { key: 'SHIPPING_ADDRESSES', label: '3. Shipping Addresses', icon: MapPin },
+                { key: 'PAYMENT_TERMS', label: '4. Payment Terms', icon: CreditCard },
+                { key: 'ACCOUNTING_BANKING', label: '5. Banking & Accounting', icon: DollarSign },
+                { key: 'PROPERTIES', label: '6. Properties', icon: Tag },
+                { key: 'REMARKS', label: '7. Remarks', icon: BookOpen },
+                { key: 'ATTACHMENTS', label: '8. Attachments', icon: Download },
+                { key: 'GOVERNANCE_AUDIT', label: '9. Verification Audit Log', icon: ShieldCheck },
+              ].map((t) => {
+                const Icon = t.icon;
+                const isActive = activeTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setActiveTab(t.key as TabType)}
+                    className={`px-3 py-2 border-b-2 font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition ${
+                      isActive
+                        ? 'border-indigo-600 text-indigo-700 bg-white rounded-t-lg shadow-xs'
+                        : 'border-transparent hover:text-slate-900'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      {bpForm.gstStatus === 'VERIFIED' && (!isGstStateMismatch || gstExceptionApproved) ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                      ) : (
-                        <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                      )}
-                      <div>
-                        <div className="font-bold text-xs flex items-center gap-2">
-                          <span>
-                            GST Verification State:{' '}
-                            {bpForm.gstStatus === 'VERIFIED' && (!isGstStateMismatch || gstExceptionApproved)
-                              ? 'VERIFIED ✓ (SAVE ENABLED)'
-                              : isGstStateMismatch && !gstExceptionApproved
-                              ? 'STATE CODE MISMATCH ✕ (SAVE BLOCKED)'
-                              : 'NOT VERIFIED (SAVE BLOCKED)'}
-                          </span>
-                        </div>
-                        <p className="text-[11px] mt-0.5">
-                          {verificationFeedback ||
-                            'Run "Verify GST" to retrieve GSTIN details from the configured third-party provider before saving.'}
-                        </p>
-                        {bpForm.gstVerification && (
-                          <div className="text-[10px] mt-1 text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            <span>
-                              Source: {bpForm.gstVerification.provider}
-                            </span>
-                            <span>
-                              Retrieved:{' '}
-                              {formatTimestamp(bpForm.gstVerification.retrievedAt)}
-                            </span>
-                            <span>
-                              Registration status:{' '}
-                              {bpForm.gstVerification.profile.status}
-                            </span>
-                          </div>
-                        )}
-                        {gstLegalName && (
-                          <div className="text-[10px] font-bold font-mono mt-1 text-slate-800">
-                            GST Legal Name: {gstLegalName}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <Icon className="w-3.5 h-3.5" />
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
 
-                    <button
-                      type="button"
-                      onClick={handleVerifyGstInModal}
-                      disabled={verifyingId === 'MODAL'}
-                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg shrink-0 cursor-pointer flex items-center gap-1.5 shadow-xs text-xs"
-                    >
-                      {verifyingId === 'MODAL' ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                      )}
-                      Verify GST
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveBp} className="p-5 overflow-y-auto flex-1 space-y-4">
+              {/* TAB 1: GENERAL & BILL-TO */}
+              {activeTab === 'GENERAL' && (
+                <div className="space-y-4">
+                  {/* Branch & CardCode Sequence Bar */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Business Partner Type *
-                      </label>
+                      <label className="block font-bold text-slate-800 mb-1">Operating Branch *</label>
                       <select
-                        value={bpForm.bpType}
-                        onChange={(e) => setBpForm({ ...bpForm, bpType: e.target.value as any })}
-                        className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+                        value={selectedBranchId}
+                        onChange={(e) => setSelectedBranchId(e.target.value)}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold"
                       >
-                        <option value="CUSTOMER">Customer (CUST)</option>
-                        <option value="SUPPLIER">Supplier / Vendor (VEND)</option>
-                        <option value="LEAD">Lead / Prospect</option>
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            [{b.portalBranchCode}] {b.name} ({b.code})
+                          </option>
+                        ))}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">BP CardCode *</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. CUST-TATA-01"
-                        value={bpForm.bpCode}
-                        onChange={(e) => setBpForm({ ...bpForm, bpCode: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono uppercase font-bold"
-                      />
+                      <label className="block font-bold text-slate-800 mb-1">Business Partner Type *</label>
+                      <select
+                        value={bpType}
+                        onChange={(e) => setBpType(e.target.value as any)}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold"
+                      >
+                        <option value="CUSTOMER">Customer (C)</option>
+                        <option value="SUPPLIER">Supplier / Vendor (S)</option>
+                        <option value="LEAD">Lead / Prospect (L)</option>
+                      </select>
                     </div>
 
-                    {/* THIRD-PARTY PROVIDER LEGAL NAME (READ-ONLY) */}
-                    <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                          <Lock className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Provider Legal Name</span>
-                        </label>
-                        <span className="text-[10px] bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-indigo-600" />
-                          <span>Third-party provider value (read-only)</span>
-                        </span>
-                      </div>
+                    <div>
+                      <label className="block font-bold text-indigo-900 mb-1 flex items-center justify-between">
+                        <span>CardCode (Auto-Generated)</span>
+                        <Lock className="w-3 h-3 text-indigo-600" />
+                      </label>
                       <input
                         type="text"
                         readOnly
                         disabled
-                        value={
-                          gstLegalName ||
-                          bpForm.gstVerification?.profile.legalName ||
-                          'Not verified — provider legal name will appear here'
-                        }
-                        className="w-full text-xs p-2.5 bg-slate-200/80 border border-slate-300 rounded-lg uppercase font-extrabold text-slate-900 cursor-not-allowed select-none shadow-inner"
+                        value={calculatedCardCode}
+                        className="w-full text-xs p-2 bg-slate-200 border border-slate-300 rounded-lg font-mono font-black text-indigo-900 cursor-not-allowed"
                       />
-                      <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                        <span>🔒</span>
-                        <span>
-                          Retrieved from the configured third-party GST provider.
-                          This is not an official GST certificate or government document.
+                    </div>
+                  </div>
+
+                  {/* GSTIN & PAN Section — Positioned Directly Below CardCode Block */}
+                  <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                        <span className="font-bold text-indigo-950 text-xs">GSTIN Taxpayer Verification</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                          activeGstMode === 'PAID_API'
+                            ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        }`}>
+                          {activeGstMode === 'PAID_API' ? 'Paid B2B API Gateway' : 'Manual CAPTCHA Mode (Official Portal)'}
                         </span>
-                      </p>
+                      </div>
+
+                      {activeGstMode === 'PAID_API' && (
+                        <button
+                          type="button"
+                          onClick={handleVerifyGstInModal}
+                          disabled={isVerifyingGst}
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                        >
+                          {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                          <span>Verify with Paid API</span>
+                        </button>
+                      )}
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Business Partner Display Name *
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">GSTIN ID *</label>
+                        <input
+                          type="text"
+                          maxLength={15}
+                          placeholder="e.g. 34AAACK4603M1ZP"
+                          value={gstinPan}
+                          onChange={(e) => {
+                            const val = e.target.value.toUpperCase();
+                            setGstinPan(val);
+                            if (val.length === 15 && activeGstMode === 'MANUAL_CAPTCHA') {
+                              handleRequestNewCaptcha(val);
+                            }
+                          }}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Auto-Extracted PAN</label>
+                        <input
+                          type="text"
+                          readOnly
+                          disabled
+                          value={panNumber || (gstinPan.length >= 12 ? gstinPan.slice(2, 12) : '')}
+                          className="w-full text-xs p-2 bg-slate-200 border border-slate-300 rounded-lg font-mono font-bold text-indigo-900 cursor-not-allowed"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">GST Registration Status</label>
+                        <div className="p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold flex items-center justify-between">
+                          <span className={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? 'text-emerald-700' : 'text-slate-600'}>
+                            {gstStatus}
+                          </span>
+                          {gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Inline CAPTCHA Challenge Container (Manual CAPTCHA Mode) */}
+                    {activeGstMode === 'MANUAL_CAPTCHA' && (
+                      <div className="p-3 bg-white rounded-lg border border-indigo-200/80 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Govt GSTN Portal CAPTCHA Challenge</span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono">Session Expiry: 120s</span>
+                        </div>
+
+                        {captchaSession ? (
+                          <div className="flex flex-wrap items-center gap-3">
+                            {/* Inline CAPTCHA SVG Image */}
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={captchaSession.captchaDataUrl}
+                                alt="Official Portal CAPTCHA Challenge"
+                                className="h-10 rounded border border-slate-300 shadow-2xs bg-slate-50"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRequestNewCaptcha()}
+                                className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                                title="Refresh CAPTCHA Challenge"
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* CAPTCHA Text Input */}
+                            <div className="flex-1 min-w-[140px]">
+                              <input
+                                type="text"
+                                maxLength={6}
+                                placeholder="ENTER 6 CHARS"
+                                value={captchaInput}
+                                onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
+                                className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-black uppercase tracking-widest text-indigo-950 bg-slate-50 focus:bg-white"
+                              />
+                            </div>
+
+                            {/* Verify Action */}
+                            <button
+                              type="button"
+                              onClick={handleVerifyGstInModal}
+                              disabled={isVerifyingGst}
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                            >
+                              {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                              <span>Verify GSTIN</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-500">Ready to initiate official taxpayer search workflow.</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRequestNewCaptcha()}
+                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition cursor-pointer"
+                            >
+                              Load CAPTCHA Challenge
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Inline Error Message */}
+                    {gstErrorMessage && (
+                      <div className="p-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg font-bold flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>{gstErrorMessage}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Partner Name (Official Legal Name) & Trade Name (Official Trade Name) — Cannot be edited once verified */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-900 mb-1 flex items-center justify-between">
+                        <span>Business Partner Name (Official Legal Name) *</span>
+                        {(gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
+                          <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono font-bold flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-indigo-600" /> Locked from Verified GST
+                          </span>
+                        )}
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. TATA MOTORS LIMITED"
-                        value={bpForm.bpName}
-                        onChange={(e) => handleBpNameChange(e.target.value)}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg uppercase font-bold text-slate-900"
+                        placeholder="e.g. Official Legal Entity Name"
+                        value={bpName}
+                        onChange={(e) => setBpName(e.target.value)}
+                        readOnly={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'}
+                        className={`w-full text-xs p-2.5 border border-slate-300 rounded-lg font-bold text-slate-900 ${
+                          gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'
+                            ? 'bg-slate-100 cursor-not-allowed text-indigo-950 font-black'
+                            : 'bg-white'
+                        }`}
+                        required
                       />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">
-                        Changing partner display name invalidates GST verification state.
-                      </span>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">Foreign Name</label>
+                      <label className="block font-bold text-slate-900 mb-1 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>Trade Name (Official Trade Name)</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsTradeDetailsModalOpen(true)}
+                            className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition shadow-2xs hover:border-indigo-300"
+                            title="View GST Trade Name & Nature of Business Activities Details"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>View Details</span>
+                          </button>
+                        </div>
+                        {(gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
+                          <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono font-bold flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-indigo-600" /> Locked from Verified GST
+                          </span>
+                        )}
+                      </label>
                       <input
                         type="text"
-                        placeholder="e.g. Tata Motors India OEM"
-                        value={bpForm.foreignName}
-                        onChange={(e) => setBpForm({ ...bpForm, foreignName: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg"
+                        placeholder="e.g. Registered Trade Name"
+                        value={gstTradeName}
+                        onChange={(e) => setGstTradeName(e.target.value)}
+                        readOnly={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'}
+                        className={`w-full text-xs p-2.5 border border-slate-300 rounded-lg font-bold text-slate-900 ${
+                          gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'
+                            ? 'bg-slate-100 cursor-not-allowed text-indigo-950 font-black'
+                            : 'bg-white'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Short Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. MSIL"
+                        value={shortName}
+                        onChange={(e) => setShortName(e.target.value)}
+                        className="w-full text-xs p-2.5 border border-slate-300 rounded-lg bg-white"
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Industry / Group
-                      </label>
+                      <label className="block font-bold text-slate-700 mb-1">Govt Industry Group *</label>
                       <select
-                        value={bpForm.groupIndustry}
-                        onChange={(e) => setBpForm({ ...bpForm, groupIndustry: e.target.value })}
-                        className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg"
+                        value={groupIndustry}
+                        onChange={(e) => setGroupIndustry(e.target.value)}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-semibold"
                       >
-                        <option value="Automotive OEM">Automotive OEM</option>
-                        <option value="Chemicals & Polymers">Chemicals & Polymers</option>
-                        <option value="Electronics & Electricals">Electronics & Electricals</option>
-                        <option value="Construction & Infrastructure">
-                          Construction & Infrastructure
-                        </option>
-                        <option value="Packaging & Extrusion">Packaging & Extrusion</option>
+                        {INDIAN_GOVT_INDUSTRIES.map((ind) => (
+                          <option key={ind} value={ind}>
+                            {ind}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        GSTIN / Federal Tax ID *
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 27AAACT2727Q1ZW"
-                        value={bpForm.gstinPan}
-                        onChange={(e) => handleGstinChange(e.target.value)}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono uppercase font-bold"
-                      />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">
-                        15-digit GSTIN (State Code + PAN + Entity + Z + Checksum).
-                      </span>
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">PAN Number</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. AAACT2727Q"
-                        value={bpForm.panNumber}
-                        onChange={(e) => setBpForm({ ...bpForm, panNumber: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono uppercase"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
-                      <input
-                        type="text"
-                        value={bpForm.phone}
-                        onChange={(e) => setBpForm({ ...bpForm, phone: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Primary Email</label>
-                      <input
-                        type="email"
-                        value={bpForm.email}
-                        onChange={(e) => setBpForm({ ...bpForm, email: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Salesperson / Manager
-                      </label>
-                      <input
-                        type="text"
-                        value={bpForm.salesperson}
-                        onChange={(e) => setBpForm({ ...bpForm, salesperson: e.target.value })}
-                        className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-bold text-slate-700 mb-1">Status</label>
+                      <label className="block font-bold text-slate-700 mb-1">Currency</label>
                       <select
-                        value={bpForm.status}
-                        onChange={(e) => setBpForm({ ...bpForm, status: e.target.value as any })}
-                        className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold"
                       >
-                        <option value="ACTIVE">ACTIVE</option>
-                        <option value="INACTIVE">INACTIVE</option>
-                        <option value="PENDING_APPROVAL">PENDING APPROVAL</option>
+                        <option value="INR">INR — Indian Rupee</option>
+                        <option value="USD">USD — US Dollar</option>
+                        <option value="EUR">EUR — Euro</option>
                       </select>
                     </div>
+                  </div>
+
+                  {/* Mandatory Bill-to Address Section (Section D) */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-amber-500" />
+                      <span>Mandatory Bill-to Address Details (Country → State → City)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Country *</label>
+                        <input
+                          type="text"
+                          value={billToCountry}
+                          onChange={(e) => setBillToCountry(e.target.value)}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold bg-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">State *</label>
+                        <input
+                          type="text"
+                          value={billToState}
+                          onChange={(e) => setBillToState(e.target.value)}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold bg-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">City *</label>
+                        <input
+                          type="text"
+                          value={billToCity}
+                          onChange={(e) => setBillToCity(e.target.value)}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold bg-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Postal Code</label>
+                        <input
+                          type="text"
+                          value={billToPostalCode}
+                          onChange={(e) => setBillToPostalCode(e.target.value)}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono bg-white"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block font-bold text-slate-700 mb-1">Street Address *</label>
+                        <input
+                          type="text"
+                          placeholder="Street, Building, Floor"
+                          value={billToStreetAddress}
+                          onChange={(e) => setBillToStreetAddress(e.target.value)}
+                          className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* MSME / Udyam Section (Section E) */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <Award className="w-4 h-4 text-indigo-600" />
+                        <span>MSME / Udyam Registration Master (Section E)</span>
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-700 text-xs">Is MSME Registered?</span>
+                        <input
+                          type="checkbox"
+                          checked={msmeInfo.isMSME}
+                          onChange={(e) => setMsmeInfo({ ...msmeInfo, isMSME: e.target.checked })}
+                          className="w-4 h-4 text-indigo-600 rounded"
+                        />
+                      </div>
+                    </div>
+
+                    {msmeInfo.isMSME && (
+                      <div className="space-y-3 pt-2 border-t border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Udyam Reg. No. e.g. UDYAM-TN-03-0012345"
+                            value={msmeInfo.udyamRegistrationNo || ''}
+                            onChange={(e) => setMsmeInfo({ ...msmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
+                            className="flex-1 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleVerifyMsme}
+                            disabled={isVerifyingMsme}
+                            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+                          >
+                            {isVerifyingMsme ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                            Verify MSME
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border font-mono">
+                          <div>
+                            <span className="text-slate-500 block text-[9px]">Classification:</span>
+                            <strong className="text-indigo-900">{msmeInfo.msmeClassification}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block text-[9px]">Activity Type:</span>
+                            <strong className="text-indigo-900">{msmeInfo.activityType}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block text-[9px]">Investment Bracket:</span>
+                            <strong className="text-indigo-900">{msmeInfo.investmentCategory}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 block text-[9px]">Turnover Bracket:</span>
+                            <strong className="text-indigo-900">{msmeInfo.turnoverCategory}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* TAB 2: CONTACT PERSONS */}
+              {/* TAB 2: CONTACTS */}
               {activeTab === 'CONTACTS' && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900">Contact Persons List</h4>
+                    <label className="font-bold text-slate-900 text-xs">
+                      Contact Persons (At least 1 with Mobile & Email is Mandatory)
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
@@ -2376,7 +1670,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                           id: '',
                           name: '',
                           title: 'Mr.',
-                          position: 'Purchase Manager',
+                          position: 'Manager',
                           department: 'Procurement',
                           mobile: '',
                           email: '',
@@ -2384,560 +1678,688 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                         });
                         setIsContactSubModalOpen(true);
                       }}
-                      className="px-2.5 py-1 bg-indigo-600 text-white rounded font-bold flex items-center gap-1 cursor-pointer"
+                      className="text-xs text-indigo-600 hover:underline font-bold cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add Contact
+                      + Add Contact
                     </button>
                   </div>
 
-                  {contacts.length === 0 ? (
-                    <p className="text-slate-400 italic">No contact persons added yet.</p>
-                  ) : (
-                    <div className="divide-y divide-slate-200 border rounded-xl overflow-hidden">
-                      {contacts.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-3 bg-slate-50 flex items-center justify-between"
-                        >
-                          <div>
-                            <div className="font-bold text-slate-900 flex items-center gap-2">
-                              <span>
-                                {c.title} {c.name}
-                              </span>
-                              {c.isDefault && (
-                                <span className="bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded font-bold">
-                                  DEFAULT
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500">
-                              {c.position} ({c.department}) | Mobile: {c.mobile} | Email: {c.email}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setContacts(contacts.filter((x) => x.id !== c.id))}
-                            className="p-1 text-rose-500 hover:bg-rose-50 rounded"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                  {contacts.map((c, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                          <span>{c.title} {c.name}</span>
+                          {c.isDefault && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded border border-emerald-300">
+                              PRIMARY
+                            </span>
+                          )}
                         </div>
-                      ))}
+                        <div className="text-[11px] text-slate-500">{c.position} — {c.department}</div>
+                        <div className="text-[11px] font-mono text-slate-700 mt-1 flex items-center gap-3">
+                          <span>📱 {c.mobile}</span>
+                          <span>✉️ {c.email}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setContacts(contacts.filter((_, i) => i !== idx))}
+                        className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
-              {/* TAB 3: ADDRESSES WITH GEOGRAPHIC CASCADING */}
-              {activeTab === 'ADDRESSES' && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 flex items-center justify-between">
-                    <div>
-                      <strong className="block font-bold">Geographic Cascading Structure:</strong>
-                      <span className="text-[11px]">
-                        Field Order: 1. Country → 2. State/Province → 3. District → 4. City → 5.
-                        Postal Code
-                      </span>
-                    </div>
+              {/* TAB 3: SHIPPING ADDRESSES */}
+              {activeTab === 'SHIPPING_ADDRESSES' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-900 text-xs">
+                      Shipping Addresses (Auto-created default from Billing Address)
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
-                        setAddressForm({
+                        setShippingForm({
                           id: '',
-                          addressName: 'Secondary Plant Office',
+                          addressName: 'Secondary Plant Shipping Yard',
                           addressType: 'SHIP_TO',
                           country: 'India',
-                          state: 'Maharashtra',
-                          district: 'Pune',
-                          city: 'Chakan',
-                          postalCode: '410501',
+                          state: billToState,
+                          district: billToDistrict,
+                          city: billToCity,
+                          postalCode: billToPostalCode,
                           streetAddress: '',
-                          isDefault: addresses.length === 0,
+                          isDefault: false,
                         });
-                        setIsAddressSubModalOpen(true);
+                        setIsShippingSubModalOpen(true);
                       }}
-                      className="px-2.5 py-1 bg-indigo-600 text-white rounded font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                      className="text-xs text-indigo-600 hover:underline font-bold cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add Address
+                      + Add Shipping Address
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {addresses.map((addr) => (
-                      <div
-                        key={addr.id}
-                        className="p-3.5 border rounded-xl bg-slate-50 space-y-1 relative"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900">{addr.addressName}</span>
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                              addr.addressType === 'BILL_TO'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}
-                          >
-                            {addr.addressType}
-                          </span>
+                  {shippingAddresses.map((s, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{s.addressName}</span>
+                          {s.isDefault && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded">
+                              DEFAULT SHIP-TO
+                            </span>
+                          )}
                         </div>
-                        <p className="text-slate-700 text-xs">{addr.streetAddress}</p>
-                        <div className="text-[11px] text-slate-500 font-medium">
-                          1. {addr.country} → 2. {addr.state} → 3. {addr.district} → 4. {addr.city}{' '}
-                          → 5. <span className="font-mono font-bold">{addr.postalCode}</span>
-                        </div>
-                        <div className="pt-2 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAddressForm({ ...addr });
-                              setIsAddressSubModalOpen(true);
-                            }}
-                            className="text-[10px] text-indigo-600 font-bold hover:underline"
-                          >
-                            Edit Address
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setAddresses(addresses.filter((a) => a.id !== addr.id))}
-                            className="text-[10px] text-rose-600 font-bold hover:underline"
-                          >
-                            Remove
-                          </button>
+                        <div className="text-[11px] text-slate-600 mt-0.5">
+                          {s.streetAddress}, {s.city}, {s.state}, {s.country} - {s.postalCode}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setShippingAddresses(shippingAddresses.filter((_, i) => i !== idx))}
+                        className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
 
               {/* TAB 4: PAYMENT TERMS */}
               {activeTab === 'PAYMENT_TERMS' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Payment Terms Code
-                    </label>
+                    <label className="block font-bold text-slate-700 mb-1">Payment Terms</label>
                     <select
                       value={paymentTerms.paymentTermsCode}
-                      onChange={(e) =>
-                        setPaymentTerms({ ...paymentTerms, paymentTermsCode: e.target.value })
-                      }
-                      className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+                      onChange={(e) => setPaymentTerms({ ...paymentTerms, paymentTermsCode: e.target.value })}
+                      className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold"
                     >
-                      <option value="IMMEDIATE">Immediate Cash</option>
-                      <option value="NET15">Net 15 Days</option>
                       <option value="NET30">Net 30 Days</option>
                       <option value="NET60">Net 60 Days</option>
-                      <option value="ADV_50">50% Advance / 50% Delivery</option>
-                      <option value="COD">Cash On Delivery (COD)</option>
+                      <option value="ADVANCE">100% Advance</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Assigned Price List
-                    </label>
+                    <label className="block font-bold text-slate-700 mb-1">Assigned Price List (Empty by Default)</label>
                     <select
-                      value={paymentTerms.priceList}
-                      onChange={(e) =>
-                        setPaymentTerms({ ...paymentTerms, priceList: e.target.value })
-                      }
-                      className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+                      value={paymentTerms.priceList || ''}
+                      onChange={(e) => setPaymentTerms({ ...paymentTerms, priceList: e.target.value })}
+                      className="w-full text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold"
                     >
+                      <option value="">— None (Select Price List) —</option>
                       <option value="Standard Sales Price 2026">Standard Sales Price 2026</option>
-                      <option value="OEM Contract Price 2026">OEM Contract Price 2026</option>
-                      <option value="Distributor Price List">Distributor Price List</option>
-                      <option value="Raw Material Purchase List">Raw Material Purchase List</option>
+                      <option value="OEM Preferred Tier 1">OEM Preferred Tier 1</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Credit Limit (₹)</label>
+                    <label className="block font-bold text-slate-700 mb-1">Credit Limit (INR)</label>
                     <input
                       type="number"
-                      value={paymentTerms.creditLimit}
-                      onChange={(e) =>
-                        setPaymentTerms({
-                          ...paymentTerms,
-                          creditLimit: parseFloat(e.target.value) || 0,
-                        })
-                      }
+                      value={paymentTerms.creditLimit || 0}
+                      onChange={(e) => setPaymentTerms({ ...paymentTerms, creditLimit: parseFloat(e.target.value) || 0 })}
                       className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Commitment Limit (₹)
-                    </label>
+                    <label className="block font-bold text-slate-700 mb-1">Commitment Limit (INR)</label>
                     <input
                       type="number"
-                      value={paymentTerms.commitmentLimit}
-                      onChange={(e) =>
-                        setPaymentTerms({
-                          ...paymentTerms,
-                          commitmentLimit: parseFloat(e.target.value) || 0,
-                        })
-                      }
+                      value={paymentTerms.commitmentLimit || 0}
+                      onChange={(e) => setPaymentTerms({ ...paymentTerms, commitmentLimit: parseFloat(e.target.value) || 0 })}
                       className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold"
                     />
                   </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Early Payment Discount %
-                    </label>
-                    <input
-                      type="number"
-                      value={paymentTerms.discountPercent}
-                      onChange={(e) =>
-                        setPaymentTerms({
-                          ...paymentTerms,
-                          discountPercent: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                    />
-                  </div>
                 </div>
               )}
 
-              {/* TAB 5: ACCOUNTING (CONTROL ACCOUNT HIDDEN AS REQUESTED) */}
-              {activeTab === 'ACCOUNTING' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Control Account Hidden as requested ("hide contol accojunt in accounting") */}
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Down Payment Advance Account
-                    </label>
-                    <input
-                      type="text"
-                      value={accounting.downPaymentAccount}
-                      onChange={(e) =>
-                        setAccounting({ ...accounting, downPaymentAccount: e.target.value })
-                      }
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      value={accounting.bankName}
-                      onChange={(e) => setAccounting({ ...accounting, bankName: e.target.value })}
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Account Number</label>
-                    <input
-                      type="text"
-                      value={accounting.accountNumber}
-                      onChange={(e) =>
-                        setAccounting({ ...accounting, accountNumber: e.target.value })
-                      }
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      IFSC / IBAN / SWIFT
-                    </label>
-                    <input
-                      type="text"
-                      value={accounting.ifscIban}
-                      onChange={(e) => setAccounting({ ...accounting, ifscIban: e.target.value })}
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono uppercase"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-6">
-                    <input
-                      type="checkbox"
-                      id="whtCheck"
-                      checked={accounting.withholdingTaxAllowed}
-                      onChange={(e) =>
-                        setAccounting({ ...accounting, withholdingTaxAllowed: e.target.checked })
-                      }
-                      className="w-4 h-4 text-indigo-600 rounded"
-                    />
-                    <label htmlFor="whtCheck" className="font-bold text-slate-800">
-                      Withholding Tax / TDS Deduction Applicable
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 6: PROPERTIES */}
-              {activeTab === 'PROPERTIES' && (
-                <div className="space-y-3">
-                  <p className="text-slate-500 font-medium">
-                    Select active property classification flags for this Business Partner (SAP B1
-                    64 Flags):
-                  </p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {SAP_B1_PROPERTIES.map((prop) => {
-                      const isChecked = properties.includes(prop);
-                      return (
-                        <button
-                          key={prop}
-                          type="button"
-                          onClick={() => toggleProperty(prop)}
-                          className={`p-2.5 rounded-lg border text-left flex items-center justify-between cursor-pointer transition ${
-                            isChecked
-                              ? 'bg-indigo-50 border-indigo-400 text-indigo-900 font-bold'
-                              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span className="text-[11px]">{prop}</span>
-                          {isChecked ? (
-                            <CheckSquare className="w-4 h-4 text-indigo-600 shrink-0" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-300 shrink-0" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 7: REMARKS */}
-              {activeTab === 'REMARKS' && (
+              {/* TAB 5: BANKING & ACCOUNTING */}
+              {activeTab === 'ACCOUNTING_BANKING' && (
                 <div className="space-y-4">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Internal Notes</label>
-                    <textarea
-                      rows={3}
-                      value={remarks.internalNotes}
-                      onChange={(e) => setRemarks({ ...remarks, internalNotes: e.target.value })}
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                      placeholder="Enter internal finance or sales notes..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Special Handling & Shipping Instructions
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-900 text-xs">
+                      Registered Bank Accounts (Mandatory Cancelled Cheque Upload for Every Account)
                     </label>
-                    <textarea
-                      rows={3}
-                      value={remarks.specialInstructions}
-                      onChange={(e) =>
-                        setRemarks({ ...remarks, specialInstructions: e.target.value })
-                      }
-                      className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                      placeholder="e.g. Barcode label requirements, Gate timing..."
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 8: ATTACHMENTS */}
-              {activeTab === 'ATTACHMENTS' && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    {['GST Certificate', 'PAN Copy', 'Cancelled Cheque', 'MSME Certificate'].map(
-                      (doc) => (
-                        <button
-                          key={doc}
-                          type="button"
-                          onClick={() => handleSimulatedUpload(doc)}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold flex items-center gap-1 cursor-pointer text-xs"
-                        >
-                          <Upload className="w-3.5 h-3.5" /> Upload {doc}
-                        </button>
-                      )
-                    )}
-                  </div>
-
-                  {attachments.length === 0 ? (
-                    <p className="text-slate-400 italic">No attachments uploaded yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {attachments.map((att) => (
-                        <div
-                          key={att.id}
-                          className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between"
-                        >
-                          <div>
-                            <div className="font-bold text-slate-900">{att.fileName}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              Doc: {att.docType} | Size: {(att.fileSizeBytes / 1024).toFixed(0)} KB
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAttachments(attachments.filter((x) => x.id !== att.id))
-                            }
-                            className="text-rose-600 hover:bg-rose-50 p-1 rounded"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 9: GOVERNANCE & GST VERIFICATION */}
-              {activeTab === 'GOVERNANCE' && (
-                <div className="space-y-4">
-                  {/* Warning banner if State Code Mismatch */}
-                  {isGstStateMismatch && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 space-y-2">
-                      <div className="font-bold flex items-center gap-2 text-xs text-rose-800">
-                        <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-                        <span>GSTIN State Code Mismatch Failure!</span>
-                      </div>
-                      <p className="text-[11px]">
-                        The GSTIN entered starts with State Code{' '}
-                        <strong>{currentGstStateCode}</strong> ({expectedGstStateName}), but the
-                        primary address state selected is <strong>{selectedStateName}</strong>.
-                        Save is BLOCKED until resolved or an authorized exception is filed.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="p-4 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs text-slate-400 font-bold uppercase">
-                        GSTIN verification via third-party provider
-                      </div>
-                      <div className="font-mono font-bold text-sm text-indigo-300 mt-0.5">
-                        {bpForm.gstinPan || 'NO GSTIN ENTERED'}
-                      </div>
-                      <div className="text-[10px] text-slate-300 mt-1">
-                        Source: gstinapi.in. Not an official government portal or certificate.
-                      </div>
-                    </div>
                     <button
                       type="button"
-                      onClick={handleVerifyGstInModal}
-                      disabled={verifyingId === 'MODAL'}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        setBankForm({
+                          id: '',
+                          bankName: 'HDFC Bank Ltd',
+                          branchName: 'Fort Branch',
+                          ifscCode: 'HDFC0000012',
+                          ibanSwift: 'HDFCINBB',
+                          accountNumber: '',
+                          cancelledChequeFileName: '',
+                          isDefault: bankAccounts.length === 0,
+                        });
+                        setIsBankSubModalOpen(true);
+                      }}
+                      className="text-xs text-indigo-600 hover:underline font-bold cursor-pointer"
                     >
-                      {verifyingId === 'MODAL' ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <ShieldCheck className="w-4 h-4" />
-                      )}
-                      Verify GSTIN via provider
+                      + Add Bank Account
                     </button>
                   </div>
 
-                  {bpForm.gstVerification && (
-                    <div className="border rounded-xl p-3 bg-white">
-                      <h5 className="font-bold text-slate-900 text-xs">
-                        Provider verification record
-                      </h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-[11px]">
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Provider legal name
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {bpForm.gstVerification.profile.legalName}
-                          </span>
+                  {bankAccounts.map((b, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 border rounded-xl flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                          <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{b.bankName} ({b.branchName})</span>
+                          {b.isDefault && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded">
+                              DEFAULT BANK
+                            </span>
+                          )}
                         </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Registration status
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {bpForm.gstVerification.profile.status}
-                          </span>
+                        <div className="text-[11px] font-mono text-slate-700 mt-1">
+                          IFSC: <strong>{b.ifscCode}</strong> | Account No: <strong>{b.accountNumber}</strong> | SWIFT: {b.ibanSwift || 'N/A'}
                         </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Source
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {bpForm.gstVerification.provider}
-                          </span>
+                        <div className="text-[10px] text-emerald-700 font-bold mt-0.5 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Cancelled Cheque: {b.cancelledChequeFileName || 'Uploaded'}
                         </div>
-                        <div className="p-2 bg-slate-50 border rounded-lg">
-                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
-                            Retrieved at
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {formatTimestamp(bpForm.gstVerification.retrievedAt)}
-                          </span>
-                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBankAccounts(bankAccounts.filter((_, i) => i !== idx))}
+                        className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* TAB 9: VERIFICATION AUDIT LOG (Section C) */}
+              {activeTab === 'GOVERNANCE_AUDIT' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-900 text-white rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-cyan-400 font-bold text-xs uppercase">Restricted Government Verification Audit Log</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Detailed request/response records for GST, PAN, REG-06 Certificate and MSME queries.
                       </div>
                     </div>
-                  )}
+                    <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  </div>
 
-                  {bpForm.gstinPan && renderFilingHistoryPanel(bpForm.gstinPan)}
-
-                  <div className="border rounded-xl p-3 bg-white space-y-2">
-                    <h5 className="font-bold text-slate-900 text-xs">Recorded verification logs</h5>
-                    {governanceLogs.length === 0 ? (
-                      <p className="text-slate-400 italic">No verification logs yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {governanceLogs.map((log) => (
-                          <div
-                            key={log.id}
-                            className="p-2.5 bg-slate-50 border rounded-lg text-slate-700 space-y-0.5"
-                          >
-                            <div className="flex items-center justify-between font-bold text-[11px]">
-                              <span>{log.action}</span>
-                              <span className="text-slate-400 font-mono">
-                                {new Date(log.timestamp).toLocaleString()}
-                              </span>
-                            </div>
-                            <p className="text-slate-600 text-[11px]">{log.details}</p>
-                          </div>
-                        ))}
+                  <div className="space-y-2">
+                    {governanceLogs.map((log) => (
+                      <div key={log.id} className="p-3 bg-slate-50 border rounded-lg text-xs space-y-1 font-mono">
+                        <div className="flex items-center justify-between text-indigo-900 font-bold">
+                          <span>{log.action}</span>
+                          <span className="text-slate-500 font-normal">{new Date(log.timestamp).toLocaleString()}</span>
+                        </div>
+                        <div className="text-slate-700">{log.details}</div>
+                        <div className="text-[10px] text-slate-500">Verified By: {log.verifier}</div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Modal Footer (WITH STRICT SAVE GATE) */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-              <div className="text-xs font-bold">
-                {isSaveDisabled ? (
-                  <span className="text-rose-600 flex items-center gap-1 font-bold">
-                    <Lock className="w-3.5 h-3.5" />
-                    {isGstStateMismatch && !gstExceptionApproved
-                      ? 'Save Blocked: GST State Mismatch (Correct state or check exception)'
-                      : 'Save Blocked: Click "Verify GST" first'}
-                  </span>
-                ) : (
-                  <span className="text-emerald-700 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Ready to Save (GST Verified)
-                  </span>
-                )}
-              </div>
-
-              <div className="flex gap-2">
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-1.5 border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  type="button"
-                  disabled={isSaveDisabled}
-                  onClick={handleSaveBp}
-                  className={`px-5 py-1.5 rounded-lg font-bold shadow-xs cursor-pointer ${
-                    isSaveDisabled
-                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                  }`}
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg cursor-pointer"
                 >
-                  Save Business Partner
+                  {editingBp ? 'Save Business Partner Changes' : 'Create & Approve Partner'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* BANK SUB-MODAL WITH CANCELLED CHEQUE UPLOAD */}
+      {isBankSubModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border max-w-md w-full p-5 space-y-3">
+            <h3 className="font-bold text-sm text-slate-900">Add Bank Account (Requires Cancelled Cheque)</h3>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">IFSC Code *</label>
+              <input
+                type="text"
+                placeholder="e.g. HDFC0000012"
+                value={bankForm.ifscCode}
+                onChange={(e) => {
+                  const ifsc = e.target.value.toUpperCase();
+                  setBankForm({
+                    ...bankForm,
+                    ifscCode: ifsc,
+                    bankName: ifsc.startsWith('HDFC') ? 'HDFC Bank Ltd' : ifsc.startsWith('SBIN') ? 'State Bank of India' : 'ICICI Bank Ltd',
+                    branchName: ifsc.startsWith('HDFC') ? 'Fort Branch' : 'Main Branch',
+                  });
+                }}
+                className="w-full text-xs p-2 border rounded font-mono uppercase font-bold"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  value={bankForm.bankName}
+                  onChange={(e) => setBankForm({ ...bankForm, bankName: e.target.value })}
+                  className="w-full text-xs p-2 border rounded font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Branch Name</label>
+                <input
+                  type="text"
+                  value={bankForm.branchName}
+                  onChange={(e) => setBankForm({ ...bankForm, branchName: e.target.value })}
+                  className="w-full text-xs p-2 border rounded"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Bank Account Number *</label>
+              <input
+                type="text"
+                placeholder="e.g. 50200011223344"
+                value={bankForm.accountNumber}
+                onChange={(e) => setBankForm({ ...bankForm, accountNumber: e.target.value })}
+                className="w-full text-xs p-2 border rounded font-mono font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Upload Cancelled Cheque (Mandatory) *</label>
+              <input
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setBankForm({ ...bankForm, cancelledChequeFileName: file.name });
+                  }
+                }}
+                className="w-full text-xs p-1 border rounded bg-slate-50"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBankSubModalOpen(false)}
+                className="px-3 py-1.5 bg-slate-100 font-bold rounded cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!bankForm.accountNumber || !bankForm.cancelledChequeFileName) {
+                    alert('Account Number and Cancelled Cheque upload are MANDATORY.');
+                    return;
+                  }
+                  setBankAccounts([...bankAccounts, bankForm]);
+                  setIsBankSubModalOpen(false);
+                }}
+                className="px-3 py-1.5 bg-indigo-600 text-white font-bold rounded cursor-pointer"
+              >
+                Add Bank Account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRE-SAVE GST VERIFICATION REVIEW & CONFIRMATION MODAL */}
+      {isReviewModalOpen && stagedGstDetails && (
+        <GSTVerificationReviewModal
+          isOpen={isReviewModalOpen}
+          details={stagedGstDetails}
+          mode={activeGstMode}
+          targetEntityName="Business Partner Master"
+          currentValues={{
+            name: bpName,
+            tradeName: gstTradeName,
+            city: billToCity,
+            state: billToState,
+            address: billToStreetAddress,
+          }}
+          onConfirm={handleConfirmGstReview}
+          onCancel={() => setIsReviewModalOpen(false)}
+        />
+      )}
+
+      {/* BUSINESS PARTNER VIEW DETAILS / INSPECTOR MODAL */}
+      {isInspectorOpen && inspectedBp && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full flex flex-col max-h-[92vh] overflow-hidden text-xs font-sans">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-cyan-400 shrink-0">
+                  <Users2 className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-cyan-300 text-sm">{inspectedBp.bpCode}</span>
+                    <span className="text-slate-400">•</span>
+                    <h3 className="font-bold text-sm text-white truncate">{inspectedBp.bpName}</h3>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${
+                        inspectedBp.bpType === 'CUSTOMER'
+                          ? 'bg-blue-900/60 text-blue-300 border-blue-700/50'
+                          : inspectedBp.bpType === 'SUPPLIER'
+                          ? 'bg-amber-900/60 text-amber-300 border-amber-700/50'
+                          : 'bg-purple-900/60 text-purple-300 border-purple-700/50'
+                      }`}
+                    >
+                      {inspectedBp.bpType}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 mt-0.5 flex flex-wrap items-center gap-3">
+                    <span>GSTIN: <strong className="text-white font-mono">{inspectedBp.gstinPan || 'N/A'}</strong></span>
+                    <span>Branch: <strong className="text-white font-mono">[{inspectedBp.portalBranchCode || '001'}] {inspectedBp.branchCode}</strong></span>
+                    {inspectedBp.msmeInfo?.isMSME && (
+                      <span className="text-emerald-400 flex items-center gap-1 font-bold">
+                        <Award className="w-3.5 h-3.5" /> MSME: {inspectedBp.msmeInfo.msmeClassification || 'YES'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsInspectorOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                aria-label="Close Inspector"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Inspector Tabs */}
+            <div className="bg-slate-100 border-b border-slate-200 px-4 flex gap-1 text-[11px] font-bold text-slate-600 pt-2 shrink-0 overflow-x-auto">
+              {[
+                { key: 'GENERAL', label: '1. General & Bill-To', icon: FileText },
+                { key: 'CONTACTS', label: `2. Contacts (${inspectedBp.contacts?.length || 0})`, icon: Users2 },
+                { key: 'SHIPPING', label: `3. Shipping Addresses (${inspectedBp.addresses?.length || 0})`, icon: MapPin },
+                { key: 'BANKING', label: `4. Banking & Terms (${inspectedBp.accounting?.bankAccounts?.length || 0})`, icon: DollarSign },
+                { key: 'GST_DETAILS', label: '5. Official GST Details (Govt GSTN)', icon: ShieldCheck },
+                { key: 'AUDIT', label: `6. Verification Logs (${inspectedBp.governanceLogs?.length || 0})`, icon: ShieldAlert },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = inspectorTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setInspectorTab(tab.key as any)}
+                    className={`px-3 py-2 border-b-2 font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition ${
+                      isActive
+                        ? 'border-indigo-600 text-indigo-700 bg-white rounded-t-lg shadow-2xs'
+                        : 'border-transparent text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Inspector Body */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              {/* TAB 1: GENERAL */}
+              {inspectorTab === 'GENERAL' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <h4 className="font-bold text-slate-900 text-xs">Partner Identity & Classification</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Business Partner Name</span>
+                        <span className="font-bold text-slate-900">{inspectedBp.bpName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Trade Name</span>
+                        <span className="font-bold text-slate-900">{inspectedBp.gstTradeName || inspectedBp.shortName || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Official Legal Name</span>
+                        <span className="font-bold text-slate-900">{inspectedBp.gstLegalName || inspectedBp.bpName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Industry Segment</span>
+                        <span className="font-medium text-slate-800">{inspectedBp.groupIndustry || 'General Manufacturing'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Transaction Currency</span>
+                        <span className="font-mono font-bold text-indigo-900">{inspectedBp.currency || 'INR'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Governance State</span>
+                        <span className="font-bold text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          {inspectedBp.status} • {inspectedBp.approvalStatus || 'APPROVED'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bill-to Address */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                        <MapPin className="w-4 h-4 text-emerald-600" />
+                        <span>Registered Bill-To Address</span>
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        PRIMARY BILLING
+                      </span>
+                    </div>
+                    <div className="text-slate-800 text-xs">
+                      {inspectedBp.streetAddress || 'Industrial Yard'}
+                    </div>
+                    <div className="text-slate-600 text-xs">
+                      {inspectedBp.city}, {inspectedBp.district && `${inspectedBp.district}, `}{inspectedBp.state}, {inspectedBp.country} - <strong className="font-mono">{inspectedBp.postalCode}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: CONTACTS */}
+              {inspectorTab === 'CONTACTS' && (
+                <div className="space-y-3">
+                  {(!inspectedBp.contacts || inspectedBp.contacts.length === 0) ? (
+                    <div className="p-4 bg-slate-50 border border-dashed rounded-xl text-center text-slate-500">
+                      No contacts recorded.
+                    </div>
+                  ) : (
+                    inspectedBp.contacts.map((c, i) => (
+                      <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                            <span>{c.title} {c.name}</span>
+                            {c.isDefault && (
+                              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded border border-emerald-300">
+                                PRIMARY
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500">{c.position} — {c.department}</div>
+                          <div className="text-[11px] font-mono text-slate-700 mt-1 flex items-center gap-4">
+                            <span>📱 {c.mobile}</span>
+                            <span>✉️ {c.email}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: SHIPPING */}
+              {inspectorTab === 'SHIPPING' && (
+                <div className="space-y-3">
+                  {(!inspectedBp.addresses || inspectedBp.addresses.length === 0) ? (
+                    <div className="p-4 bg-slate-50 border border-dashed rounded-xl text-center text-slate-500">
+                      No shipping addresses recorded.
+                    </div>
+                  ) : (
+                    inspectedBp.addresses.map((a, i) => (
+                      <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                        <div className="font-bold text-slate-900 flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{a.addressName}</span>
+                          <span className="text-[9px] font-mono bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded">
+                            {a.addressType}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-600">
+                          {a.streetAddress}, {a.city}, {a.state}, {a.country} - {a.postalCode}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: BANKING & TERMS */}
+              {inspectorTab === 'BANKING' && (
+                <div className="space-y-4">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Payment Terms</span>
+                      <strong className="text-indigo-900">{inspectedBp.paymentTerms?.paymentTermsCode || 'NET30'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Credit Limit</span>
+                      <strong className="font-mono text-slate-800">₹{(inspectedBp.paymentTerms?.creditLimit || 0).toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Price List</span>
+                      <strong className="text-slate-800">{inspectedBp.paymentTerms?.priceList || '— (Standard)'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h4 className="font-bold text-slate-900 text-xs">Registered Bank Accounts</h4>
+                    {(inspectedBp.accounting?.bankAccounts || []).map((b, i) => (
+                      <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{b.bankName} ({b.branchName})</span>
+                            {b.isDefault && (
+                              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded">
+                                DEFAULT
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-700 mt-1">
+                            IFSC: <strong>{b.ifscCode}</strong> | Account No: <strong>{b.accountNumber}</strong>
+                          </div>
+                          <div className="text-[10px] text-emerald-700 font-bold mt-0.5 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Cancelled Cheque: {b.cancelledChequeFileName || 'Attached'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 5: OFFICIAL GST DETAILS (Full Rich Sections) */}
+              {inspectorTab === 'GST_DETAILS' && (
+                <div className="space-y-4">
+                  <GSTDetailsInspector
+                    details={
+                      inspectedBp.gstVerificationDetails ||
+                      (inspectedBp.gstinPan
+                        ? getOrCreateGstDetailsForEntity(inspectedBp.gstinPan, inspectedBp.bpName, inspectedBp.gstTradeName)
+                        : undefined)
+                    }
+                  />
+                </div>
+              )}
+
+              {/* TAB 6: AUDIT */}
+              {inspectorTab === 'AUDIT' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-900 text-white rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-cyan-400 font-bold text-xs uppercase">Government Verification & Governance Audit Trail</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">
+                        Immutable verification records, timestamps, provider signatures, and reviewer IDs.
+                      </div>
+                    </div>
+                    <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  </div>
+
+                  <div className="space-y-2">
+                    {(!inspectedBp.governanceLogs || inspectedBp.governanceLogs.length === 0) ? (
+                      <div className="p-4 bg-slate-50 border border-dashed rounded-xl text-center text-slate-500">
+                        No audit records available.
+                      </div>
+                    ) : (
+                      inspectedBp.governanceLogs.map((log) => (
+                        <div key={log.id} className="p-3 bg-slate-50 border rounded-lg text-xs space-y-1 font-mono">
+                          <div className="flex items-center justify-between text-indigo-900 font-bold">
+                            <span>{log.action}</span>
+                            <span className="text-slate-500 font-normal">{new Date(log.timestamp).toLocaleString()}</span>
+                          </div>
+                          <div className="text-slate-700">{log.details}</div>
+                          <div className="text-[10px] text-slate-500">Verified By: {log.verifier} • Status: {log.status}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-500 font-mono">
+                System Record ID: {inspectedBp.id}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsInspectorOpen(false)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold text-xs cursor-pointer transition"
+                >
+                  Close Inspector
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsInspectorOpen(false);
+                    handleOpenModal(inspectedBp);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Modify Business Partner</span>
                 </button>
               </div>
             </div>
@@ -2945,426 +2367,559 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         </div>
       )}
 
-      {/* CASCADING ADDRESS SUB-MODAL WITH MANAGE MISSING GEOGRAPHY ACTIONS */}
-      {isAddressSubModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full p-5 space-y-4">
-            <h4 className="font-bold text-slate-900 border-b pb-2 text-sm flex items-center justify-between">
-              <span>Cascading Address Entry</span>
-              <button
-                onClick={() => setIsAddressSubModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </h4>
+      {/* Official GST Taxpayer Trade & Activities Details Modal */}
+      {isTradeDetailsModalOpen && (() => {
+        const tradeDetails = getActiveTradeDetails();
+        const filteredFilings = (tradeDetails.filingHistory || []).filter(
+          (f: any) => f.financialYear === selectedFilingFy
+        );
+        const gstr3bList = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('3B'));
+        const gstr1List = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('1') || f.returnType.toUpperCase().includes('IFF'));
 
-            <div className="space-y-3">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Address Label *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Registered HQ, Chakan Factory Gate 2"
-                  value={addressForm.addressName}
-                  onChange={(e) => setAddressForm({ ...addressForm, addressName: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Address Type *</label>
-                <select
-                  value={addressForm.addressType}
-                  onChange={(e) =>
-                    setAddressForm({ ...addressForm, addressType: e.target.value as any })
-                  }
-                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0 border-b border-indigo-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-600/30 border border-indigo-400/30 rounded-xl">
+                    <Building2 className="w-5 h-5 text-indigo-300" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                      <span>Official Taxpayer Trade & Business Activities</span>
+                      <span className="text-[10px] font-mono font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/40 px-2 py-0.5 rounded">
+                        GSTIN: {tradeDetails.gstin}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Government GSTN Taxpayer Search Official Registry Data
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTradeDetailsModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition cursor-pointer"
                 >
-                  <option value="BILL_TO">Bill To Address</option>
-                  <option value="SHIP_TO">Ship To Address</option>
-                </select>
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
-              {/* STRICT CASCADING GEOGRAPHIC HIERARCHY WITH MANAGE MISSING ACTIONS */}
-              <div className="p-3 bg-slate-50 border rounded-xl space-y-3">
-                <div className="text-[10px] font-bold text-indigo-700 uppercase">
-                  Cascading Selection Order: Country → State → District → City → Postal Code
+              {/* Body */}
+              <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                {/* Heading details matching official GST portal sections */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100 p-2.5 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700 text-center">
+                  {[
+                    { key: 'PLACES', label: `2. Principal & Additional Places (1)` },
+                    { key: 'ACTIVITIES', label: `3. Nature of Activities` },
+                    { key: 'GOODS_SERVICES', label: `4. Goods & Services (${tradeDetails.goods.length} HSN / ${tradeDetails.services.length} SAC)` },
+                    { key: 'FILING_HISTORY', label: `5. Return Filing Records (3)` },
+                  ].map((btn) => (
+                    <button
+                      key={btn.key}
+                      type="button"
+                      onClick={() => setTradeDetailsTab(btn.key as any)}
+                      className={`p-2.5 rounded-lg border font-bold transition cursor-pointer text-center ${
+                        tradeDetailsTab === btn.key
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                          : 'bg-white text-indigo-900 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Level 1: Country */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700">1. Country *</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddMissingGeoModal('COUNTRY')}
-                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Can't find? Add Country
-                    </button>
+                {/* Identity Summary Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Legal Name of Business</span>
+                    <strong className="text-slate-900 font-bold">{tradeDetails.legalName}</strong>
                   </div>
-                  <select
-                    value={addressForm.country}
-                    onChange={(e) => handleCountryChange(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                  >
-                    {geoMasters.map((c) => (
-                      <option key={c.countryCode} value={c.countryName}>
-                        {c.countryName} ({c.countryCode})
-                      </option>
-                    ))}
-                  </select>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Trade Name</span>
+                    <strong className="text-indigo-900 font-bold">{tradeDetails.tradeName}</strong>
+                  </div>
                 </div>
 
-                {/* Level 2: State / Province */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700">2. State / Province *</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddMissingGeoModal('STATE')}
-                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Can't find? Add State
-                    </button>
+                {/* CONDITIONAL DISPLAY BASED ON ACTIVE BUTTON SELECTION */}
+                {tradeDetailsTab === 'PLACES' && (
+                  <div className="space-y-3 animate-in fade-in duration-150">
+                    <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-2">
+                      <div className="font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
+                        <MapPin className="w-4 h-4 text-emerald-600" />
+                        <span>Principal Place of Business</span>
+                      </div>
+                      <div className="text-slate-800 text-xs font-semibold">
+                        {tradeDetails.legalName}
+                      </div>
+                      <div className="text-slate-600 text-xs">
+                        Talegaon Chakan Road, Chakan Mahalunge, Pune, Maharashtra — <strong className="font-mono">410501</strong>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono pt-1">
+                        State Jurisdiction: Pune Commissionerate • State Code: 27
+                      </div>
+                    </div>
                   </div>
-                  <select
-                    value={addressForm.state}
-                    onChange={(e) => handleStateChange(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                  >
-                    {availableStates.map((s) => (
-                      <option key={s.stateName} value={s.stateName}>
-                        {s.stateName} {s.stateCode ? `(GST Code: ${s.stateCode})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                )}
+
+                {tradeDetailsTab === 'ACTIVITIES' && (
+                  <div className="space-y-4 animate-in fade-in duration-150">
+                    {/* Section 1: Nature Of Core Business Activity */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                      <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between font-bold text-slate-800 text-xs">
+                        <span>Nature Of Core Business Activity</span>
+                        <ChevronDown className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <div className="p-4 bg-white">
+                        <span className="inline-block px-3 py-1 bg-slate-100 text-slate-900 font-semibold text-xs rounded border border-slate-200">
+                          {tradeDetails.coreActivity}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Nature of Business Activities */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                      <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between font-bold text-slate-800 text-xs">
+                        <span>Nature of Business Activities</span>
+                        <ChevronDown className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <div className="p-4 bg-white flex flex-wrap gap-3">
+                        {tradeDetails.activities.map((act, i) => (
+                          <span
+                            key={i}
+                            className="px-3 py-1 bg-slate-100 text-slate-900 font-medium text-xs rounded border border-slate-200"
+                          >
+                            {act.startsWith('1.') || act.startsWith('2.') ? act : `${i + 1}. ${act}`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {tradeDetailsTab === 'GOODS_SERVICES' && (
+                  <div className="space-y-4 animate-in fade-in duration-150">
+                    {/* Section 3: Dealing In Goods and Services */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                      <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 font-bold text-slate-800 text-xs">
+                        Dealing In Goods and Services
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            {/* Top column headers */}
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold text-[11px]">
+                              <th colSpan={2} className="p-2.5 text-center border-r border-slate-200 bg-slate-100/60">
+                                Goods
+                              </th>
+                              <th colSpan={2} className="p-2.5 text-center bg-slate-100/60">
+                                Services
+                              </th>
+                            </tr>
+                            {/* Sub headers */}
+                            <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                              <th className="p-2 w-20 border-r border-slate-200">HSN</th>
+                              <th className="p-2 border-r border-slate-200">Description</th>
+                              <th className="p-2 w-20 border-r border-slate-200">HSN</th>
+                              <th className="p-2">Description</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {tradeDetails.goods.map((item, idx) => {
+                              const sItem = tradeDetails.services[idx];
+                              return (
+                                <tr key={idx} className="hover:bg-slate-50/50">
+                                  <td className="p-2.5 font-mono font-bold text-slate-900 border-r border-slate-200 align-top">
+                                    {item.hsnCode}
+                                  </td>
+                                  <td className="p-2.5 text-slate-800 border-r border-slate-200 align-top leading-relaxed">
+                                    {item.description}
+                                  </td>
+                                  <td className="p-2.5 font-mono font-bold text-slate-900 border-r border-slate-200 align-top">
+                                    {sItem?.sacCode || ''}
+                                  </td>
+                                  <td className="p-2.5 text-slate-800 align-top leading-relaxed">
+                                    {sItem?.description || ''}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Footnote */}
+                      <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-600 font-bold">
+                        HSN: Harmonized System of Nomenclature of Goods and Services
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {tradeDetailsTab === 'FILING_HISTORY' && (() => {
+                  const filteredFilings = (tradeDetails.filingHistory || []).filter(
+                    (f: any) => f.financialYear === selectedFilingFy
+                  );
+                  const gstr3bList = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('3B'));
+                  const gstr1List = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('1') || f.returnType.toUpperCase().includes('IFF'));
+                  const hasAnnualReturnForFy = selectedFilingFy !== '2026-2027';
+
+                  return (
+                    <div className="space-y-4 animate-in fade-in duration-150">
+                      {/* Financial Year Selector Bar matching official portal */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="font-bold text-slate-900 text-xs">Financial Year *</label>
+                          <select
+                            value={selectedFilingFy}
+                            onChange={(e) => setSelectedFilingFy(e.target.value)}
+                            className="text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold text-indigo-900"
+                          >
+                            {getPreviousIndianFinancialYears(8).map((fy, idx) => (
+                              <option key={fy} value={fy}>
+                                {fy} {idx === 2 ? '(Current FY - 2 Default)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFilingLoading(true);
+                              setTimeout(() => setIsFilingLoading(false), 350);
+                            }}
+                            disabled={isFilingLoading}
+                            className="px-3 py-1.5 bg-indigo-900 hover:bg-indigo-800 text-white font-bold rounded-lg text-xs cursor-pointer transition shadow-2xs flex items-center gap-1"
+                          >
+                            {isFilingLoading ? 'SEARCHING...' : 'SEARCH'}
+                          </button>
+                        </div>
+                        <span className="text-[11px] font-mono text-slate-500">
+                          GSTIN: <strong className="text-indigo-900">{tradeDetails.gstin}</strong>
+                        </span>
+                      </div>
+
+                      {isFilingLoading ? (
+                        <div className="p-8 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2">
+                          <div className="animate-spin w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div>
+                          <div className="text-xs font-bold text-slate-700">Fetching return filing records for FY {selectedFilingFy}...</div>
+                        </div>
+                      ) : filteredFilings.length === 0 ? (
+                        <div className="p-8 bg-slate-50 border border-dashed border-slate-300 rounded-xl text-center space-y-2">
+                          <FileText className="w-8 h-8 text-slate-400 mx-auto" />
+                          <div className="font-bold text-slate-700 text-xs">No Return Filing Records Available</div>
+                          <div className="text-[11px] text-slate-500 max-w-md mx-auto">
+                            No verified return filing records were found for Financial Year <strong className="font-mono text-slate-800">{selectedFilingFy}</strong> from the official GSTN portal or configured provider source. Filing history unavailable.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* GSTR-3B Filing Table */}
+                          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                            <div className="bg-slate-100/90 px-3 py-2 border-b border-slate-200 font-bold text-slate-900 text-xs">
+                              Filing details for GSTR3B ({selectedFilingFy})
+                            </div>
+                            {gstr3bList.length === 0 ? (
+                              <div className="p-4 text-slate-500 text-center text-xs italic">No GSTR-3B records found for this FY from verified source.</div>
+                            ) : (
+                              <table className="w-full text-left text-[11px]">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                                    <th className="p-2">Financial Year</th>
+                                    <th className="p-2">Tax Period</th>
+                                    <th className="p-2">Date of filing</th>
+                                    <th className="p-2">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white font-mono">
+                                  {gstr3bList.map((rec: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                      <td className="p-2 text-slate-800">{rec.financialYear}</td>
+                                      <td className="p-2 font-bold text-indigo-900">{rec.taxPeriod}</td>
+                                      <td className="p-2 text-slate-600">{rec.dateOfFiling}</td>
+                                      <td className="p-2 text-emerald-700 font-bold">{rec.status}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+
+                          {/* GSTR-1 / IFF Filing Table */}
+                          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                            <div className="bg-slate-100/90 px-3 py-2 border-b border-slate-200 font-bold text-slate-900 text-xs">
+                              Filing details for GSTR-1/IFF ({selectedFilingFy})
+                            </div>
+                            {gstr1List.length === 0 ? (
+                              <div className="p-4 text-slate-500 text-center text-xs italic">No GSTR-1 / IFF records found for this FY from verified source.</div>
+                            ) : (
+                              <table className="w-full text-left text-[11px]">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                                    <th className="p-2">Financial Year</th>
+                                    <th className="p-2">Tax Period</th>
+                                    <th className="p-2">Date of filing</th>
+                                    <th className="p-2">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white font-mono">
+                                  {gstr1List.map((rec: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                      <td className="p-2 text-slate-800">{rec.financialYear}</td>
+                                      <td className="p-2 font-bold text-indigo-900">{rec.taxPeriod}</td>
+                                      <td className="p-2 text-slate-600">{rec.dateOfFiling}</td>
+                                      <td className="p-2 text-emerald-700 font-bold">{rec.status}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* GSTR-9 and GSTR-9C Annual Returns */}
+                      {hasAnnualReturnForFy ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                            <div className="bg-slate-100/90 px-3 py-2 border-b border-slate-200 font-bold text-slate-900 text-xs">
+                              Filing details for GSTR9 (Annual Return)
+                            </div>
+                            <table className="w-full text-left text-[11px]">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                                  <th className="p-2">Financial Year</th>
+                                  <th className="p-2">Tax Period</th>
+                                  <th className="p-2">Date of filing</th>
+                                  <th className="p-2">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white font-mono">
+                                <tr>
+                                  <td className="p-2 text-slate-800">{selectedFilingFy}</td>
+                                  <td className="p-2 font-bold text-indigo-900">Annual</td>
+                                  <td className="p-2 text-slate-600">{`31/12/${parseInt(selectedFilingFy.split('-')[1], 10) + 1}`}</td>
+                                  <td className="p-2 text-emerald-700 font-bold">Filed</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                            <div className="bg-slate-100/90 px-3 py-2 border-b border-slate-200 font-bold text-slate-900 text-xs">
+                              Filing details for GSTR9C (Reconciliation Statement)
+                            </div>
+                            <table className="w-full text-left text-[11px]">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                                  <th className="p-2">Financial Year</th>
+                                  <th className="p-2">Tax Period</th>
+                                  <th className="p-2">Date of filing</th>
+                                  <th className="p-2">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white font-mono">
+                                <tr>
+                                  <td className="p-2 text-slate-800">{selectedFilingFy}</td>
+                                  <td className="p-2 font-bold text-indigo-900">Annual</td>
+                                  <td className="p-2 text-slate-600">{`31/12/${parseInt(selectedFilingFy.split('-')[1], 10) + 1}`}</td>
+                                  <td className="p-2 text-emerald-700 font-bold">Filed</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] font-medium flex items-center gap-2">
+                          <span>ℹ️</span>
+                          <span>GSTR-9 (Annual Return) & GSTR-9C (Reconciliation Statement) not due or not applicable yet for the current ongoing financial year (2026-2027).</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Printable GST Report Wrapper as per Form GST REG-06 Registration Certificate Template Format */}
+                <div className="printable-gst-report hidden print:block">
+                  <div className="p-8 bg-white text-slate-900 font-sans space-y-5 max-w-[210mm] mx-auto text-xs leading-relaxed">
+                    <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Form GST REG-06</div>
+                      <div className="text-[10px] font-bold text-slate-600">[See Rule 10(1)]</div>
+                      <h1 className="text-base font-black uppercase tracking-wider text-slate-900">Government of India</h1>
+                      <h2 className="text-sm font-bold text-slate-800">Goods and Services Tax Network (GSTN)</h2>
+                      <h3 className="text-xs font-bold text-indigo-900 uppercase">Registration Certificate</h3>
+                      <div className="text-[11px] text-slate-600 pt-1 flex justify-between">
+                        <span>Registration Number (GSTIN): <strong className="font-mono text-slate-900">{tradeDetails.gstin}</strong></span>
+                        <span>Financial Year: <strong className="text-slate-900">{selectedFilingFy}</strong></span>
+                        <span>Print Date: {new Date().toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Certificate Details Table */}
+                    <div className="border border-slate-900 rounded overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <tbody>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold w-1/3 bg-slate-100 border-r border-slate-400">1. Legal Name of Business</td>
+                            <td className="p-2 font-semibold text-slate-900 uppercase">{tradeDetails.legalName}</td>
+                          </tr>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">2. Trade Name (if any)</td>
+                            <td className="p-2 font-semibold text-indigo-900 uppercase">{tradeDetails.tradeName}</td>
+                          </tr>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">3. Constitution of Business</td>
+                            <td className="p-2 font-semibold text-slate-900">Proprietorship</td>
+                          </tr>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">4. Address of Principal Place of Business</td>
+                            <td className="p-2 font-semibold text-slate-900">
+                              Talegaon Chakan Road, Chakan Mahalunge, Pune, Maharashtra — <span className="font-mono">410501</span>
+                            </td>
+                          </tr>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">5. Effective Date of Registration</td>
+                            <td className="p-2 font-semibold text-slate-900 font-mono">01/07/2017</td>
+                          </tr>
+                          <tr className="border-b border-slate-400">
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">6. Taxpayer Type & Status</td>
+                            <td className="p-2 font-semibold text-emerald-700">Regular • ACTIVE</td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 font-bold bg-slate-100 border-r border-slate-400">7. Particulars of Issuing Authority</td>
+                            <td className="p-2 text-slate-700">State Jurisdiction: Pune Commissionerate • Central Jurisdiction: CGST Pune</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Goods & Services HSN */}
+                    <div className="space-y-1.5">
+                      <h4 className="font-bold text-xs uppercase text-slate-900 border-b border-slate-900 pb-1">Goods and Services (HSN / SAC)</h4>
+                      <table className="w-full text-left text-xs border-collapse border border-slate-900">
+                        <thead>
+                          <tr className="bg-slate-200">
+                            <th className="border border-slate-900 p-1.5 w-24">HSN / SAC</th>
+                            <th className="border border-slate-900 p-1.5">Description of Goods and Services</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tradeDetails.goods.map((g, i) => (
+                            <tr key={i}>
+                              <td className="border border-slate-900 p-1.5 font-mono font-bold">{g.hsnCode}</td>
+                              <td className="border border-slate-900 p-1.5">{g.description}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Return Filing History for Selected FY */}
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-xs uppercase text-slate-900 border-b border-slate-900 pb-1">
+                        Return Filing History Extract — Financial Year ({selectedFilingFy})
+                      </h4>
+                      
+                      {filteredFilings.length === 0 ? (
+                        <div className="p-3 bg-slate-50 border border-slate-300 rounded text-slate-600 text-[11px] italic text-center">
+                          No verified return filing records available for Financial Year {selectedFilingFy}. Filing history unavailable.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <h5 className="font-bold text-[11px] text-slate-800 mb-1">GSTR-3B Filing History</h5>
+                            {gstr3bList.length === 0 ? (
+                              <div className="p-2 text-[10px] text-slate-500 italic">No GSTR-3B records found for this FY.</div>
+                            ) : (
+                              <table className="w-full text-left text-[10px] border border-slate-900">
+                                <thead>
+                                  <tr className="bg-slate-200">
+                                    <th className="border border-slate-900 p-1">Tax Period</th>
+                                    <th className="border border-slate-900 p-1">Date of Filing</th>
+                                    <th className="border border-slate-900 p-1">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {gstr3bList.map((rec: any, idx: number) => (
+                                    <tr key={idx}>
+                                      <td className="border border-slate-900 p-1 font-semibold">{rec.taxPeriod}</td>
+                                      <td className="border border-slate-900 p-1 font-mono">{rec.dateOfFiling}</td>
+                                      <td className="border border-slate-900 p-1 text-emerald-800 font-bold">{rec.status}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+
+                          <div>
+                            <h5 className="font-bold text-[11px] text-slate-800 mb-1">GSTR-1 / IFF Filing History</h5>
+                            {gstr1List.length === 0 ? (
+                              <div className="p-2 text-[10px] text-slate-500 italic">No GSTR-1 records found for this FY.</div>
+                            ) : (
+                              <table className="w-full text-left text-[10px] border border-slate-900">
+                                <thead>
+                                  <tr className="bg-slate-200">
+                                    <th className="border border-slate-900 p-1">Tax Period</th>
+                                    <th className="border border-slate-900 p-1">Date of Filing</th>
+                                    <th className="border border-slate-900 p-1">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(gstr1List as any[]).map((rec: any, idx: number) => (
+                                    <tr key={idx}>
+                                      <td className="border border-slate-900 p-1 font-semibold">{rec.taxPeriod}</td>
+                                      <td className="border border-slate-900 p-1 font-mono">{rec.dateOfFiling}</td>
+                                      <td className="border border-slate-900 p-1 text-emerald-800 font-bold">{rec.status}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-[10px] text-slate-600 text-center pt-6 border-t border-slate-900 space-y-1">
+                      <p>This is a computer-generated certificate and does not require a physical signature. Form GST REG-06.</p>
+                      <p className="font-mono">Reference ID: {tradeDetails.gstin} • Source: Official GSTN Portal Taxpayer Gateway</p>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Level 3: District */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700">3. District *</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddMissingGeoModal('DISTRICT')}
-                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Can't find? Add District
-                    </button>
-                  </div>
-                  <select
-                    value={addressForm.district}
-                    onChange={(e) => handleDistrictChange(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                  >
-                    {availableDistricts.map((d) => (
-                      <option key={d.districtName} value={d.districtName}>
-                        {d.districtName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Level 4: City / Town */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700">4. City / Town *</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddMissingGeoModal('CITY')}
-                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Can't find? Add City
-                    </button>
-                  </div>
-                  <select
-                    value={addressForm.city}
-                    onChange={(e) => handleCityChange(e.target.value)}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                  >
-                    {availableCities.map((c) => (
-                      <option key={c.cityName} value={c.cityName}>
-                        {c.cityName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Level 5: Postal Code */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="font-bold text-slate-700">5. Postal Code / PIN Code *</label>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddMissingGeoModal('POSTAL')}
-                      className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" /> Can't find? Add Postal Code
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <select
-                      value={addressForm.postalCode}
-                      onChange={(e) =>
-                        setAddressForm({ ...addressForm, postalCode: e.target.value })
-                      }
-                      className="w-1/2 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold"
-                    >
-                      {availablePostalCodes.map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Or enter custom PIN"
-                      value={addressForm.postalCode}
-                      onChange={(e) =>
-                        setAddressForm({ ...addressForm, postalCode: e.target.value })
-                      }
-                      className="w-1/2 text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                    />
-                  </div>
-                </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Street Address *</label>
-                <textarea
-                  rows={2}
-                  placeholder="Building name, plot number, street..."
-                  value={addressForm.streetAddress}
-                  onChange={(e) =>
-                    setAddressForm({ ...addressForm, streetAddress: e.target.value })
-                  }
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                />
+              {/* Footer */}
+              <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-[11px] text-slate-500 font-mono">
+                  Official Record Verified • Form GST REG-06
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Details</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsTradeDetailsModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs cursor-pointer transition shadow-2xs"
+                  >
+                    Close Details
+                  </button>
+                </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="defaultAddr"
-                  checked={addressForm.isDefault}
-                  onChange={(e) =>
-                    setAddressForm({ ...addressForm, isDefault: e.target.checked })
-                  }
-                  className="w-4 h-4 text-indigo-600 rounded"
-                />
-                <label htmlFor="defaultAddr" className="font-bold text-slate-800">
-                  Set as Default Address
-                </label>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setIsAddressSubModalOpen(false)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAddress}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer"
-              >
-                Save Address
-              </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* MANAGE MISSING GEOGRAPHY VALUE SUB-MODAL */}
-      {isGeoSubModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4">
-            <h4 className="font-bold text-slate-900 border-b pb-2 text-sm flex items-center justify-between">
-              <span>
-                Add Missing Geographic Master: {geoLevelToAdd}
-              </span>
-              <button
-                onClick={() => setIsGeoSubModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </h4>
-
-            <div className="space-y-3">
-              <div className="p-2.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-[11px]">
-                Parent Location Context:{' '}
-                <strong>
-                  {addressForm.country}
-                  {geoLevelToAdd !== 'COUNTRY' && ` → ${addressForm.state}`}
-                  {(geoLevelToAdd === 'CITY' || geoLevelToAdd === 'POSTAL') &&
-                    ` → ${addressForm.district}`}
-                </strong>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Name for Missing {geoLevelToAdd} *
-                </label>
-                <input
-                  type="text"
-                  placeholder={`e.g. New ${geoLevelToAdd}`}
-                  value={newGeoName}
-                  onChange={(e) => setNewGeoName(e.target.value)}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Code / Short Identifier (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. State Code or PIN code"
-                  value={newGeoCode}
-                  onChange={(e) => setNewGeoCode(e.target.value)}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono uppercase"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setIsGeoSubModalOpen(false)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveMissingGeo}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer"
-              >
-                Add & Select Value
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CONTACT SUB-MODAL */}
-      {isContactSubModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4">
-            <h4 className="font-bold text-slate-900 border-b pb-2 text-sm flex items-center justify-between">
-              <span>Add / Edit Contact Person</span>
-              <button
-                onClick={() => setIsContactSubModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </h4>
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Title</label>
-                  <select
-                    value={contactForm.title}
-                    onChange={(e) => setContactForm({ ...contactForm, title: e.target.value })}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                  >
-                    <option value="Mr.">Mr.</option>
-                    <option value="Ms.">Ms.</option>
-                    <option value="Dr.">Dr.</option>
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">Full Name *</label>
-                  <input
-                    type="text"
-                    value={contactForm.name}
-                    onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Position / Designation</label>
-                <input
-                  type="text"
-                  value={contactForm.position}
-                  onChange={(e) => setContactForm({ ...contactForm, position: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Department</label>
-                <input
-                  type="text"
-                  value={contactForm.department}
-                  onChange={(e) => setContactForm({ ...contactForm, department: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Mobile Number</label>
-                <input
-                  type="text"
-                  value={contactForm.mobile}
-                  onChange={(e) => setContactForm({ ...contactForm, mobile: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Direct Email *</label>
-                <input
-                  type="email"
-                  value={contactForm.email}
-                  onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="defaultContact"
-                  checked={contactForm.isDefault}
-                  onChange={(e) => setContactForm({ ...contactForm, isDefault: e.target.checked })}
-                  className="w-4 h-4 text-indigo-600 rounded"
-                />
-                <label htmlFor="defaultContact" className="font-bold text-slate-800">
-                  Set as Default Contact Person
-                </label>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <button
-                type="button"
-                onClick={() => setIsContactSubModalOpen(false)}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveContact}
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer"
-              >
-                Save Contact
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
+

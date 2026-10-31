@@ -1,0 +1,714 @@
+Kosh Global IT — Global Display Rules, Advanced Data Grid and Multi-Company/Multi-Branch Functionality
+1. Objective
+Enhance the existing My Kosh Innovations Global IT System by implementing a consistent, reusable display and data-grid standard across all applicable modules.
+The system is a multi-company, multi-branch enterprise platform. All screens must follow the correct company, branch, organization, and data-ownership rules.
+Preserve the existing UI design, navigation, sidebar, colors, typography, cards, forms, and overall visual appearance. Do not create a new application or redesign the system.
+Implement the required changes directly in the existing project. Inspect the current code, identify gaps, and correct the implementation without breaking existing functionality.
+2. Remove Redundant Context Displays
+Remove redundant company, branch, environment, and SAP database context panels from module screens where the same information is already available elsewhere and is not needed for the current operation.
+Specifically:
+•	Remove unnecessary repeated Active Company and Active Branch display panels.
+•	Remove duplicate company/branch context banners.
+•	Remove redundant environment and SAP database information banners from ordinary master-data screens.
+•	Remove unnecessary selected-branch summary panels that consume space without providing essential functionality.
+•	Remove other duplicated contextual information identified during the code audit.
+Keep the existing user identity, role, notification controls, navigation, and other useful header functionality.
+Do not remove the underlying company registry, branch registry, environment configuration, SAP integration settings, authorization rules, or data relationships.
+Do not remove essential company or branch identification from records, forms, reports, or sensitive operations. Display required information within the relevant screen or operation in a compact, meaningful way.
+The objective is to simplify the display without weakening the multi-company, multi-branch architecture.
+3. Company and Branch Identification
+Add the appropriate organizational identification fields to all applicable data grids.
+For company-dependent records, provide:
+•	Company Code
+•	Company Name
+For branch-dependent records, provide:
+•	Branch Code
+•	Branch Name
+Where a record is associated with both a company and a branch, display all four fields.
+Retrieve these values from the existing authoritative company and branch registries. Do not hard-code values or create duplicate company records.
+For the Warehouse Setup & Multi-Warehouse Register, use this default column order:
+1.	Company Code
+2.	Company Name
+3.	Branch Code
+4.	Branch Name
+5.	Warehouse Code
+6.	Warehouse Name
+7.	Default Policy
+8.	Nettable
+9.	Bin Locations
+10.	Status
+11.	Actions
+Preserve additional existing business-critical columns where required.
+Apply the same identification standard to Global Item Master, Create Item, Custom Specification, Item Code and Description, Branch Item Availability, BP Master, Warehouse Master, and other relevant modules.
+For genuinely global records, show an appropriate Global or Organization-wide scope indicator. Do not incorrectly associate global records with an arbitrary company or branch.
+4. Reusable Enterprise Data Grid
+Create or enhance a reusable data-grid component that can be configured for each module.
+The grid must support the following capabilities.
+4.1 Search
+Provide a search field that searches across the configured searchable columns.
+Examples include:
+•	Company Code and Company Name
+•	Branch Code and Branch Name
+•	Item Code and Item Description
+•	BP Code and BP Name
+•	Warehouse Code and Warehouse Name
+•	Status and other applicable fields
+Search must operate on the actual dataset, including records beyond the current page when server-side pagination is used.
+Provide clear-search functionality and a useful no-results message.
+4.2 Standard Filters
+Provide filters for applicable fields, including:
+•	Company
+•	Branch
+•	Item or BP code
+•	Description or name
+•	Warehouse
+•	Status
+•	Other module-specific fields
+Filters must be configurable according to the data model of each module.
+Company and branch dropdowns must display meaningful codes and names and must include only companies and branches authorized for the current user.
+Allow users to combine multiple filter conditions.
+4.3 Advanced Filters
+Provide an Advanced Filters feature supporting:
+•	Field selection
+•	Operator selection
+•	Filter values
+•	Multiple conditions
+•	AND/OR grouping where supported
+•	Add and remove condition controls
+•	Apply filters
+•	Clear all filters
+Support appropriate operators according to field type, such as:
+•	Equals
+•	Not equals
+•	Contains
+•	Starts with
+•	Ends with
+•	Greater than
+•	Less than
+•	Is empty
+•	Is not empty
+•	Date range
+Do not offer operators that are incompatible with the selected field.
+Validate filter definitions on the backend and prevent unsafe query construction.
+4.4 Configurable Columns
+Provide a Configure Columns option that allows authorized users to:
+•	Show or hide available columns
+•	Reorder columns
+•	Change the displayed column sequence
+•	Restore default column settings
+•	Save personal column preferences where supported
+Each module must define its permitted columns and default layout.
+Preserve mandatory identification and governance fields where hiding them could make a record or operation ambiguous.
+Column configuration must not require database schema changes merely to control visibility or ordering.
+4.5 Single-Select and Multi-Select
+Support both selection modes.
+Single-select:
+•	Select one record.
+•	Clearly highlight the selected row.
+•	Pass the correct record ID to the applicable action.
+Multi-select:
+•	Select multiple records using checkboxes.
+•	Support selecting all records on the current page.
+•	Where supported, allow selecting all filtered records with a clear confirmation and accurate record count.
+•	Provide Clear Selection.
+•	Display the number of selected records.
+Maintain correct selection when the user sorts, filters, or changes pages.
+Selection must be based on stable record IDs, not row positions.
+Do not introduce new high-impact bulk actions, such as bulk deletion or bulk synchronization, without approval.
+4.6 Printing
+Provide a Print action.
+The print output must:
+•	Include the module title.
+•	Include relevant Company Code and Company Name.
+•	Include relevant Branch Code and Branch Name.
+•	Include the applied filters.
+•	Include the configured columns and applicable records.
+•	Use a clean, readable layout.
+•	Exclude navigation menus and unrelated screen controls.
+Support printing selected records or filtered results where appropriate.
+Clearly identify whether the operation prints selected records, the current page, or the entire filtered result set. Do not silently omit records that the user expects to print.
+4.7 Export
+Provide an Export action supporting:
+•	CSV
+•	XLSX, using the existing stack or an appropriate established library
+Exports must respect:
+•	User authorization
+•	Company and branch scope
+•	Applied filters
+•	Selected columns
+•	Selected-record scope, where applicable
+•	Pagination-independent export of all filtered records where requested
+Include the relevant company and branch identifiers and a clear indication of the exported scope.
+Do not export unauthorized records, credentials, session tokens, private keys, or other secrets.
+5. Global Display Configuration
+Implement reusable configuration for the grid standard.
+Each module configuration should define:
+•	Module identifier
+•	Available columns
+•	Default visible columns
+•	Default column order
+•	Searchable fields
+•	Filterable fields
+•	Advanced-filter operators
+•	Sortable fields
+•	Single-select and multi-select support
+•	Print support
+•	Supported export formats
+•	Mandatory identification fields
+•	Module-specific restrictions
+Reuse the application's existing configuration and persistence mechanisms wherever possible.
+Do not create an unnecessarily complex configuration framework if the existing architecture can support the requirement.
+6. Multi-Company and Multi-Branch Behavior
+The entire application must continue to operate as a multi-company, multi-branch system.
+For administrators authorized to access multiple companies, do not require a single global Active Company or Active Branch selection before they can use the system.
+Use screen-level company and branch filters to define the scope of the current view or operation.
+Requirements:
+•	Support multiple-company filtering where appropriate.
+•	Provide All Authorized Companies and All Authorized Branches options where the module supports them.
+•	Restrict branch options to valid branches within the selected company scope.
+•	Refresh the data when filters change.
+•	Prevent stale data from a previous company or branch from remaining visible.
+•	Require explicit company or branch selection in creation forms only when the business rules require it.
+•	Do not automatically assign a record to the first available company or branch.
+The backend must validate every requested company and branch against the authenticated user's permissions. A filter is not an authorization mechanism.
+Preserve the correct distinction between global, organization-wide, company-specific, branch-specific, and environment-specific records.
+7. Apply the Standard to Existing Modules
+Implement and validate the reusable standard in the following modules:
+1.	Global Item Master
+2.	Create Item
+3.	Custom Specification
+4.	Item Code and Description
+5.	Branch Item Availability Matrix
+6.	BP Master
+7.	Warehouse Master
+8.	Organization & Branch
+9.	Warehouse Setup & Defaults
+10.	Field & Rule Configurations
+11.	SAP Integration Management
+12.	Company Details Field Mapping
+13.	Fetch Company Details & Sync
+14.	Creation & Scheduling Profiles
+15.	Integration Testing
+16.	Approval Workflows
+17.	Other existing modules that maintain company-dependent or branch-dependent records.
+Do not add irrelevant filters to genuinely global modules. Determine the correct data scope before implementing each grid.
+8. SAP Integration Safeguards
+Keep the existing SAP Business One HANA company registry, environment configuration, Service Layer connections, and synchronization rules.
+The removal of redundant context displays must not remove SAP integration safeguards.
+For SAP operations:
+•	Explicitly identify the Kosh company.
+•	Use the configured SAP company database and environment.
+•	Validate synchronization activation and authorization.
+•	Apply the correct source-to-target mapping.
+•	Record the company, environment, job ID, and execution result.
+•	Preserve correct global and company-specific master-data relationships.
+Do not infer the SAP company database from a global header selection or branch selection.
+Do not introduce unsupported direct writes to SAP system tables or bypass TLS certificate validation.
+9. Performance, Security, and Data Integrity
+Inspect the existing backend, APIs, database schema, and authorization model before implementation.
+For large datasets:
+•	Use server-side filtering, sorting, pagination, and export where necessary.
+•	Validate requested filter fields and operators.
+•	Avoid loading unlimited datasets into the browser.
+•	Prevent unauthorized cross-company and cross-branch access.
+•	Validate company/branch relationships on all relevant read and write operations.
+•	Preserve stable record IDs and existing master-data relationships.
+•	Avoid duplicate queries and unnecessary network requests.
+Do not perform destructive production changes or reassign existing records without an approved migration plan.
+10. Acceptance Tests
+Execute and report actual test results for:
+1.	Redundant context displays are removed without breaking required functions.
+2.	Required company and branch fields are visible in applicable grids.
+3.	Search returns correct records.
+4.	Standard filters work independently and together.
+5.	Advanced filters support valid fields and operators.
+6.	Column visibility and reordering work.
+7.	Default column settings can be restored.
+8.	Single-select works correctly.
+9.	Multi-select and selection counts work correctly.
+10.	Selection remains correct after sorting and pagination.
+11.	Printing respects the requested record scope.
+12.	CSV and XLSX exports contain the correct filtered records.
+13.	Export respects the selected columns and authorization scope.
+14.	Company-specific records do not leak across companies.
+15.	Branch-specific records are associated with the correct company.
+16.	Global records retain their intended scope.
+17.	Existing create, edit, and other module functions continue to work.
+18.	SAP synchronization continues to use its explicit company/environment configuration.
+Use mock services or test data where appropriate. Do not execute destructive tests against production.
+11. Implementation and Completion Report
+Implement the changes in the existing project.
+Start with the Warehouse Setup & Multi-Warehouse Register as the reference implementation. Validate it, then reuse the same grid component and configuration pattern in the other applicable modules.
+Provide a completion report identifying:
+•	Files and components changed
+•	Screens updated
+•	Context displays removed
+•	Columns added
+•	Search and filter functionality implemented
+•	Column configuration functionality implemented
+•	Selection behavior implemented
+•	Print and export functionality implemented
+•	Backend authorization and filtering changes
+•	Database migrations, if any
+•	Automated test results
+•	Screenshots or preview evidence
+•	Remaining issues and pending work
+Do not claim success based only on the visual appearance of the screen. Verify the actual functionality and data behavior.
+Final requirement: implement the Global Display Rule as a reusable enterprise standard across Kosh Global IT, preserving the current design and ensuring that all relevant screens operate correctly within the multi-company, multi-branch architecture.
+
+
+
+Prompt: Consolidate SAP Integration Management (B1 HANA) into One Screen
+Project
+My Kosh Innovations Global IT System — Global Master Governance System
+Objective
+Modify the existing SAP Integration Management (B1 HANA) module in the current application. This is an enhancement to the existing system, not a new application or a redesign from scratch.
+Use all supplied screenshots as UI references. Preserve the existing visual style, layout quality, navigation structure where not explicitly changed, and working functionality.
+The primary requirement is to consolidate the SAP integration configuration, connection profiles, synchronization configuration, mapping management, and Excel template import into the existing Multi-Company Directory screen.
+Under the left navigation menu Organization & Branch Goverance Contains
+1.	Organization & Branch 
+2.	Warehouse Setup Details
+3.	Filed & Rule configuration
+4.	User & Role Administrtion
+user the Organization & Branch card display:
+Compny name , code, sap db, officeal gst, trade naame, gst in hq address , edit company profile
+Under the left navigation menu SAP Integration Management, the current menus are:
+1.	Multi-Company Directory 
+2.	Registration Requests
+3.	Connection Profiles & Schedules
+4.	Data Sync & Discovery Matrix
+The current screen title is:
+SAP Integration Management (B1 HANA)
+The current company cards display:
+•	Company name and environment badge: PROD, UAT, or DEV
+•	SAP company database ID
+•	Endpoint
+•	SAP Business One version
+•	Connection status
+•	Independent Activation Controls
+•	Test Connection
+•	View Mappings
+The current screen also contains the Fetch Company Details button.
+2. Required menu changes
+A. Retain and enhance: Multi-Company Directory
+Keep Organization & Branch as the main entry point for SAP integration management.
+Move the following functionality into the Organization & Branch Card screen:
+•	Independent Activation Controls
+•	Test Connection
+•	View Mappings
+Inside the edit company profile
+
+•	Connection Profiles & Schedules
+•	Data Sync & Discovery Matrix
+
+B. Remove from the navigation: Registration Requests
+Remove Registration Requests from the SAP Integration Management navigation because this workflow is not required in the current agreed design.
+Do not delete unrelated company records, SAP configurations, or integration data when removing this menu.
+If any existing code or data depends on the registration workflow, inspect those dependencies before changing it. Preserve unrelated functionality.
+C. Remove standalone navigation entries after consolidation
+Remove the standalone navigation entries:
+•	Connection Profiles & Schedules
+•	Data Sync & Discovery Matrix
+Their functionality must be accessible inside Multi-Company Directory.
+Do not simply hide these menus while leaving the functionality inaccessible. Consolidate the actual components, actions, configuration forms, state, and data access into the main screen.
+3. Required single-screen layout
+Within SAP Integration Management (B1 HANA) → Organization & Branch , use the following layout.
+Section 1 — Page header
+Display:
+•	Page title: SAP Integration Management 
+•	Subtitle describing multi-company SAP HANA integration
+•	Fetch Company Details button
+•	Import Mapping Template button
+•	Export Mapping Template button
+Retain the existing design language, including the dark navigation, company cards, spacing, typography, and purple primary actions.
+Section 2 — Company directory
+Display all configured SAP companies as individual cards.
+Each card must include:
+•	Company display name
+•	Kosh company code
+•	SAP company database ID
+•	Environment: PROD, UAT, or DEV
+•	Configured Service Layer endpoint
+•	SAP Business One version, when available
+•	Connection status
+•	Environment activation status
+•	Company activation status
+•	Synchronization activation status
+•	Test Connection action
+•	View/Edit Mappings action
+•	Connection Profile & Schedule action
+•	Data Sync & Discovery action
+•	Import Mapping Template action, scoped to the selected company and environment
+Use the existing independent activation controls, but ensure that their behavior is properly implemented.
+The three independent controls must remain distinguishable:
+1.	Environment Active/Inactive
+2.	Company Active/Inactive
+3.	Sync Active/Inactive
+A company or environment being active must not automatically imply that synchronization is active.
+Section 3 — Connection Profiles & Schedules
+Move the functionality of the existing Connection Profiles & Schedules menu into an expandable panel, tab, or drawer inside Organization & Branch.
+The selected company and environment must be shown clearly.
+Provide configuration and display for:
+•	Service Layer base URL and endpoint
+•	SAP company database ID
+•	Connection profile name
+•	Connection status and last connection test
+•	Synchronization schedule and time zone
+•	Schedule enabled/disabled status
+•	Last successful execution
+•	Next scheduled execution, where applicable
+•	Connection and execution error details
+•	Retry configuration, if supported by the existing application
+Store settings against the correct company and environment. Do not share a production connection profile with UAT or DEV unless the existing architecture explicitly supports a shared profile.
+Credentials must be stored securely. Never expose passwords, tokens, or secrets in the UI, browser logs, exported templates, or audit records.
+Section 4 — Data Sync & Discovery Matrix
+Move the functionality of the existing Data Sync & Discovery Matrix menu into an expandable panel, tab, or drawer inside Organization & Branch.
+The matrix must be scoped to the selected company and environment.
+Support the existing discovered and configured SAP entities, with module-level synchronization controls wherever supported.
+For each configured module or entity, display:
+•	Module/entity name
+•	SAP source object or property
+•	Kosh target entity and property
+•	Mapping status
+•	Read/write capability, where applicable
+•	Synchronization direction
+•	Sync enabled/disabled status
+•	Last synchronization status
+•	Last successful synchronization time
+•	Validation errors and unsupported fields
+•	Relevant execution or reconciliation details
+Do not assume that every SAP field is writable. Respect the actual Service Layer API capabilities and the existing mapping definitions.
+Allow each supported module to be enabled or disabled independently. A global company-level sync switch must not silently override module-level settings.
+4. Excel mapping template import — mandatory
+Add Import Mapping Template to the main Organization & Branch screen and provide access from the selected company card.
+The objective is to import pre-mapped SAP-to-Kosh field mapping configurations from Excel, rather than manually configuring every mapping.
+Import workflow
+1.	Select the SAP company.
+2.	Select the environment: PROD, UAT, or DEV.
+3.	Select the applicable module or choose all modules represented by the template.
+4.	Download the current Excel mapping template.
+5.	Upload the completed Excel file.
+6.	Validate the workbook and display a preview.
+7.	Show new mappings, existing mappings, proposed updates, duplicate rows, invalid values, unsupported fields, and missing mandatory fields.
+8.	Allow the user to choose whether valid new mappings should be created and whether existing mappings may be updated.
+9.	Require explicit confirmation before applying changes.
+10.	Display the final import summary and provide a downloadable error report when applicable.
+Template requirements
+The Excel template must contain, at minimum, appropriate columns for:
+•	Template version
+•	Kosh company code
+•	Kosh company name
+•	SAP company database ID
+•	Environment
+•	Module/entity
+•	SAP source object
+•	SAP source field/property
+•	SAP display label
+•	Kosh target entity
+•	Kosh target field/property
+•	Data type
+•	Mapping/transformation rule
+•	Mandatory indicator
+•	Synchronization direction
+•	Read/write capability
+•	Module sync enabled status
+•	Mapping status
+•	Remarks
+Add further columns only where required by the existing data model or verified SAP API metadata.
+Provide a Download Template action and an Export Existing Mappings action.
+The template must be versioned. Validate the company code, SAP database ID, environment, module, source property, target property, data type, and other applicable fields before importing.
+Import safety
+•	Never silently overwrite existing mappings.
+•	Detect duplicates using an appropriate mapping key.
+•	Show the before-and-after values for proposed updates.
+•	Reject or flag invalid and unsupported mappings.
+•	Support partial imports only when valid rows can be safely processed independently.
+•	Provide a dry-run preview before committing changes.
+•	Record the file name, template version, user, company, environment, timestamp, result, and affected mapping count in the audit history.
+•	Do not include credentials or secrets in the Excel file.
+•	Do not automatically activate synchronization merely because a mapping was imported.
+5. Company and environment isolation
+This is a multi-company, multi-environment SAP integration system.
+All configuration and data operations must use the correct company and environment identifiers.
+The company code and SAP company database ID must be visible wherever the user configures, reviews, imports, exports, or executes company-specific mappings.
+Never identify a company using its display name alone when a stable company ID is available.
+All connection tests, field discovery, mapping operations, sync jobs, and import/export operations must be isolated by company and environment.
+A template intended for one company/environment must not be silently applied to another. Require an explicit reassignment and revalidation if cross-company reuse is supported.
+6. UI behavior and usability
+Keep the existing company-card design and improve it only as needed to accommodate the consolidated functionality.
+Use expandable sections, tabs, drawers, or modals to avoid overcrowding the screen.
+Requirements:
+•	Avoid duplicate page headers and duplicate company directories.
+•	Avoid opening an unrelated standalone screen for connection and sync configuration.
+•	Show which company and environment are currently being configured.
+•	Preserve the existing Fetch Company Details, Test Connection, and View Mappings actions.
+•	Provide loading indicators, validation messages, success/error notifications, and confirmation dialogs.
+•	Make the layout usable on standard desktop screens and smaller screens.
+•	Maintain role-based authorization for configuration, imports, exports, and synchronization actions.
+7. Implementation instructions
+Before coding:
+1.	Inspect the existing repository structure, routing, navigation configuration, components, state management, persistence layer, APIs, and relevant tests.
+2.	Locate the actual implementations of Organization & Branch, Connection Profiles & Schedules, and Data Sync & Discovery Matrix.
+3.	Identify existing company/environment identifiers, mapping schemas, connection-profile models, scheduling logic, and import/export utilities.
+4.	Reuse existing working implementations rather than creating parallel or mock implementations.
+5.	Determine whether the current company cards and integration configuration are backed by persisted data or static demonstration data.
+6.	Document any required schema migration or backend/API changes before implementing them.
+Then implement the consolidation in the existing application.
+Do not replace working functionality with hardcoded sample data. Do not report that a feature is implemented unless the actual user action works end to end and persists its intended result.
+8. Acceptance criteria
+The change is complete only when all the following checks pass:
+1.	Organization & Branch is the single main navigation entry for SAP integration management.
+2.	Registration Requests is removed from the navigation without deleting unrelated records.
+3.	Connection Profiles & Schedules functionality is available inside Organization & Branch.
+4.	Data Sync & Discovery Matrix functionality is available inside Organization & Branch.
+5.	The company cards show the company code, company name, SAP database ID, and environment.
+6.	Company, environment, and sync activation controls work independently.
+7.	Each supported module can be configured for synchronization independently.
+8.	Connection profiles and schedules are scoped to the correct company and environment.
+9.	Excel mapping templates can be downloaded, uploaded, validated, previewed, imported, and exported.
+10.	Existing mappings are not silently overwritten.
+11.	Import and sync operations respect company/environment isolation and user permissions.
+12.	All changes are persisted and reflected after refresh.
+13.	Relevant success/error states and audit records are available.
+14.	Existing unrelated menus and functions continue to work.
+15.	Tests cover navigation consolidation, permissions, company/environment isolation, template validation, duplicate detection, mapping updates, and synchronization activation.
+9. Final deliverables
+After implementation, provide:
+•	Summary of the exact menu changes
+•	Files and components modified
+•	Any database migrations or API changes
+•	Description of the Excel template format
+•	Implemented functionality versus items still pending
+•	Test results and evidence
+•	Any assumptions, limitations, or unresolved dependencies
+Important: Implement this as a functional consolidation of the existing SAP Integration Management (B1 HANA) module. The objective is one main screen with company-specific connection, scheduling, mapping, discovery, and Excel import/export capabilities—not multiple disconnected screens or duplicate company directories.
+
+
+
+
+Kosh Global IT — Organization & Branch Menu Restructuring
+Objective
+Modify the existing My Kosh Innovations Global IT System application to reorganize the Organization & Branch management UI.
+This is a modification to the existing application, not a new application. Preserve the current design, functionality, business data, company records, branch records, SAP B1 HANA integration, permissions, and existing working features.
+1. Rename the Sidebar Governance Group
+Under the sidebar, rename:
+•	Current: Branch & Warehouse Governance
+•	New: Organization Governance
+Keep the existing sidebar styling, icons, expand/collapse behavior, spacing, and navigation conventions.
+2. Reorganize the Organization & Branch Screen
+Use the existing sidebar menu:
+Organization Governance → Organization & Branch
+Keep the current page layout and introduce three tabs within the existing Organization, Multi-Company & Branch Management screen.
+Tab 1: Company
+Rename the existing tab:
+•	Current: Enterprise Companies Registry
+•	New: Company
+Requirements:
+•	Display all registered companies in the existing company-card layout.
+•	 Rename the page button Add Enterprise Company to Add Company. 
+Tab 2: Branch
+Rename the existing tab:
+•	Current: Operating Branch Hierarchy
+•	New: Branch
+Requirements:
+•	 
+•	Include company name and company code in the branch context.
+•	Show branch code, branch name, SAP branch code where applicable, location, GSTIN and verification status, company association, status, and available actions.
+•	Preserve existing branch creation, editing, activation/deactivation, and hierarchy relationships.
+•	Ensure branch records are associated with the correct company. Do not assume that branch codes are globally unique across all companies.
+•	Provide a company filter and searchable, filterable branch list.
+•	Prevent users from accessing branches outside their authorized company scope.
+•	Rename Edit/ Modify to Modify
+Tab 3: Warehouse
+Move the existing Warehouse Setup & Defaults functionality into a new tab on the same Organization & Branch screen.
+The tab order must be:
+1.	Company
+2.	Branch
+3.	Warehouse
+Requirements:
+•	Rename the existing Warehouse Setup & Defaults page heading to Warehouse when displayed within this tab.
+•	Preserve all existing warehouse functionality, data, forms, validations, and business rules.
+•	Provide a company filter and a branch filter.
+•	Do not create duplicate warehouse records during this UI migration.
+3. Remove the Separate Warehouse Sidebar Menu
+Remove Warehouse Setup & Defaults from the sidebar under Organization Governance.
+The Warehouse functionality must be accessible through:
+Organization Governance → Organization & Branch → Warehouse
+Do not delete the warehouse component, routes, services, database records, APIs, or business logic. Reuse and relocate the existing functionality.
+If another part of the application depends on the existing route, maintain backward compatibility or redirect it to the new Warehouse tab.
+4. Preserve Existing Company and Branch Data
+This change is a UI and navigation restructuring, not a data migration.
+•	Do not recreate existing companies, branches, or warehouses.
+•	Do not delete or overwrite existing records.
+•	Do not reset company or branch activation statuses.
+•	Do not change SAP company database IDs or existing SAP mappings.
+•	Preserve existing relationships between companies, branches, and warehouses.
+•	Preserve audit logs and existing permission assignments.
+5. Multi-Company and Multi-Branch Requirements
+Kosh Global IT is a multi-company, multi-branch system.
+Every Company, Branch, and Warehouse view must use the correct company and branch relationships.
+•	A branch must belong to the correct company.
+•	A warehouse must belong to the correct company and branch.
+•	Company codes and branch codes must be visible wherever needed to distinguish similar names.
+•	Changing a company filter must refresh the branch and warehouse data using that company's records.
+•	Changing a branch filter must show only warehouses associated with that branch.
+•	An administrator authorized for multiple companies must be able to select the company through screen filters.
+•	Do not require a single globally selected Active Company or Active Branch to use these management screens.
+•	Retain the existing top-bar company and branch selectors if other application modules depend on them, but do not use them as an unchangeable filter for this management screen.
+•	Enforce authorization on the backend as well as in the UI.
+6. Global List and Display Standards
+Apply the existing Kosh Global IT table and filter conventions to the Company, Branch, and Warehouse views.
+Each applicable list should support:
+•	Search by relevant code, name, and other displayed identifiers.
+•	Column-level filtering.
+•	Advanced filters with configurable criteria.
+•	Configurable and interchangeable displayed columns.
+•	Single-select and multi-select options where appropriate.
+•	Print and export options, subject to the user's permissions.
+•	Clear loading, empty, validation, success, and error states.
+Use consistent labels, spacing, buttons, tables, and status indicators. Avoid unnecessary visual redesign.
+7. Acceptance Criteria
+The implementation is complete only when all of the following are verified:
+1.	Branch & Warehouse Governance is renamed to Organization Governance.
+2.	The existing Organization & Branch sidebar item remains available.
+3.	The screen contains exactly these three primary tabs in order: Company, Branch, Warehouse.
+4.	Enterprise Companies Registry is renamed to Company.
+5.	Operating Branch Hierarchy is renamed to Branch.
+6.	Warehouse Setup & Defaults functionality is available under the Warehouse tab.
+7.	The separate Warehouse Setup & Defaults sidebar entry is removed without deleting its functionality.
+8.	Add Enterprise Company is renamed to Add Company.
+9.	Company, branch, and warehouse records remain intact.
+10.	Company and branch filters correctly control the displayed records.
+11.	Company and branch authorization is enforced for all applicable actions.
+12.	Existing create, edit, activate/deactivate, default warehouse, and validation workflows continue to work.
+13.	No duplicate menus, duplicate tabs, or duplicate records are introduced.
+14.	Existing SAP B1 HANA integration functionality remains unaffected.
+15.	The implementation is tested using multiple companies with multiple branches and warehouses.
+8. Implementation Instructions
+Before making changes, inspect the existing source code, navigation configuration, component hierarchy, routes, data models, API calls, and permissions.
+Reuse the current components and data sources wherever possible. Do not introduce mock records or hardcoded company/branch data to simulate success.
+Implement the changes in the existing project, then run the available type checks, build, and relevant tests. Fix any regressions.
+Finally, report:
+•	Files and components changed.
+•	Sidebar and tab changes completed.
+•	Data and permission checks performed.
+•	Tests and build results.
+•	Any remaining issues or assumptions.
+Important: Preserve the existing Kosh Global IT visual design and all working business logic. Only reorganize the requested menu and screen structure while making the multi-company and multi-branch behavior reliable.
+	
+
+Kosh Global IT — Global Item Master with Company and Branch-Specific Classification
+Objective
+Enhance the existing Global Item Master and related item-management modules in My Kosh Innovations Global IT System.
+Kosh is a multi-company, multi-branch system. A single global item can have different operational categories and usage classifications at different branches.
+Example:
+•	Pondicherry branch: Item-1001 is classified as a Finished Good (FG).
+•	Chennai branch: The same Item-1001 is classified as a Raw Material (RM).
+These are two branch-specific classifications of one global item, not two different global items.
+Implement this using the existing project architecture, database, UI components, authorization model, and master-data workflows. Do not create a new standalone application.
+1. Global Item Master
+Maintain one authoritative global item identity containing:
+•	Global Item ID.
+•	Global Item Code.
+•	Base Item Description.
+•	Base Unit of Measure.
+•	Global lifecycle status.
+•	Global default category, if applicable.
+•	Other genuinely shared item attributes.
+The Global Item ID must remain stable when branch classifications change.
+Prevent duplicate global items using configured uniqueness and duplicate-detection rules. Do not use the item description alone as the unique identifier.
+2. Branch Item Classification
+Create or enhance a branch-specific item classification record linked to:
+•	Global Item ID.
+•	Company ID.
+•	Branch ID.
+•	Branch-specific category.
+•	Branch-specific item role.
+•	Local usage and inventory settings, as applicable.
+•	Branch-specific status.
+•	Effective-from and effective-to dates, where required.
+•	Approval status and audit metadata.
+Support configurable categories such as:
+•	Raw Material (RM).
+•	Semi-Finished Good (SFG).
+•	Finished Good (FG).
+•	Trading Item.
+•	Consumable.
+•	Packaging Material.
+•	Service or Non-Inventory Item.
+Categories must be configurable through the existing category or classification configuration rather than hardcoded into the UI.
+Allow the same Global Item ID to have different categories in different branches and, where authorized, different companies.
+3. Company and Branch Relationships
+Enforce the following relationships:
+•	A global item can be referenced by multiple companies and branches.
+•	Every branch classification must reference a valid Global Item ID.
+•	Every branch classification must belong to the correct company and branch.
+•	Company and branch authorization must be validated on the backend.
+•	Company and branch codes must be visible in relevant item lists and detail views.
+•	Branch filters must show only classifications belonging to the selected company and branch.
+Do not assume that branch codes, item codes, or company-specific SAP item codes are globally unique.
+4. Item Management Screens
+Global Item Master
+Show the shared global identity and shared attributes. Provide a way to view all company and branch classifications associated with the selected item.
+Create Item
+Create the global item once. Provide a separate workflow for assigning the item to one or more companies and branches, with appropriate permissions and validations.
+Do not automatically activate an item in every branch simply because the global item was created.
+Custom Specifications
+Keep shared specifications at the global level where appropriate. Support branch-specific specifications only when the business rules explicitly permit them. Define how conflicting specification values are handled.
+Item Code & Description
+Maintain separate mappings for the Global Item Code, company-specific SAP Item Code, and optional branch-specific display description. Do not overwrite a global description merely because a branch uses a different description.
+Branch Item Availability
+Display the selected company's branch-specific item classification and availability. Distinguish:
+•	Item assigned to branch.
+•	Item active or inactive at branch.
+•	Item permitted for purchasing.
+•	Item permitted for production.
+•	Item permitted for sales.
+•	Item permitted for inventory, where applicable.
+•	Actual stock availability, if inventory quantities are integrated.
+Do not infer actual stock quantity from a branch availability flag.
+5. SAP Business One HANA Integration
+Maintain a mapping between the Kosh Global Item ID and the SAP item identifier for each SAP company database.
+Do not assume that the same SAP ItemCode exists in every SAP company.
+Configure item classification synchronization by company, branch and module according to supported SAP fields and Kosh ownership rules.
+Important:
+•	A Kosh branch-specific category must not automatically overwrite a shared SAP item category or group.
+•	If SAP Business One does not support the desired branch-level category as a native field, retain it in Kosh or use an explicitly configured SAP UDF or supported extension.
+•	Discover the actual SAP Service Layer properties and supported fields before implementing mappings.
+•	Do not invent SAP fields or claim unsupported branch-specific functionality.
+•	Preview mapping differences and validate data before importing or exporting.
+•	Respect independent environment, company and module activation controls.
+6. Validation and Audit
+•	Prevent duplicate global items.
+•	Prevent orphaned branch classifications.
+•	Validate company and branch ownership.
+•	Record changes to branch category, item role, status, and effective dates.
+•	Record old value, new value, user, timestamp, company, branch, and change source.
+•	Apply configured approvals before sensitive classification changes take effect.
+•	Do not silently change another branch's classification when one branch is updated.
+7. Search, Filters and Export
+Provide search and advanced filters for:
+•	Global Item Code.
+•	Global Item Description.
+•	Company Code and Name.
+•	Branch Code and Name.
+•	Branch-specific Category.
+•	Item Role.
+•	Branch Status.
+•	SAP Company Database and SAP Item Code.
+Support configurable columns, single-select and multi-select actions where authorized, printing, and export.
+Exports must include company and branch context so that different classifications of the same global item are distinguishable.
+8. Acceptance Tests
+1.	Create one global item.
+2.	Assign it to the Pondicherry branch and classify it as FG.
+3.	Assign the same Global Item ID to the Chennai branch and classify it as RM.
+4.	Confirm that only one global item exists.
+5.	Confirm that both branches retain their own classifications.
+6.	Change the Pondicherry classification and verify that Chennai is unchanged.
+7.	Verify company and branch filters, user permissions, and exports.
+8.	Verify that each SAP company uses its correct item mapping.
+9.	Verify that failed synchronization and retry operations do not create duplicate items.
+10.	Verify that global and branch-level changes appear correctly in the audit history.
+Inspect the existing source code and data model before implementing. Reuse existing components and records, preserve working functionality, run available tests and builds, and report changed files and results.
+Do not introduce mock data, duplicate global items, or destructive database changes.
+

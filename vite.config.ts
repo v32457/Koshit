@@ -12,11 +12,14 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // Forward API calls to the Koshit server during local development.
       proxy: {
-        '/api': {
-          target: 'http://127.0.0.1:8091',
+        '/api/gstin-proxy': {
+          target: 'https://www.gstinapi.in',
           changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/gstin-proxy/, ''),
+          headers: {
+            'x-api-key': 'gak_9faefd5f53084ecd96e076ffe7017cd2',
+          },
         },
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

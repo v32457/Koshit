@@ -49,10 +49,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <BrandLogo size="md" />
-            <div className="hidden sm:block border-l border-slate-700 pl-3">
-              <p className="text-xs font-bold text-white tracking-wide">KOSH INNOVATIONS</p>
-              <p className="text-[10px] text-cyan-400 font-medium">Global Master Governance System</p>
-            </div>
           </div>
 
           <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
@@ -446,10 +442,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-slate-800/80 pb-8">
             <div className="flex items-center gap-3">
               <BrandLogo size="md" />
-              <div>
-                <p className="text-sm font-bold text-white">KOSH INNOVATIONS</p>
-                <p className="text-[11px] text-slate-400">My Kosh Innovations Global IT System</p>
-              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-6 text-slate-400">

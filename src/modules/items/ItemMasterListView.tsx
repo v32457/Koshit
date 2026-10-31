@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { GlobalItem, Branch } from '../../types';
+import { GlobalItem, Branch, BranchItemClassification } from '../../types';
 import {
   Boxes,
   Search,
@@ -24,14 +24,24 @@ import {
   FileText,
   Sparkles,
   SlidersHorizontal,
+  MapPin,
+  Save,
 } from 'lucide-react';
-import { INITIAL_ITEM_CODE_RULES, INITIAL_DESCRIPTION_RULES, CLASSIFICATION_DIMENSIONS } from '../../data/seedData';
+import {
+  INITIAL_ITEM_CODE_RULES,
+  INITIAL_DESCRIPTION_RULES,
+  CLASSIFICATION_DIMENSIONS,
+  INITIAL_BRANCH_ITEM_CLASSIFICATIONS,
+} from '../../data/seedData';
 import { generateItemCode } from '../../services/itemCodeEngine';
 import { generateItemDescription } from '../../services/itemDescriptionEngine';
+import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
+import { OperatingContext } from '../../services/operatingContextService';
 
 interface ItemMasterListViewProps {
   items: GlobalItem[];
   allBranches: Branch[];
+  operatingContext?: OperatingContext;
   onNavigateNew: () => void;
   onNavigateCustomSpecs?: () => void;
   onImportItems?: (newItems: GlobalItem[]) => void;
@@ -50,12 +60,14 @@ type SortDirection = 'asc' | 'desc';
 export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
   items,
   allBranches,
+  operatingContext,
   onNavigateNew,
   onNavigateCustomSpecs,
   onImportItems,
 }) => {
   // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [governanceFilter, setGovernanceFilter] = useState('ALL');
   const [sapFilter, setSapFilter] = useState('ALL');
@@ -71,6 +83,14 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
 
   // Inspector & Modals
   const [selectedItem, setSelectedItem] = useState<GlobalItem | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<'overview' | 'classifications' | 'audit'>('overview');
+  const [branchClassifications, setBranchClassifications] = useState<BranchItemClassification[]>(() => {
+    try {
+      const saved = localStorage.getItem('kosh_branch_classifications');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return INITIAL_BRANCH_ITEM_CLASSIFICATIONS;
+  });
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [bulkCsvText, setBulkCsvText] = useState('');
   const [importNotice, setImportNotice] = useState<string | null>(null);
@@ -427,6 +447,9 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
 
   return (
     <div className="space-y-4 select-none">
+      {/* Operating Context Badge Indicator */}
+      {operatingContext && <ContextIndicatorBar context={operatingContext} className="mb-1" />}
+
       {/* Top Action Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -496,11 +519,11 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
       <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center text-xs">
           {/* Full Search Bar */}
-          <div className="md:col-span-4 relative">
+          <div className="md:col-span-3 relative">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Code, Category, Description, Attributes..."
+              placeholder="Search Code, Category, Description..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -508,6 +531,23 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
               }}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-xs"
             />
+          </div>
+
+          {/* Company Scope Filter */}
+          <div className="md:col-span-3">
+            <select
+              value={companyFilter}
+              onChange={(e) => {
+                setCompanyFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-bold focus:outline-none text-xs"
+            >
+              <option value="ALL">All Authorized Companies</option>
+              <option value="co-kosh-01">KOSH-HQ — Kosh Innovations Pvt Ltd</option>
+              <option value="co-kosh-02">KOSH-SOUTH — Kosh South Logistics India Pvt Ltd</option>
+              <option value="co-kosh-03">KOSH-WEST — Kosh West Manufacturing Components Pvt Ltd</option>
+            </select>
           </div>
 
           {/* Category Filter */}
@@ -551,23 +591,6 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
             </select>
           </div>
 
-          {/* SAP Status Filter */}
-          <div className="md:col-span-2">
-            <select
-              value={sapFilter}
-              onChange={(e) => {
-                setSapFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none text-xs"
-            >
-              <option value="ALL">SAP Status (All)</option>
-              <option value="SYNCED">SAP Synced Only</option>
-              <option value="PENDING">Pending Sync</option>
-              <option value="NOT_SYNCED">Not Synced</option>
-            </select>
-          </div>
-
           {/* Branch Availability Filter */}
           <div className="md:col-span-2">
             <select
@@ -581,7 +604,7 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
               <option value="ALL">All Branches</option>
               {allBranches.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name}
+                  [{b.portalBranchCode}] {b.name}
                 </option>
               ))}
             </select>
@@ -1030,56 +1053,204 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50">
-                <div>
-                  <span className="text-slate-500 block">Category:</span>
-                  <span className="font-bold text-slate-900">{selectedItem.categoryCode}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Status:</span>
-                  <span className="font-bold text-blue-700">{selectedItem.status}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Rule Versions:</span>
-                  <span className="font-mono text-slate-800">
-                    Code v{selectedItem.codeRuleVersion} • Desc v{selectedItem.descRuleVersion}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Created Timestamp:</span>
-                  <span className="font-mono text-slate-700">{selectedItem.createdAt}</span>
-                </div>
-              </div>
+            {/* Sub-tabs in Inspector */}
+            <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center gap-2">
+              <button
+                onClick={() => setInspectorTab('overview')}
+                className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                  inspectorTab === 'overview' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Overview & Attributes
+              </button>
+              <button
+                onClick={() => setInspectorTab('classifications')}
+                className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  inspectorTab === 'classifications' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                <span>Branch Classifications & Roles</span>
+                <span className="text-[10px] font-mono bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-extrabold">
+                  {branchClassifications.filter((b) => b.globalItemId === selectedItem.id).length || 3}
+                </span>
+              </button>
+              <button
+                onClick={() => setInspectorTab('audit')}
+                className={`px-3 py-1 rounded text-xs font-bold transition cursor-pointer ${
+                  inspectorTab === 'audit' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Audit Trail ({selectedItem.approvalHistory.length})
+              </button>
+            </div>
 
-              <div>
-                <h4 className="font-bold text-slate-800 mb-2">Configured Attributes:</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {Object.entries(selectedItem.attributes).map(([k, v]) => (
-                    <div key={k} className="p-2 border border-slate-200 rounded bg-white">
-                      <span className="text-slate-400 text-[10px] uppercase block font-semibold">
-                        {k === 'partModelNumber' ? 'Customer / Part / Model Number' : k}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+              {inspectorTab === 'overview' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    <div>
+                      <span className="text-slate-500 block">Global Master Category:</span>
+                      <span className="font-bold text-slate-900">{selectedItem.categoryCode}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Status:</span>
+                      <span className="font-bold text-blue-700">{selectedItem.status}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Rule Versions:</span>
+                      <span className="font-mono text-slate-800">
+                        Code v{selectedItem.codeRuleVersion} • Desc v{selectedItem.descRuleVersion}
                       </span>
-                      <span className="font-bold text-slate-800">{v || '—'}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div>
+                      <span className="text-slate-500 block">Created Timestamp:</span>
+                      <span className="font-mono text-slate-700">{selectedItem.createdAt}</span>
+                    </div>
+                  </div>
 
-              <div>
-                <h4 className="font-bold text-slate-800 mb-2">Audit & Approval Decision Trail:</h4>
-                <div className="space-y-2 border border-slate-200 rounded-lg p-3 bg-slate-50">
-                  {selectedItem.approvalHistory.map((h) => (
-                    <div key={h.id} className="text-[11px] pb-2 border-b border-slate-200 last:border-0 last:pb-0">
-                      <div className="flex items-center justify-between font-semibold">
-                        <span className="text-slate-900">{h.action} by {h.actorName} ({h.actorRole})</span>
-                        <span className="text-slate-400 font-mono text-[10px]">{h.timestamp}</span>
-                      </div>
-                      <div className="text-slate-600 mt-0.5">Remarks: "{h.remarks}"</div>
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2">Configured Attributes:</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {Object.entries(selectedItem.attributes).map(([k, v]) => (
+                        <div key={k} className="p-2 border border-slate-200 rounded bg-white">
+                          <span className="text-slate-400 text-[10px] uppercase block font-semibold">
+                            {k === 'partModelNumber' ? 'Customer / Part / Model Number' : k}
+                          </span>
+                          <span className="font-bold text-slate-800">{v || '—'}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                </>
+              )}
+
+              {inspectorTab === 'classifications' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg">
+                    <span className="font-bold">Authoritative Branch Classification Model:</span>
+                    <p className="mt-0.5 text-[11px] text-amber-800">
+                      The exact same Global Item <strong className="font-mono text-indigo-900">{selectedItem.globalItemCode}</strong> maintains independent operating categories across branches (e.g. Puducherry = Finished Goods FG, Chennai = Raw Materials RM, Hosur = Semi-Finished SF).
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {allBranches.map((br) => {
+                      const existing = branchClassifications.find(
+                        (bc) => bc.branchId === br.id && bc.globalItemId === selectedItem.id
+                      ) || {
+                        id: `bic-${selectedItem.id}-${br.id}`,
+                        globalItemId: selectedItem.id,
+                        companyId: br.companyId || 'co-kosh-01',
+                        companyCode: 'KOSH-HQ',
+                        companyName: 'Kosh Innovations Pvt Ltd',
+                        branchId: br.id,
+                        branchCode: br.portalBranchCode,
+                        branchName: br.name,
+                        categoryCode: br.portalBranchCode === '001' ? 'FG' : br.portalBranchCode === '002' ? 'RM' : 'SF',
+                        categoryName: br.portalBranchCode === '001' ? 'Finished Goods' : br.portalBranchCode === '002' ? 'Raw Materials' : 'Semi-Finished Goods',
+                        itemRole: (br.portalBranchCode === '001' ? 'MANUFACTURE' : br.portalBranchCode === '002' ? 'PURCHASE' : 'STOCK') as any,
+                        isStocked: true,
+                        isPurchased: br.portalBranchCode === '002',
+                        isManufactured: br.portalBranchCode === '001',
+                        isSalesPermitted: br.portalBranchCode === '001',
+                        status: 'ACTIVE' as any,
+                        sapItemCode: `${br.portalBranchCode === '001' ? 'FG' : br.portalBranchCode === '002' ? 'RM' : 'SF'}-${selectedItem.globalItemCode}-${br.portalBranchCode}`,
+                        branchSpecificDescription: `${selectedItem.description} (${br.name})`,
+                      };
+
+                      return (
+                        <div key={br.id} className="p-3 bg-white border border-slate-200 rounded-lg space-y-2 shadow-2xs">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                                <span>{br.name}</span>
+                                <span className="font-mono text-[10px] text-indigo-700 font-extrabold bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                                  [{br.portalBranchCode}]
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                                SAP Branch Code: {existing.sapItemCode}
+                              </div>
+                            </div>
+
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              {existing.itemRole}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px]">
+                            <div>
+                              <label className="text-slate-500 block font-semibold mb-0.5">Branch Category Role:</label>
+                              <select
+                                value={existing.categoryCode}
+                                onChange={(e) => {
+                                  const newCat = e.target.value;
+                                  const updated = branchClassifications.filter(
+                                    (b) => !(b.branchId === br.id && b.globalItemId === selectedItem.id)
+                                  );
+                                  const newEntry: BranchItemClassification = {
+                                    ...existing,
+                                    categoryCode: newCat,
+                                    categoryName: newCat === 'FG' ? 'Finished Goods' : newCat === 'RM' ? 'Raw Materials' : newCat === 'SF' ? 'Semi-Finished' : 'Consumables',
+                                    itemRole: (newCat === 'FG' ? 'MANUFACTURE' : newCat === 'RM' ? 'PURCHASE' : 'STOCK') as any,
+                                    updatedAt: new Date().toISOString(),
+                                  };
+                                  const combined = [...updated, newEntry];
+                                  setBranchClassifications(combined);
+                                  localStorage.setItem('kosh_branch_classifications', JSON.stringify(combined));
+                                }}
+                                className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800"
+                              >
+                                <option value="FG">FG — Finished Goods</option>
+                                <option value="RM">RM — Raw Materials</option>
+                                <option value="SF">SF — Semi-Finished Goods</option>
+                                <option value="PK">PK — Packaging Materials</option>
+                                <option value="CO">CO — Consumables</option>
+                                <option value="MA">MA — Maintenance / Spares</option>
+                                <option value="BO">BO — Bought-Out</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-slate-500 block font-semibold mb-0.5">Permissions:</label>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${existing.isStocked ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-500'}`}>
+                                  Stocked
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${existing.isPurchased ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-500'}`}>
+                                  Purchased
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${existing.isManufactured ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                                  Manufactured
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {inspectorTab === 'audit' && (
+                <div>
+                  <h4 className="font-bold text-slate-800 mb-2">Audit & Approval Decision Trail:</h4>
+                  <div className="space-y-2 border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    {selectedItem.approvalHistory.map((h) => (
+                      <div key={h.id} className="text-[11px] pb-2 border-b border-slate-200 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between font-semibold">
+                          <span className="text-slate-900">{h.action} by {h.actorName} ({h.actorRole})</span>
+                          <span className="text-slate-400 font-mono text-[10px]">{h.timestamp}</span>
+                        </div>
+                        <div className="text-slate-600 mt-0.5">Remarks: "{h.remarks}"</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-slate-50 p-3 border-t border-slate-200 flex justify-end">
