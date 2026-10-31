@@ -6,6 +6,12 @@
  */
 
 import React, { useState } from 'react';
+import {
+  OperatingContext,
+  restoreOperatingContext,
+  switchCompanyContext,
+  switchBranchContext,
+} from './services/operatingContextService';
 import { AppHeader } from './components/AppHeader';
 import { NavigationSidebar } from './components/NavigationSidebar';
 import { PageAcceptanceBar } from './components/PageAcceptanceBar';
@@ -19,8 +25,9 @@ import {
   INITIAL_GLOBAL_ITEMS,
   INITIAL_PAGE_ACCEPTANCE_RECORDS,
   INITIAL_MODULE_REGISTRY,
+  INITIAL_COMPANIES,
 } from './data/seedData';
-import { GlobalItem, User, Branch, PageAcceptanceRecord, InPortalNotification, ModuleRegistryItem } from './types';
+import { GlobalItem, User, Branch, PageAcceptanceRecord, InPortalNotification, ModuleRegistryItem, Company } from './types';
 
 import { DashboardView } from './modules/dashboard/DashboardView';
 import { ItemMasterListView } from './modules/items/ItemMasterListView';
@@ -37,6 +44,8 @@ import { RuleBuilderView } from './modules/settings/RuleBuilderView';
 import { GeneralSettingsView } from './modules/settings/GeneralSettingsView';
 import { ClassificationsView } from './modules/settings/ClassificationsView';
 import { OrganizationsView } from './modules/settings/OrganizationsView';
+import { WarehouseSetupView } from './modules/settings/WarehouseSetupView';
+import { FieldConfigurationsView } from './modules/settings/FieldConfigurationsView';
 import { AuditLogsView } from './modules/settings/AuditLogsView';
 import { CommunicationHubView } from './modules/communication/CommunicationHubView';
 import { WhatsAppHubView } from './modules/communication/WhatsAppHubView';
@@ -80,7 +89,81 @@ export default function App() {
   };
 
   const [activeOrg] = useState(INITIAL_ORGANIZATION);
-  const [activeBranch, setActiveBranch] = useState<Branch>(INITIAL_BRANCHES[0]); // Pondicherry HQ
+  const [companies, setCompanies] = useState<Company[]>(() => {
+    try {
+      const saved = localStorage.getItem('kosh_companies');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((c: Company) => {
+            const ref = INITIAL_COMPANIES.find((ic) => ic.id === c.id || ic.code === c.code);
+            return {
+              ...c,
+              cinNumber: c.cinNumber || ref?.cinNumber,
+              msmeInfo: c.msmeInfo || ref?.msmeInfo,
+            };
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error loading companies from localStorage:', err);
+    }
+    return INITIAL_COMPANIES;
+  });
+
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    try {
+      const saved = localStorage.getItem('kosh_branches');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((b: Branch) => {
+            if (b.companyId) return b;
+            const ref = INITIAL_BRANCHES.find((ib) => ib.id === b.id || ib.portalBranchCode === b.portalBranchCode);
+            return {
+              ...b,
+              companyId: ref?.companyId || (b.state === 'Tamil Nadu' ? 'co-kosh-02' : b.state === 'Gujarat' ? 'co-kosh-03' : b.state === 'Uttarakhand' ? 'co-kosh-04' : 'co-kosh-01'),
+            };
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error loading branches from localStorage:', err);
+    }
+    return INITIAL_BRANCHES;
+  });
+
+  const [operatingContext, setOperatingContext] = useState<OperatingContext>(() =>
+    restoreOperatingContext(currentUser, companies, branches)
+  );
+
+  const activeCompany = operatingContext.activeCompany;
+  const activeBranch = operatingContext.activeBranch;
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('kosh_companies', JSON.stringify(companies));
+    } catch (err) {
+      console.error('Error saving companies to localStorage:', err);
+    }
+  }, [companies]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('kosh_branches', JSON.stringify(branches));
+    } catch (err) {
+      console.error('Error saving branches to localStorage:', err);
+    }
+  }, [branches]);
+
+  const handleSwitchCompany = (companyId: string) => {
+    try {
+      const updatedCtx = switchCompanyContext(companyId, currentUser, companies, branches);
+      setOperatingContext(updatedCtx);
+    } catch (err: any) {
+      alert(`Company Context Switch Error: ${err.message}`);
+    }
+  };
 
   // Persistent Global Items State (Synchronizes to localStorage so created items survive page refresh)
   const [items, setItems] = useState<GlobalItem[]>(() => {
@@ -179,14 +262,28 @@ export default function App() {
 
   // Switch Branch
   const handleSwitchBranch = (branchId: string) => {
-    const found = INITIAL_BRANCHES.find((b) => b.id === branchId);
-    if (found) setActiveBranch(found);
+    try {
+      const updatedCtx = switchBranchContext(
+        branchId,
+        operatingContext.activeCompanyId,
+        currentUser,
+        companies,
+        branches
+      );
+      setOperatingContext(updatedCtx);
+    } catch (err: any) {
+      alert(`Branch Context Switch Error: ${err.message}`);
+    }
   };
 
   // Switch User (for multi-role testing)
   const handleSwitchUser = (userId: string) => {
     const found = INITIAL_USERS.find((u) => u.id === userId);
-    if (found) setCurrentUser(found);
+    if (found) {
+      setCurrentUser(found);
+      const updatedCtx = restoreOperatingContext(found, companies, branches);
+      setOperatingContext(updatedCtx);
+    }
   };
 
   // Page Acceptance actions
@@ -469,9 +566,12 @@ export default function App() {
       <AppHeader
         currentUser={currentUser}
         activeOrg={activeOrg}
+        activeCompany={activeCompany}
+        allCompanies={companies}
         activeBranch={activeBranch}
-        allBranches={INITIAL_BRANCHES}
+        allBranches={branches}
         allUsers={INITIAL_USERS}
+        onSwitchCompany={handleSwitchCompany}
         onSwitchBranch={handleSwitchBranch}
         onSwitchUser={handleSwitchUser}
         onLogout={handleLogout}
@@ -541,7 +641,7 @@ export default function App() {
                 {/* Business Partner Master Route */}
                 {currentRoute === '/business-partners' && (
                   isBpMasterEnabled ? (
-                    <BusinessPartnerMasterView currentUser={currentUser} />
+                    <BusinessPartnerMasterView currentUser={currentUser} operatingContext={operatingContext} />
                   ) : (
                     <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 text-rose-900 space-y-2 text-xs">
                       <h3 className="font-bold text-sm text-rose-800 flex items-center gap-2">
@@ -565,7 +665,7 @@ export default function App() {
                     {currentRoute === '/items' && (
                       <ItemMasterListView
                         items={items}
-                        allBranches={INITIAL_BRANCHES}
+                        allBranches={branches}
                         onNavigateNew={() => setCurrentRoute('/items/new')}
                         onNavigateCustomSpecs={() => setCurrentRoute('/items/custom-specifications')}
                         onImportItems={(newItems) => setItems((prev) => [...newItems, ...prev])}
@@ -592,7 +692,7 @@ export default function App() {
                     {currentRoute === '/items/branch-availability' && (
                       <BranchAvailabilityView
                         items={items}
-                        allBranches={INITIAL_BRANCHES}
+                        allBranches={branches}
                       />
                     )}
                   </>
@@ -624,7 +724,27 @@ export default function App() {
 
                 {currentRoute === '/settings/classifications' && <ClassificationsView />}
 
-                {currentRoute === '/settings/organizations' && <OrganizationsView />}
+                {currentRoute === '/settings/organizations' && (
+                  <OrganizationsView
+                    initialTab="companies"
+                    companies={companies}
+                    setCompanies={setCompanies}
+                    branches={branches}
+                    setBranches={setBranches}
+                  />
+                )}
+
+                {currentRoute === '/settings/warehouses' && (
+                  <OrganizationsView
+                    initialTab="warehouse"
+                    companies={companies}
+                    setCompanies={setCompanies}
+                    branches={branches}
+                    setBranches={setBranches}
+                  />
+                )}
+
+                {currentRoute === '/settings/field-configurations' && <FieldConfigurationsView />}
 
                 {currentRoute === '/settings/audit-logs' && <AuditLogsView />}
 
@@ -703,14 +823,29 @@ export default function App() {
                 {currentRoute.startsWith('/integration') && (
                   <SapIntegrationView
                     currentUser={currentUser}
+                    operatingContext={operatingContext}
                     activeTab={
-                      currentRoute === '/integration/testing'
+                      currentRoute === '/integration/companies'
+                        ? 'companies'
+                        : currentRoute === '/integration/requests'
+                        ? 'requests'
+                        : currentRoute === '/integration/sync'
+                        ? 'sync'
+                        : currentRoute === '/integration/mapping'
+                        ? 'mapping'
+                        : currentRoute === '/integration/fetch'
+                        ? 'fetch'
+                        : currentRoute === '/integration/history'
+                        ? 'history'
+                        : currentRoute === '/integration/testing'
                         ? 'testing'
                         : currentRoute === '/integration/activate'
                         ? 'activate'
                         : currentRoute === '/integration/monitor'
                         ? 'monitor'
-                        : 'profiles'
+                        : currentRoute === '/integration/profiles'
+                        ? 'profiles'
+                        : 'companies'
                     }
                   />
                 )}

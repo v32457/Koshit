@@ -46,7 +46,7 @@ export const Stage0ReviewModal: React.FC<Stage0ReviewModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                My Kosh Innovations Global IT System • Master Data Governance & SAP B1 HANA Integration
+                My Kosh Innovations Global IT System • Master Data Governance & SAP Integration
               </p>
             </div>
           </div>
@@ -302,7 +302,7 @@ export const Stage0ReviewModal: React.FC<Stage0ReviewModalProps> = ({
           {activeTab === 'sap' && (
             <div className="space-y-3">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-900">
-                <div className="font-bold text-xs mb-1">Module 05.05 — SAP Business One HANA Integration Controls</div>
+                <div className="font-bold text-xs mb-1">Module 05.05 — SAP Business One Integration Controls</div>
                 <p className="text-[11px]">
                   Controlled stage-by-stage lifecycle: Draft → Validated → Test Required (20 Safe Checks) → Test Passed → Approval Required → Approved → Active.
                 </p>

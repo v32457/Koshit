@@ -282,7 +282,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* SAP Business One HANA Real-Time Sync Status Visual Summary Component */}
+      {/* SAP Business One Real-Time Sync Status Visual Summary Component */}
       <div className="bg-gradient-to-r from-slate-900 via-[#0B192C] to-slate-900 rounded-xl border border-slate-800 shadow-md text-white p-5 space-y-4">
         {/* Header Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
@@ -293,7 +293,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm text-white">
-                  SAP Business One HANA — Real-Time Integration Sync Matrix
+                  SAP Business One — Real-Time Integration Sync Matrix
                 </h3>
                 <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -606,7 +606,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               } else if (widget.id === 'w-kpi-sap-synced') {
                 value = sapSyncedCount;
                 colorClass = 'text-emerald-600';
-                badgeText = 'Synced to B1 HANA';
+                badgeText = 'Synced to SAP';
                 badgeColor = 'text-emerald-600';
                 icon = <Database className="w-4 h-4 text-emerald-600" />;
               }
@@ -875,7 +875,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         color: 'bg-emerald-500',
                       },
                       {
-                        action: 'SAP B1 HANA Synchronized',
+                        action: 'SAP Synchronized',
                         actor: 'Service Layer Batch #481',
                         target: 'RMPAOPOEXLG0001',
                         time: '3h ago',

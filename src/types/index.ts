@@ -27,20 +27,203 @@ export interface User {
   avatarUrl?: string;
 }
 
+export interface Company {
+  id: string;
+  code: string;
+  name: string;
+  legalName: string;
+  tradeName: string;
+  cinNumber?: string; // 21-character alphanumeric Corporate Identification Number
+  gstin: string;
+  sapCompanyDb: string;
+  isEnabled: boolean;
+  isDefault?: boolean;
+  branchesCount?: number;
+  country?: string;
+  state?: string;
+  city?: string;
+  postalCode?: string;
+  streetAddress?: string;
+  msmeInfo?: MSMEInfo;
+  gstVerificationDetails?: GSTVerificationDetails;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Organization {
   id: string;
   code: string;
   name: string;
+  legalName?: string;
+  tradeName?: string;
+  gstin?: string;
+  sapCompanyDb?: string;
+  isEnabled?: boolean;
+}
+
+export type GSTRegistrationType =
+  | 'REGULAR'
+  | 'COMPOSITION'
+  | 'SEZ_UNIT'
+  | 'SEZ_DEVELOPER'
+  | 'ISD'
+  | 'UN_BODY';
+
+export type GSTVerificationMode = 'PAID_API' | 'MANUAL_CAPTCHA';
+
+export type GSTVerificationStatus =
+  | 'NOT_VERIFIED'
+  | 'PENDING'
+  | 'VERIFIED'
+  | 'FAILED'
+  | 'MANUAL_REVIEW_REQUIRED';
+
+export interface GSTProviderConfig {
+  providerName: 'CLEAR_TAX' | 'MASTERS_INDIA' | 'IRIS_GST' | 'GOVT_DIRECT_SANDBOX' | 'CUSTOM_REST';
+  endpointUrl: string;
+  apiKey: string;
+  clientId: string;
+  clientSecret: string;
+  timeoutSeconds: number;
+  isActive: boolean;
+  lastTestedAt?: string;
+  testStatus?: 'SUCCESS' | 'FAILED' | 'UNTESTED';
+  lastError?: string;
+}
+
+export interface GSTVerificationSession {
+  sessionId: string;
+  gstin: string;
+  captchaDataUrl: string; // inline SVG/image data URL
+  captchaText?: string;   // internal answer for server-authoritative mock
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface GSTOfficeAddress {
+  id: string;
+  type: 'PRINCIPAL' | 'ADDITIONAL' | 'ADMINISTRATIVE' | 'OTHER';
+  doorBuildingNo?: string;
+  streetName?: string;
+  locality?: string;
+  city: string;
+  district?: string;
+  state: string;
+  stateCode: string;
+  postalCode: string;
+  country: string;
+  addressPurpose?: string;
+}
+
+export interface GSTGoodsItem {
+  hsnCode: string;
+  description: string;
+}
+
+export interface GSTServicesItem {
+  sacCode: string;
+  description: string;
+}
+
+export interface GSTFilingFrequency {
+  financialYear: string;
+  returnType: 'GSTR-1' | 'GSTR-3B' | 'CMP-08' | 'GSTR-9';
+  frequency: 'Monthly' | 'Quarterly' | 'Annually';
+}
+
+export interface GSTFilingRecord {
+  financialYear: string;
+  returnType: string;
+  taxPeriod: string;
+  dateOfFiling: string;
+  status: 'FILED' | 'NOT_FILED' | 'PENDING' | 'OVERDUE';
+  arn?: string;
+}
+
+export interface GSTVerificationDetails {
+  gstin: string;
+  requestedGstin?: string;
+  correlationId?: string;
+  legalName: string;
+  tradeName: string;
+  taxpayerType: string;
+  registrationStatus: 'ACTIVE' | 'CANCELLED' | 'SUSPENDED' | 'PROVISIONAL' | 'INACTIVE';
+  registrationDate: string;
+  constitutionOfBusiness?: string | null;
+  principalPlaceOfBusiness: GSTOfficeAddress;
+  additionalPlacesOfBusiness: GSTOfficeAddress[];
+  natureOfCoreBusinessActivity?: string[] | null;
+  natureOfBusinessActivities?: string[] | null;
+  goods: GSTGoodsItem[];
+  services: GSTServicesItem[];
+  filingFrequencyCurrentFY: GSTFilingFrequency[];
+  filingHistory: GSTFilingRecord[];
+  verificationTimestamp: string;
+  verificationSource: string; // e.g. 'Govt GSTN Portal (Official Taxpayer Search)' | 'ClearTax GST Provider API'
+  verificationOutcome: 'VERIFIED' | 'FAILED' | 'MANUAL_REVIEW_REQUIRED';
+  verifiedBy?: string;
+  rawResponseSummary?: string;
+}
+
+export type BranchLifecycleStatus =
+  | 'DRAFT'
+  | 'VALIDATION'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'ACTIVE'
+  | 'INACTIVE';
+
+export interface Warehouse {
+  id: string;
+  branchId: string;
+  warehouseCode: string; // e.g. 'HSR-FG', 'HSR-STR'
+  warehouseName: string; // e.g. 'Hosur-Finished Goods'
+  locationCode?: string;
+  isInactive?: boolean;
+  isDropShip?: boolean;
+  isNettable?: boolean;
+  isExciseable?: boolean;
+  isExternal?: boolean;
+  enableBinLocations?: boolean;
+  isDefault?: boolean;
+  street?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
 }
 
 export interface Branch {
   id: string;
   orgId: string;
-  code: string;
+  companyId?: string;
+  portalBranchCode: string; // Mandatory, unique, numeric, exactly 3 digits e.g. '001'
+  code: string; // Foreign/Short code e.g. 'POND-01'
   name: string;
+  shortName?: string;
+  gstinPan?: string;
+  gstLegalName?: string;
+  gstTradeName?: string;
+  gstRegistrationType?: GSTRegistrationType;
+  gstStatus?: 'VERIFIED' | 'UNVERIFIED' | 'EXEMPT' | 'CANCELLED' | 'SUSPENDED' | 'FAILED';
+  gstEffectiveDate?: string;
+  streetAddress?: string;
+  streetNo?: string;
+  block?: string;
+  buildingFloor?: string;
+  postalCode?: string;
   city: string;
+  district?: string;
   state: string;
+  country?: string;
+  sapBranchId?: string;
+  sapRegistrationNo?: string;
+  isMainBranch?: boolean;
+  lifecycleStatus: BranchLifecycleStatus;
   plants: Plant[];
+  warehouses: Warehouse[];
+  defaultWarehouseId?: string;
+  gstVerificationDetails?: GSTVerificationDetails;
 }
 
 export interface Plant {
@@ -48,6 +231,34 @@ export interface Plant {
   branchId: string;
   code: string;
   name: string;
+  unitDescription?: string;
+}
+
+export interface UnitDescriptionMaster {
+  id: string;
+  code: string;
+  description: string;
+  approvalStatus: 'APPROVED' | 'PENDING_APPROVAL';
+  version: number;
+}
+
+export interface FieldConfigurationRule {
+  id: string;
+  entityName: 'BRANCH' | 'WAREHOUSE' | 'ITEM' | 'BUSINESS_PARTNER';
+  tabName: string;
+  fieldKey: string;
+  label: string;
+  fieldType: 'TEXT' | 'NUMBER' | 'SELECT' | 'CHECKBOX' | 'DATE';
+  isVisible: boolean;
+  isRequired: boolean;
+  isReadOnly: boolean;
+  fieldOrder: number;
+  sapMappingKey?: string;
+  applicableRoles?: UserRole[];
+  mappedUserIds?: string[];
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
 }
 
 export interface ClassificationValue {
@@ -169,6 +380,183 @@ export interface BranchAvailabilitySetting {
   activatedAt?: string;
 }
 
+export interface BranchItemClassification {
+  id: string;
+  globalItemId: string;
+  companyId: string;
+  companyCode: string;
+  companyName: string;
+  branchId: string;
+  branchCode: string;
+  branchName: string;
+  categoryCode: string; // e.g. 'FG' in Pondicherry, 'RM' in Chennai for SAME global item
+  categoryName: string;
+  itemRole: 'STOCK' | 'PURCHASE' | 'MANUFACTURE' | 'SALES';
+  isStocked: boolean;
+  isPurchased: boolean;
+  isManufactured: boolean;
+  isSalesPermitted: boolean;
+  status: 'ACTIVE' | 'INACTIVE' | 'PENDING_APPROVAL';
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  sapItemCode?: string;
+  branchSpecificDescription?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface BPContactPerson {
+  id: string;
+  name: string;
+  title?: string;
+  position?: string;
+  department?: string;
+  mobile: string;
+  email: string;
+  isDefault?: boolean;
+}
+
+export interface BPAddress {
+  id: string;
+  addressName: string;
+  addressType: 'BILL_TO' | 'SHIP_TO';
+  country: string;
+  state: string;
+  district?: string;
+  city: string;
+  postalCode?: string;
+  streetAddress: string;
+  gstinPan?: string;
+  gstStatus?: 'ACTIVE' | 'VERIFIED' | 'UNVERIFIED' | 'FAILED' | 'EXEMPT';
+  isDefault?: boolean;
+}
+
+export interface BPBankDetail {
+  id: string;
+  bankName: string;
+  branchName?: string;
+  ifscCode: string;
+  ibanSwift?: string;
+  accountNumber: string;
+  cancelledChequeFileName?: string;
+  isDefault?: boolean;
+  approvalStatus?: 'APPROVED' | 'PENDING_APPROVAL' | 'REJECTED';
+}
+
+export interface BPPaymentTerms {
+  paymentTermsCode: string;
+  creditLimit?: number;
+  commitmentLimit?: number;
+  priceList?: string;
+  discountPercent?: number;
+}
+
+export interface BPAccounting {
+  controlAccount?: string;
+  downPaymentAccount?: string;
+  bankName?: string;
+  branchName?: string;
+  accountNumber?: string;
+  ifscIban?: string;
+  swiftCode?: string;
+  bankAccounts?: BPBankDetail[];
+  withholdingTaxAllowed?: boolean;
+  tdsCategory?: string;
+}
+
+export interface BPAttachment {
+  id: string;
+  docType: string;
+  fileName: string;
+  fileSizeBytes: number;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+export interface BPGovernanceLog {
+  id: string;
+  timestamp: string;
+  action: string;
+  verifier: string;
+  details: string;
+  status: string;
+}
+
+export interface MSMEInfo {
+  isMSME: boolean;
+  udyamRegistrationNo?: string;
+  enterpriseName?: string;
+  enterpriseType?: string;
+  dateOfIncorporation?: string;
+  dateOfCommencement?: string;
+  activityType?: 'MANUFACTURING' | 'SERVICES' | 'BOTH';
+  msmeClassification?: 'MICRO' | 'SMALL' | 'MEDIUM';
+  investmentCategory?: string;
+  turnoverCategory?: string;
+  nicCodes?: string[];
+  majorActivity?: string;
+  state?: string;
+  district?: string;
+  panLinkage?: string;
+  registrationPeriodStatus?: string;
+  lastRevalidatedAt?: string;
+}
+
+export interface BusinessPartner {
+  id: string;
+  branchId?: string;
+  branchCode?: string;
+  portalBranchCode?: string;
+  bpCode: string; // Non-editable CardCode e.g. KC001PDY0001
+  bpName: string;
+  bpType: 'CUSTOMER' | 'SUPPLIER' | 'LEAD';
+  shortName?: string;
+  foreignName?: string;
+  groupIndustry?: string;
+  currency?: string;
+  gstinPan?: string;
+  panNumber?: string;
+  gstStatus?: 'ACTIVE' | 'VERIFIED' | 'SUSPENDED' | 'CANCELLED' | 'INVALID' | 'PENDING' | 'UNVERIFIED' | 'VERIFICATION_FAILED' | 'VERIFICATION_UNAVAILABLE' | 'STALE' | 'EXEMPT';
+  gstLegalName?: string;
+  gstTradeName?: string;
+  gstTaxpayerType?: string;
+  gstFilingHistory?: Array<{ returnPeriod: string; dateOfFiling: string; status: string }>;
+  gstRegisteredEmail?: string;
+  gstRegisteredMobile?: string;
+  gstVerificationDetails?: GSTVerificationDetails;
+  msmeInfo?: MSMEInfo;
+  phone: string;
+  email: string;
+  website?: string;
+  salesperson?: string;
+  city: string;
+  district?: string;
+  state: string;
+  country: string;
+  postalCode?: string;
+  streetAddress?: string;
+  status: 'ACTIVE' | 'INACTIVE' | 'LOCKED' | 'PENDING_APPROVAL';
+  sapSyncStatus?: 'SYNCED' | 'PENDING' | 'FAILED';
+  sapBpCode?: string;
+  contacts: BPContactPerson[];
+  addresses: BPAddress[];
+  paymentTerms?: BPPaymentTerms;
+  accounting?: BPAccounting;
+  properties?: string[];
+  remarks?: {
+    internalNotes?: string;
+    specialInstructions?: string;
+    complianceComments?: string;
+  };
+  attachments?: BPAttachment[];
+  governanceLogs?: BPGovernanceLog[];
+  isLocked?: boolean;
+  approvalStatus?: 'APPROVED' | 'PENDING_APPROVAL' | 'REJECTED' | 'DRAFT';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
 export interface ApprovalActionRecord {
   id: string;
   action: 'SUBMIT' | 'APPROVE' | 'REJECT' | 'RETURN';
@@ -197,6 +585,125 @@ export interface SapIntegrationProfile {
   status: 'DRAFT' | 'CONFIG_VALIDATED' | 'TEST_REQUIRED' | 'TEST_PASSED' | 'APPROVAL_REQUIRED' | 'APPROVED' | 'ACTIVE' | 'SUSPENDED';
   version: number;
   updatedAt: string;
+}
+
+export type MappingDiscoveryStatus =
+  | 'DISCOVERED'
+  | 'MAPPED'
+  | 'VALIDATED'
+  | 'UNSUPPORTED_BY_CURRENT_API'
+  | 'REQUIRES_FURTHER_INVESTIGATION'
+  | 'NOT_APPLICABLE'
+  | 'MAPPING_ERROR';
+
+export type SapRegistrationRequestStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CONFIG_REQUIRED';
+
+export interface SapCompanyRegistrationRequest {
+  id: string;
+  requestNumber: string;
+  companyCode: string;
+  companyDisplayName: string;
+  legalName: string;
+  gstin: string;
+  sapCompanyDb: string;
+  environmentId: 'DEV' | 'UAT' | 'PROD';
+  httpsHostname: string;
+  serviceLayerPort: number;
+  requestedByEmail: string;
+  requestedByName: string;
+  requestedAt: string;
+  status: SapRegistrationRequestStatus;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  configId?: string;
+  notes?: string;
+}
+
+export interface SapCompanyRegistryConfig {
+  id: string;
+  companyDbName: string;
+  companyDisplayName: string;
+  environmentId: 'DEV' | 'UAT' | 'PROD';
+  environmentName: string;
+  serviceLayerUrl: string;
+  httpsHostname: string;
+  serviceLayerPort: number;
+  sapVersion?: string;
+  authMethod: 'SESSION' | 'BASIC' | 'TOKEN';
+  credentialVaultRef: string;
+  connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'ERROR' | 'TEST_REQUIRED';
+  lastConnectedAt?: string;
+  isEnvironmentActive: boolean;
+  isCompanyActive: boolean;
+  isCompanyDetailsSyncActive: boolean;
+  lastSuccessfulImportAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  requestId?: string;
+}
+
+export interface SapCompanyFieldDiscoveryRecord {
+  id: string;
+  companyConfigId: string;
+  environmentId: 'DEV' | 'UAT' | 'PROD';
+  tabName:
+    | 'GENERAL_LOCAL'
+    | 'GENERAL_FOREIGN'
+    | 'ACCOUNTING_GENERAL'
+    | 'ACCOUNTING_EXCISE'
+    | 'INIT_ACCOUNTING'
+    | 'INIT_INVENTORY'
+    | 'INIT_HOUSE_BANK'
+    | 'INIT_FIXED_ASSETS_OTHER';
+  subsectionName: string;
+  visibleSapLabel: string;
+  technicalResource: string;
+  technicalPropertyName: string;
+  sapDataType: 'Alphanumeric' | 'Numeric' | 'Date' | 'Amount' | 'Rate' | 'Flag/Enum' | 'Memo';
+  fieldLength?: number;
+  precisionScale?: string;
+  isReadable: boolean;
+  isWritable: boolean;
+  koshTargetEntity: string;
+  koshTargetProperty: string;
+  targetDataType: string;
+  mappingTransformation?: string;
+  isRequired: boolean;
+  isReadOnlyInSap: boolean;
+  discoveryStatus: MappingDiscoveryStatus;
+  verificationEvidence?: string;
+  lastVerifiedAt: string;
+  retrievedSourceValue?: string;
+  persistedKoshValue?: string;
+}
+
+export interface SapCompanySyncJobLog {
+  id: string;
+  jobCorrelationId: string;
+  companyConfigId: string;
+  environmentId: 'DEV' | 'UAT' | 'PROD';
+  operationType: 'FETCH_COMPANY_DETAILS' | 'FIELD_DISCOVERY' | 'MAPPING_RECONCILIATION' | 'CONNECTION_TEST';
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  triggeredBy: string;
+  discoveredFieldsCount: number;
+  mappedFieldsCount: number;
+  importedFieldsCount: number;
+  updatedFieldsCount: number;
+  unchangedFieldsCount: number;
+  skippedFieldsCount: number;
+  unsupportedFieldsCount: number;
+  failedFieldsCount: number;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED' | 'CANCELLED';
+  sanitizedDiagnosticMessage: string;
 }
 
 export interface SapScheduleConfig {
@@ -232,6 +739,9 @@ export interface AuditLogEntry {
   action: string;
   entityName: string;
   entityId: string;
+  companyId?: string;
+  branchId?: string;
+  environmentId?: string;
   timestamp: string;
   details: Record<string, any>;
   ipAddress: string;

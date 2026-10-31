@@ -26,8 +26,12 @@ import {
   Plus,
 } from 'lucide-react';
 
+import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
+import { OperatingContext } from '../../services/operatingContextService';
+
 interface ItemCreationViewProps {
   currentUser: User;
+  operatingContext?: OperatingContext;
   globalItems?: GlobalItem[];
   onSaveDraft: (item: Partial<GlobalItem>) => void;
   onSubmitForApproval: (item: Partial<GlobalItem>) => void;
@@ -36,6 +40,7 @@ interface ItemCreationViewProps {
 
 export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
   currentUser,
+  operatingContext,
   globalItems = [],
   onSaveDraft,
   onSubmitForApproval,
@@ -258,6 +263,9 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* Operating Context Badge Indicator */}
+      {operatingContext && <ContextIndicatorBar context={operatingContext} className="mb-1" />}
+
       {/* Page Header */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div>
