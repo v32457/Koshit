@@ -23,7 +23,9 @@ Before promoting the application to live enterprise production traffic, the foll
 | **WhatsApp Business** | `WHATSAPP_PHONE_NUMBER_ID` | Meta WhatsApp Cloud API Phone ID | Configure Meta Phone Number ID for company sender `+91 98401 22320`. |
 | **WhatsApp Business** | `WHATSAPP_ACCESS_TOKEN` | Meta System User Access Token | Supply Meta WhatsApp Cloud API permanent access token. |
 | **Email Delivery** | `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | Transactional Email Server | Configure corporate SMTP server for password recovery tokens and 2FA notifications. |
-| **GST Verification** | `GST_API_PROVIDER_KEY` | Authorized GST Lookup API Key | Configure GST portal / API provider key for live GSTIN verification lookups. |
+| **GST Verification** | `GST_API_PROVIDER_KEY` | gstinapi.in API Key | Supply an active key from `https://www.gstinapi.in`. Server-side only; without it the API returns `503 GST_PROVIDER_NOT_CONFIGURED` and no data is fabricated. |
+| **GST Verification** | `GST_API_BASE_URL` | Provider Base URL | Optional override, default `https://www.gstinapi.in`. |
+| **GST Verification** | `GST_API_TIMEOUT_MS` | Provider Request Timeout | Optional integer timeout in milliseconds, default `10000`. |
 
 ---
 
@@ -31,3 +33,13 @@ Before promoting the application to live enterprise production traffic, the foll
 
 - **No Secrets in Bundles:** Never store or commit passwords, API keys, or access tokens in frontend source code (`src/*`), git repositories, or public bundles.
 - **Server Environment Variables:** Load all secrets at runtime on the server via `.env` or system environment variables.
+
+---
+
+## 4. GST Provider Verification Requirements
+
+- **Provider:** `https://www.gstinapi.in` (`GET /v1/gstin/{GSTIN}` and `GET /v1/gstin/{GSTIN}/returns?fy=YYYY-YY`).
+- **Authentication:** The server sends the key in the `x-api-key` header. The key is never returned to the browser, logged, or included in the client bundle.
+- **Failure behavior:** Provider errors (401/402/403/404/429/502, timeout, malformed payload, GSTIN mismatch) are surfaced as failures with no synthetic taxpayer or filing records.
+- **Persistence:** Only validated provider responses are written to MySQL. A database failure is returned as `persisted: false` with the provider data intact; the UI reports the persistence failure separately.
+- **Live check:** Automated tests use injected provider responses. A real end-to-end GST lookup remains pending until `GST_API_PROVIDER_KEY` is supplied in the target environment.

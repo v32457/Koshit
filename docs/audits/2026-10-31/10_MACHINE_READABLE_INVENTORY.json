@@ -1,0 +1,157 @@
+{
+  "auditDate": "2026-10-31",
+  "repository": "CIPPlatform/Koshit",
+  "branch": "main",
+  "commit": "08943b07d64355b04523700604243be34e040cbf",
+  "node": "v24.22.1",
+  "npm": "11.19.1",
+  "modules": [
+    {
+      "name": "App Shell",
+      "location": "src/App.tsx",
+      "routes": ["/", "/dashboard", "/items", "/business-partners", "/integration", "/communication", "/approvals", "/settings"],
+      "components": ["AppHeader", "NavigationSidebar", "PageAcceptanceBar", "Stage0ReviewModal", "PageAcceptanceRegisterModal"],
+      "verificationStatus": "PASS",
+      "defects": []
+    },
+    {
+      "name": "Dashboard",
+      "location": "src/modules/dashboard/DashboardView.tsx",
+      "routes": ["/dashboard"],
+      "components": ["DashboardCustomizerModal", "KPI Card", "Category Donut", "Branch Bar", "SAP Sync Table", "Activity Feed", "Quick Actions"],
+      "verificationStatus": "FAIL",
+      "defects": ["D01", "D02", "D03"]
+    },
+    {
+      "name": "Business Partner Master",
+      "location": "src/modules/businessPartners/BusinessPartnerMasterView.tsx",
+      "routes": ["/business-partners"],
+      "components": ["GST Verify", "Contacts", "Addresses", "Properties", "Document Upload", "Partner Toolbar"],
+      "verificationStatus": "FAIL",
+      "defects": ["D04", "D19"]
+    },
+    {
+      "name": "Item Master",
+      "location": "src/modules/items/",
+      "routes": ["/items", "/items/new"],
+      "components": ["ItemMasterListView", "ItemCreationView"],
+      "verificationStatus": "NOT_TESTED",
+      "defects": ["D23"]
+    },
+    {
+      "name": "Integration / SAP",
+      "location": "src/modules/integration/SapIntegrationView.tsx",
+      "routes": ["/integration/testing", "/integration/activate", "/integration/monitor"],
+      "components": ["Profile Config", "20 Safe Tests", "Gated Activation", "Monitor & DLQ"],
+      "verificationStatus": "BLOCKED",
+      "defects": ["D09", "D10", "D11", "D12", "D13", "D14", "D15"]
+    },
+    {
+      "name": "Communication / Email",
+      "location": "src/modules/communication/EmailConfigView.tsx",
+      "routes": ["/communication/email"],
+      "components": ["SMTP Config", "Connection Test", "Template Management", "Version History"],
+      "verificationStatus": "FAIL",
+      "defects": ["D05", "D06"]
+    },
+    {
+      "name": "Communication / WhatsApp",
+      "location": "src/modules/communication/WhatsAppConfigView.tsx",
+      "routes": ["/communication/whatsapp"],
+      "components": ["Graph API Test", "Template Sync", "Test Message"],
+      "verificationStatus": "BLOCKED",
+      "defects": ["D07"]
+    },
+    {
+      "name": "Communication / Hub",
+      "location": "src/modules/communication/CommunicationHubView.tsx",
+      "routes": ["/communication"],
+      "components": ["Templates", "Broadcasts", "Delivery Queue", "In-Portal Notifications"],
+      "verificationStatus": "FAIL",
+      "defects": ["D08"]
+    },
+    {
+      "name": "Approvals",
+      "location": "src/modules/approvals/",
+      "routes": ["/approvals"],
+      "components": ["Approval Inbox", "Workflow Instances"],
+      "verificationStatus": "NOT_TESTED",
+      "defects": ["D26"]
+    },
+    {
+      "name": "Settings / Audit Logs",
+      "location": "src/modules/settings/AuditLogsView.tsx",
+      "routes": ["/settings/audit-logs"],
+      "components": ["Audit Log Entries"],
+      "verificationStatus": "NOT_TESTED",
+      "defects": ["D16", "D27"]
+    },
+    {
+      "name": "Public / Auth",
+      "location": "src/modules/public/LoginPageView.tsx",
+      "routes": ["/login"],
+      "components": ["Email Input", "Password Input", "Toggle", "Forgot Password", "Fixed OTP"],
+      "verificationStatus": "FAIL",
+      "defects": ["D17", "D18"]
+    },
+    {
+      "name": "GST Workflow",
+      "location": "src/services/gstService.ts + server/src/routes/gst.ts",
+      "routes": ["/api/gst/verify", "/api/gst/filings", "/api/gst/available-fys", "/api/gst/return-periods"],
+      "components": ["GSTIN Input", "Verification Result", "Filing History", "Print"],
+      "verificationStatus": "PASS",
+      "defects": ["D21"]
+    },
+    {
+      "name": "Database",
+      "location": "MySQL 8.4.13, schema koshit",
+      "tables": ["global_items (12 rows)", "business_partners (12 rows)", "audit_logs (54 rows)", "item_approval_history (22 rows)", "users (0 rows)", "branch_item_availability (0 rows)", "custom_specifications (0 rows)", "system_settings (1 row)"],
+      "verificationStatus": "FAIL",
+      "defects": ["D19", "D20"]
+    }
+  ],
+  "testResults": {
+    "total": 63,
+    "passed": 63,
+    "failed": 0,
+    "command": "npm test",
+    "lint": "PASS",
+    "build": "PASS"
+  },
+  "criticalRisks": [
+    {
+      "id": "CR1",
+      "description": "GST_API_PROVIDER_KEY missing; live verification BLOCKED",
+      "category": "Integration",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "CR2",
+      "description": "No backend authentication; users table 0 rows",
+      "category": "Auth",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "CR3",
+      "description": "No SAP Service Layer connector or credentials",
+      "category": "Integration",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "CR4",
+      "description": "Migration drift: DB references 004–009; repo has 001–005",
+      "category": "DB",
+      "status": "FAIL"
+    },
+    {
+      "id": "CR5",
+      "description": "business_partners gst_status='VERIFIED' without provider evidence",
+      "category": "DB",
+      "status": "FAIL"
+    }
+  ],
+  "overallStatus": "NO-GO",
+  "releaseRecommendation": "DO NOT RELEASE. Critical risks CR1–CR5 remain unresolved. No critical workflow is genuinely verified. All former fabricated PASS/SUCCESS states have been replaced with truthful NOT_RUN/BLOCKED/FAIL states, but underlying dependencies (provider key, backend auth, SAP connector, migration integrity) remain unavailable.",
+  "generatedBy": "CIPPlatform Production Verification Audit",
+  "auditScope": "27+ frontend modules, 5 backend API routes, 2 GST integrations, auth, SAP, communication, dashboard, business partners, items, settings"
+}

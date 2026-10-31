@@ -136,6 +136,8 @@ export interface BPGovernanceLog {
   status: 'VERIFIED' | 'FAILED' | 'WARNING';
 }
 
+import type { GstVerificationResult } from '../../shared/gst';
+
 export interface BusinessPartner {
   id: string;
   bpCode: string;
@@ -147,6 +149,11 @@ export interface BusinessPartner {
   gstinPan: string;
   panNumber?: string;
   gstStatus: 'VERIFIED' | 'UNVERIFIED' | 'FAILED' | 'EXEMPT';
+  /**
+   * Only populated from a validated provider response returned by the
+   * Koshit API. Never infer verification from a manually entered status.
+   */
+  gstVerification?: GstVerificationResult;
   phone: string;
   email: string;
   website?: string;

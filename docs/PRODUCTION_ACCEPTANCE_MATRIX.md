@@ -32,7 +32,7 @@ All acceptance criteria have been verified against:
 | **P-06** | `/items/new` (`ItemCreationView`) | Create Item | Rule-driven Global Item Code and Description generation previews, 13 classification categories, material/type/colour/form selectors, live validation. | Item Maker, Admin | **PASS** |
 | **P-07** | `/items/custom-specifications` | Custom Specifications | Customer/Manufacturer/Brand Master and Customer/Part/Model Number reference management. | Item Maker, Admin | **PASS** |
 | **P-08** | `/items/branch-availability` | Branch Availability | Multi-plant item availability tracking across Pondicherry, Chennai, Hosur, Pune, Dehradun. | All Branch Roles | **PASS** |
-| **P-09** | `/business-partners` | Business Partner Master | Customer, Supplier/Vendor, Lead partner management. Contact persons grid, multi-address bill/ship structures, payment terms, accounting mappings, GSTIN format check, **GST state-code save gate**. | BP Specialist, Admin | **PASS** |
+| **P-09** | `/business-partners` | Business Partner Master | Customer, Supplier/Vendor, Lead partner management. Contact persons grid, multi-address bill/ship structures, payment terms, accounting mappings, GSTIN checksum validation, **GST state-code save gate**, real gstinapi.in verification, filing-history lookup, and third-party print. | BP Specialist, Admin | **PASS (code) / BLOCKED (live GST key)** |
 | **P-10** | `/requests` (`MyRequestsView`) | My Requests & Draft Tracker | Tracking submitted item and partner requests, revision history, return-for-correction resubmissions. | Item Maker, BP Maker | **PASS** |
 | **P-11** | `/approvals` (`ApprovalInboxView`) | Approval Inbox | Checker review queue, sequential/parallel approval stages, maker-checker enforcement, rejection comments, approval history. | Item Checker, Org Admin | **PASS** |
 | **P-12** | `/settings/module-management` | Module Registry | Enable/Disable controls for Item Master & Business Partner Master, feature flags, route & API access gating. | Platform Admin | **PASS** |
@@ -56,3 +56,19 @@ All acceptance criteria have been verified against:
    - Outbound WhatsApp communications route via centrally verified company sender `+91 98401 22320` to normalized E.164 recipient phone numbers. (**PASS**)
 5. **Non-Enumerating Password Reset**:
    - Password reset requests return uniform responses regardless of account existence. Single-use 15-minute Base64 obfuscated links prevent user harvesting. (**PASS**)
+6. **GST Verification & Filing History**:
+   - GSTIN checksum and state-code validation runs before any provider call. The server calls gstinapi.in with the API key held only in server configuration, rejects responses whose GSTIN or financial year does not match the request, and persists only validated responses. Empty filing history remains empty; provider and database failures remain visible failures. (**PASS in automated tests / live provider check BLOCKED until `GST_API_PROVIDER_KEY` is supplied**)
+
+---
+
+## 4. GST Verification Evidence (October 31, 2026)
+
+| Check | Evidence | Status |
+|---|---|---|
+| GSTIN validation | `src/test/gstin.test.ts` plus save-gate UI | **PASS** |
+| Financial-year selector | Current and previous two Indian FYs from `shared/financialYear.ts`; `src/test/financialYear.test.ts` | **PASS** |
+| Provider adapter | `server/test/gstProvider.test.ts` covers invalid GSTIN, mismatch, malformed payload, 401/402/403/404/429, 502 retry, timeout, network failure, missing key, and optional null fields | **PASS** |
+| API routes and persistence | `server/test/gstRoutes.test.ts` covers success, DB failure, missing config, provider error mapping, FY limit, and filing-history failure | **PASS** |
+| Print output | `src/test/gstPrint.test.ts` covers actual values, `Unavailable` fallbacks, HTML escaping, empty history, third-party/non-official wording, and blocked print windows | **PASS** |
+| Fabricated fallback removal | `src/test/gstVerificationState.test.ts` verifies legacy `VERIFIED` records without provider evidence are downgraded and fabricated government-portal logs are removed | **PASS** |
+| Live provider lookup | No `GST_API_PROVIDER_KEY` is configured in this environment | **BLOCKED** |

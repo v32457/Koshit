@@ -9,6 +9,19 @@ import {
   BPAttachment,
   BPGovernanceLog,
 } from '../../types';
+import type {
+  GstFilingHistoryRecord,
+  GstVerificationRecord,
+  GstVerificationResult,
+} from '../../../shared/gst';
+import {
+  getAvailableFinancialYears,
+  getIndianFinancialYear,
+} from '../../../shared/financialYear';
+import { isValidGstin, normalizeGstin } from '../../../shared/gstin';
+import { fetchGstFilingHistory, verifyGstinOnServer } from '../../services/gstService';
+import { printGstData } from '../../services/gstPrint';
+import { normalizeStoredPartners, isStoredVerification } from '../../services/gstVerificationState';
 import { INITIAL_BUSINESS_PARTNERS } from '../../data/seedData';
 import {
   CASCADING_GEO_MASTERS,
@@ -48,10 +61,34 @@ import {
   Download,
   Lock,
   ShieldAlert,
+  Printer,
 } from 'lucide-react';
 
 interface BusinessPartnerMasterViewProps {
   currentUser: User;
+}
+
+type PageNotice = {
+  kind: 'success' | 'error' | 'warning';
+  text: string;
+};
+
+const VERIFICATION_LOG_ACTION = 'GSTIN verified via third-party provider';
+
+function stripPersistence(
+  record: GstVerificationRecord,
+): GstVerificationResult {
+  const {
+    persisted: _persisted,
+    persistenceError: _persistenceError,
+    ...verification
+  } = record;
+  return verification;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 type TabType =
@@ -73,7 +110,9 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       const saved = localStorage.getItem('kosh_business_partners');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return normalizeStoredPartners(parsed as BusinessPartner[]);
+        }
       }
     } catch (err) {
       console.error('Error loading business partners from localStorage:', err);
@@ -175,6 +214,23 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
 
   const [errorMsg, setErrorMsg] = useState('');
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [pageNotice, setPageNotice] = useState<PageNotice | null>(null);
+
+  // Filing history is loaded only from the verified provider endpoint.
+  const [filingYear, setFilingYear] = useState<string>(() => getIndianFinancialYear());
+  const [filingHistory, setFilingHistory] =
+    useState<GstFilingHistoryRecord | null>(null);
+  const [filingHistoryError, setFilingHistoryError] = useState('');
+  const [isLoadingFilings, setIsLoadingFilings] = useState(false);
+
+  const availableFinancialYears = getAvailableFinancialYears();
+
+  // Keep the inspector in sync when a table-level re-verification updates the list.
+  React.useEffect(() => {
+    if (!inspectedBp) return;
+    const current = bpList.find((partner) => partner.id === inspectedBp.id);
+    if (current && current !== inspectedBp) setInspectedBp(current);
+  }, [bpList, inspectedBp]);
 
   // Helper getters for Cascading Location Selection using dynamic geoMasters
   const selectedCountryObj: GeoCountry | undefined = geoMasters.find(
@@ -218,8 +274,17 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     setVerificationFeedback('');
     setGstExceptionApproved(false);
     setGstExceptionReason('');
+    setPageNotice(null);
+    setFilingHistory(null);
+    setFilingHistoryError('');
+    setIsLoadingFilings(false);
+    setFilingYear(getIndianFinancialYear());
 
     if (bp) {
+      const verification = bp.gstVerification;
+      const isVerifiedWithProvider =
+        bp.gstStatus === 'VERIFIED' && isStoredVerification(verification);
+
       setEditingBp(bp);
       setBpForm({
         bpCode: bp.bpCode,
@@ -240,11 +305,20 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         district: bp.district || '',
         postalCode: bp.postalCode || '',
         status: bp.status,
-        gstStatus: bp.gstStatus,
+        gstStatus: isVerifiedWithProvider
+          ? 'VERIFIED'
+          : bp.gstStatus === 'EXEMPT'
+          ? 'EXEMPT'
+          : 'UNVERIFIED',
+        gstVerification: isVerifiedWithProvider ? verification : undefined,
       });
-      if (bp.gstStatus === 'VERIFIED') {
-        setGstLegalName(bp.bpName);
-        setVerificationFeedback('Verified on Govt GSTN Portal — Details Match');
+      if (isVerifiedWithProvider && verification) {
+        setGstLegalName(verification.profile.legalName);
+        setVerificationFeedback(
+          `Verified via ${verification.provider} on ${formatTimestamp(
+            verification.retrievedAt,
+          )}. Registration status: ${verification.profile.status}.`,
+        );
       }
       setContacts(bp.contacts || []);
       setAddresses(
@@ -314,6 +388,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         postalCode: '400001',
         status: 'ACTIVE',
         gstStatus: 'UNVERIFIED',
+        gstVerification: undefined,
       });
       setContacts([
         {
@@ -369,13 +444,15 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     setIsModalOpen(true);
   };
 
-  // Reset GST Verification status if critical fields change
+  // Reset GST verification state if critical fields change
   const handleBpNameChange = (val: string) => {
     setBpForm((prev) => ({
       ...prev,
       bpName: val,
       gstStatus: 'UNVERIFIED',
+      gstVerification: undefined,
     }));
+    setGstLegalName('');
     setVerificationFeedback('');
   };
 
@@ -384,8 +461,12 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       ...prev,
       gstinPan: val,
       gstStatus: 'UNVERIFIED',
+      gstVerification: undefined,
     }));
+    setGstLegalName('');
     setVerificationFeedback('');
+    setFilingHistory(null);
+    setFilingHistoryError('');
   };
 
   // Open Inspector
@@ -451,7 +532,12 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                 district,
                 postalCode,
                 status: bpForm.status || 'ACTIVE',
-                gstStatus: bpForm.gstStatus || 'VERIFIED',
+                gstStatus: bpForm.gstVerification
+                  ? 'VERIFIED'
+                  : bpForm.gstStatus === 'EXEMPT'
+                  ? 'EXEMPT'
+                  : 'UNVERIFIED',
+                gstVerification: bpForm.gstVerification,
                 contacts,
                 addresses,
                 paymentTerms,
@@ -479,9 +565,14 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         foreignName: bpForm.foreignName,
         groupIndustry: bpForm.groupIndustry,
         currency: bpForm.currency,
-        gstinPan: bpForm.gstinPan?.toUpperCase().trim() || '27AAACG0000A1Z5',
-        panNumber: bpForm.panNumber?.toUpperCase().trim() || 'AAACG0000A',
-        gstStatus: bpForm.gstStatus || 'VERIFIED',
+        gstinPan: bpForm.gstinPan?.toUpperCase().trim() || '',
+        panNumber: bpForm.panNumber?.toUpperCase().trim() || '',
+        gstStatus: bpForm.gstVerification
+          ? 'VERIFIED'
+          : bpForm.gstStatus === 'EXEMPT'
+          ? 'EXEMPT'
+          : 'UNVERIFIED',
+        gstVerification: bpForm.gstVerification,
         phone: bpForm.phone || '',
         email: bpForm.email || '',
         website: bpForm.website,
@@ -500,16 +591,28 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         properties,
         remarks,
         attachments,
-        governanceLogs: [
-          {
-            id: `gov-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            action: 'Initial Partner Creation & Live GST Verification',
-            verifier: currentUser.fullName,
-            details: `GST Legal Name: ${gstLegalName || bpForm.bpName}. Verified against Govt GSTN Portal Gateway. ${gstExceptionApproved ? `Multi-State Exception Approved: ${gstExceptionReason}` : ''}`,
-            status: 'VERIFIED',
-          },
-        ],
+        governanceLogs: bpForm.gstVerification
+          ? [
+              {
+                id: `gov-${Date.now()}`,
+                timestamp: bpForm.gstVerification.retrievedAt,
+                action: VERIFICATION_LOG_ACTION,
+                verifier: currentUser.fullName,
+                details: `GSTIN ${bpForm.gstVerification.gstin} verified via ${
+                  bpForm.gstVerification.provider
+                }. Provider legal name: ${
+                  bpForm.gstVerification.profile.legalName
+                }. Registration status: ${
+                  bpForm.gstVerification.profile.status
+                }.${
+                  gstExceptionApproved
+                    ? ` Multi-state exception approved: ${gstExceptionReason}`
+                    : ''
+                }`,
+                status: 'VERIFIED',
+              },
+            ]
+          : [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: currentUser.fullName,
@@ -520,98 +623,252 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     setIsModalOpen(false);
   };
 
-  // Table Level Verification Handler
-  const handleVerifyGst = (id: string, customGstin?: string) => {
-    setVerifyingId(id);
-    setTimeout(() => {
-      const now = new Date().toISOString();
-      setBpList((prev) =>
-        prev.map((b) => {
-          if (b.id === id) {
-            const targetGst = customGstin || b.gstinPan;
-            const stateCode = targetGst ? targetGst.slice(0, 2) : '27';
-            const stateName = GST_STATE_CODES[stateCode] || 'Maharashtra';
-            const logEntry: BPGovernanceLog = {
-              id: `gov-${Date.now()}`,
-              timestamp: now,
-              action: 'GSTIN API Live Verification',
-              verifier: `${currentUser.fullName} (Govt GSTN Portal Gateway)`,
-              details: `GSTIN ${targetGst} validated successfully. Legal Name: ${b.bpName}. State Code ${stateCode} (${stateName}).`,
-              status: 'VERIFIED',
-            };
-            return {
-              ...b,
-              gstStatus: 'VERIFIED',
-              updatedAt: now,
-              governanceLogs: [logEntry, ...(b.governanceLogs || [])],
-            };
-          }
-          return b;
-        })
+  const loadFilingHistory = async (gstin: string, financialYear: string) => {
+    const normalized = normalizeGstin(gstin);
+
+    setFilingYear(financialYear);
+    setFilingHistory(null);
+    setFilingHistoryError('');
+    setIsLoadingFilings(true);
+
+    try {
+      const result = await fetchGstFilingHistory(normalized, financialYear);
+      setFilingHistory(result);
+
+      if (!result.persisted) {
+        setPageNotice({
+          kind: 'warning',
+          text: `Filing history was retrieved from the provider but ${
+            result.persistenceError ?? 'could not be saved to the database.'
+          }`,
+        });
+      }
+    } catch (error) {
+      setFilingHistoryError(
+        error instanceof Error
+          ? error.message
+          : 'GST filing history could not be retrieved.',
       );
-      setVerifyingId(null);
-    }, 1200);
+    } finally {
+      setIsLoadingFilings(false);
+    }
   };
 
-  // Form Live Verification Handler (inside Modal) with Legal Name Matching & State Mismatch Enforcement
-  const handleVerifyGstInModal = () => {
+  // Table Level Verification Handler
+  const handleVerifyGst = async (id: string, customGstin?: string) => {
+    const partner = bpList.find((entry) => entry.id === id);
+    const targetGst = normalizeGstin(customGstin ?? partner?.gstinPan ?? '');
+
+    if (!targetGst) {
+      setPageNotice({
+        kind: 'error',
+        text: 'This Business Partner has no GSTIN to verify.',
+      });
+      return;
+    }
+
+    if (!isValidGstin(targetGst)) {
+      const now = new Date().toISOString();
+      setBpList((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                gstStatus: 'FAILED',
+                gstVerification: undefined,
+                updatedAt: now,
+              }
+            : entry,
+        ),
+      );
+      setPageNotice({
+        kind: 'error',
+        text: `GSTIN ${targetGst} has an invalid format or check digit. No provider request was made.`,
+      });
+      return;
+    }
+
+    setVerifyingId(id);
+    setPageNotice(null);
+
+    try {
+      const record = await verifyGstinOnServer(targetGst);
+      const verification = stripPersistence(record);
+      const logEntry: BPGovernanceLog = {
+        id: `gov-${Date.now()}`,
+        timestamp: verification.retrievedAt,
+        action: VERIFICATION_LOG_ACTION,
+        verifier: currentUser.fullName,
+        details: `GSTIN ${verification.gstin} verified via ${verification.provider}. Provider legal name: ${verification.profile.legalName}. Registration status: ${verification.profile.status}.`,
+        status: 'VERIFIED',
+      };
+
+      setBpList((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                gstinPan: targetGst,
+                gstStatus: 'VERIFIED',
+                gstVerification: verification,
+                updatedAt: new Date().toISOString(),
+                governanceLogs: [logEntry, ...(entry.governanceLogs || [])],
+              }
+            : entry,
+        ),
+      );
+
+      setPageNotice(
+        record.persisted
+          ? {
+              kind: 'success',
+              text: `GSTIN ${targetGst} verified via ${verification.provider}.`,
+            }
+          : {
+              kind: 'warning',
+              text: `GSTIN ${targetGst} was verified via ${verification.provider}, but ${
+                record.persistenceError ?? 'the result could not be saved.'
+              }`,
+            },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'GST verification failed.';
+      const now = new Date().toISOString();
+
+      setBpList((prev) =>
+        prev.map((entry) =>
+          entry.id === id
+            ? {
+                ...entry,
+                gstStatus: 'FAILED',
+                gstVerification: undefined,
+                updatedAt: now,
+              }
+            : entry,
+        ),
+      );
+      setPageNotice({
+        kind: 'error',
+        text: `GST verification failed for ${targetGst}: ${message}`,
+      });
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  // Form verification handler. A VERIFIED status is only ever set from a
+  // validated provider response returned by the Koshit API.
+  const handleVerifyGstInModal = async () => {
     setErrorMsg('');
+    setPageNotice(null);
+
     if (!bpForm.gstinPan?.trim()) {
       setErrorMsg('Please enter a GSTIN number to verify.');
       return;
     }
 
-    const gst = bpForm.gstinPan.trim().toUpperCase();
-    const enteredName = bpForm.bpName?.trim().toUpperCase();
+    const gstin = normalizeGstin(bpForm.gstinPan);
 
-    // Regex check for 15-char GSTIN
-    const regex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-    if (!regex.test(gst)) {
-      setBpForm((prev) => ({ ...prev, gstStatus: 'FAILED' }));
-      setVerificationFeedback('Invalid GSTIN format. Must be 15 characters (e.g. 27AAACT2727Q1ZW).');
-      setErrorMsg('VERIFICATION FAILED: Invalid GSTIN format. Save is blocked.');
+    if (!isValidGstin(gstin)) {
+      setBpForm((prev) => ({
+        ...prev,
+        gstStatus: 'FAILED',
+        gstVerification: undefined,
+      }));
+      setGstLegalName('');
+      setVerificationFeedback(
+        'Invalid GSTIN format or check digit. No provider request was made.',
+      );
+      setErrorMsg(
+        'VERIFICATION FAILED: The GSTIN format or check digit is invalid. Save is blocked.',
+      );
       return;
     }
 
-    // STATE MISMATCH DEFECT FIX: Block verification & save if State Code Mismatches AND Exception not checked
     if (isGstStateMismatch && !gstExceptionApproved) {
-      setBpForm((prev) => ({ ...prev, gstStatus: 'FAILED' }));
+      setBpForm((prev) => ({
+        ...prev,
+        gstStatus: 'FAILED',
+        gstVerification: undefined,
+      }));
       setVerificationFeedback(
-        `GST State Code Mismatch Error: GSTIN starts with State Code ${currentGstStateCode} (${expectedGstStateName}), but Primary Address State is ${selectedStateName}. Save is BLOCKED.`
+        `GST State Code Mismatch Error: GSTIN starts with State Code ${currentGstStateCode} (${expectedGstStateName}), but Primary Address State is ${selectedStateName}. Save is BLOCKED.`,
       );
       setErrorMsg(
-        `SAVE BLOCKED: GSTIN State Code (${currentGstStateCode} - ${expectedGstStateName}) does not match Primary Address State (${selectedStateName}). Check Exception or correct State.`
+        `SAVE BLOCKED: GSTIN State Code (${currentGstStateCode} - ${expectedGstStateName}) does not match Primary Address State (${selectedStateName}). Check Exception or correct State.`,
       );
       return;
     }
 
     setVerifyingId('MODAL');
-    setTimeout(() => {
-      const stateCode = gst.slice(0, 2);
-      const stateName = GST_STATE_CODES[stateCode] || 'Maharashtra';
-      const now = new Date().toISOString();
 
-      const officialLegalName = enteredName || `OFFICIAL TAXPAYER (${gst})`;
-      setGstLegalName(officialLegalName);
-
+    try {
+      const record = await verifyGstinOnServer(gstin);
+      const verification = stripPersistence(record);
       const logEntry: BPGovernanceLog = {
         id: `gov-${Date.now()}`,
-        timestamp: now,
-        action: 'GSTIN Live Checksum & Legal Name Validation',
-        verifier: `${currentUser.fullName} (Govt GSTN Portal)`,
-        details: `GSTIN ${gst} verified. Legal Name: ${officialLegalName}. State Code ${stateCode} (${stateName}). Checksum passed. ${gstExceptionApproved ? `Exception Reason: ${gstExceptionReason}` : ''}`,
+        timestamp: verification.retrievedAt,
+        action: VERIFICATION_LOG_ACTION,
+        verifier: currentUser.fullName,
+        details: `GSTIN ${verification.gstin} verified via ${
+          verification.provider
+        }. Provider legal name: ${
+          verification.profile.legalName
+        }. Registration status: ${verification.profile.status}.${
+          gstExceptionApproved
+            ? ` Multi-state exception approved: ${gstExceptionReason}`
+            : ''
+        }`,
         status: 'VERIFIED',
       };
 
       setBpForm((prev) => ({
         ...prev,
-        bpName: prev.bpName || officialLegalName,
+        gstinPan: gstin,
         gstStatus: 'VERIFIED',
+        gstVerification: verification,
       }));
-      setVerificationFeedback(`Verified on Govt GSTN Portal — Official Legal Name (${officialLegalName}) Auto-Populated & Locked.`);
+      setGstLegalName(verification.profile.legalName);
+      setVerificationFeedback(
+        `Verified via ${verification.provider} on ${formatTimestamp(
+          verification.retrievedAt,
+        )}. Provider legal name: ${
+          verification.profile.legalName
+        }. Registration status: ${verification.profile.status}.`,
+      );
       setGovernanceLogs((prev) => [logEntry, ...prev]);
+      setPageNotice(
+        record.persisted
+          ? {
+              kind: 'success',
+              text: `GSTIN ${gstin} verified via ${verification.provider}.`,
+            }
+          : {
+              kind: 'warning',
+              text: `GSTIN ${gstin} was verified via ${verification.provider}, but ${
+                record.persistenceError ?? 'the result could not be saved.'
+              }`,
+            },
+      );
+
+      await loadFilingHistory(gstin, filingYear);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'GST verification failed.';
+
+      setBpForm((prev) => ({
+        ...prev,
+        gstStatus: 'FAILED',
+        gstVerification: undefined,
+      }));
+      setGstLegalName('');
+      setVerificationFeedback(message);
+      setErrorMsg(`GST verification failed: ${message}`);
+      setPageNotice({ kind: 'error', text: message });
+    } finally {
       setVerifyingId(null);
-    }, 1000);
+    }
   };
 
   // Property Toggle Handler
@@ -850,6 +1107,160 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     (isGstStateMismatch && !gstExceptionApproved)
   );
 
+  const handlePrintGst = (partner: BusinessPartner) => {
+    const verification = partner.gstVerification;
+
+    if (partner.gstStatus !== 'VERIFIED' || !verification) {
+      setPageNotice({
+        kind: 'error',
+        text: 'GST data cannot be printed until the GSTIN has been verified by the provider.',
+      });
+      return;
+    }
+
+    const matchingHistory =
+      filingHistory &&
+      filingHistory.gstin === verification.gstin &&
+      filingHistory.financialYear === filingYear
+        ? filingHistory
+        : null;
+
+    try {
+      printGstData({
+        businessPartner: partner,
+        verification,
+        filingHistory: matchingHistory
+          ? {
+              financialYear: matchingHistory.financialYear,
+              retrievedAt: matchingHistory.retrievedAt,
+              returns: matchingHistory.returns,
+            }
+          : null,
+      });
+    } catch (error) {
+      setPageNotice({
+        kind: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'The GST printout could not be opened.',
+      });
+    }
+  };
+
+  const renderFilingHistoryPanel = (gstin: string) => {
+    const normalized = normalizeGstin(gstin);
+    const matchingResult =
+      filingHistory && filingHistory.gstin === normalized ? filingHistory : null;
+
+    return (
+      <div className="border rounded-xl p-3 bg-white space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h5 className="font-bold text-slate-900 text-xs">
+              GST filing history (third-party provider)
+            </h5>
+            <p className="text-[10px] text-slate-500">
+              Loaded on demand. An empty result stays empty; a provider failure
+              is shown as a failure.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={filingYear}
+              onChange={(event) => {
+                setFilingYear(event.target.value);
+                setFilingHistory(null);
+                setFilingHistoryError('');
+              }}
+              className="text-xs p-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold"
+            >
+              {availableFinancialYears.map((year) => (
+                <option key={year} value={year}>
+                  FY {year}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void loadFilingHistory(normalized, filingYear)}
+              disabled={isLoadingFilings || !normalized}
+              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoadingFilings ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5" />
+              )}
+              Load returns
+            </button>
+          </div>
+        </div>
+
+        {filingHistoryError ? (
+          <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg font-semibold flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>Filing history unavailable: {filingHistoryError}</span>
+          </div>
+        ) : isLoadingFilings ? (
+          <p className="text-slate-500 italic">Retrieving filing history…</p>
+        ) : !matchingResult ? (
+          <p className="text-slate-400 italic">
+            Select a financial year and load returns to view provider data.
+          </p>
+        ) : matchingResult.returns.length === 0 ? (
+          <p className="text-slate-500 italic">
+            The provider returned no filing records for FY{' '}
+            {matchingResult.financialYear}.
+          </p>
+        ) : (
+          <div className="overflow-x-auto border rounded-lg">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase">
+                  <th className="p-2">Return type</th>
+                  <th className="p-2">Return period</th>
+                  <th className="p-2">Filing status</th>
+                  <th className="p-2">Filing date</th>
+                  <th className="p-2">ARN</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {matchingResult.returns.map((record) => (
+                  <tr
+                    key={`${record.returnType}-${record.returnPeriod}`}
+                    className="text-[11px] text-slate-700"
+                  >
+                    <td className="p-2 font-semibold">{record.returnType}</td>
+                    <td className="p-2 font-mono">{record.returnPeriod}</td>
+                    <td className="p-2">{record.filingStatus}</td>
+                    <td className="p-2">{record.filingDate || 'Unavailable'}</td>
+                    <td className="p-2 font-mono">{record.arn || 'Unavailable'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {matchingResult && (
+          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Source: {matchingResult.provider}</span>
+            <span>Retrieved: {formatTimestamp(matchingResult.retrievedAt)}</span>
+            {matchingResult.creditsRemaining !== null && (
+              <span>Provider credits remaining: {matchingResult.creditsRemaining}</span>
+            )}
+            {!matchingResult.persisted && (
+              <span className="text-amber-700 font-bold">
+                Not saved: {matchingResult.persistenceError}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4 text-xs select-none font-sans">
       {/* Title Header */}
@@ -861,7 +1272,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
           </h2>
           <p className="text-slate-500 text-xs mt-0.5">
             Full SAP Business One 9-Tab BP Interface: Customers, Suppliers/Vendors, Leads,
-            Geographic Cascading & Strict GSTIN Legal Name Save Gate.
+            Geographic Cascading & third-party GSTIN verification before save.
           </p>
         </div>
 
@@ -872,6 +1283,28 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
           <Plus className="w-4 h-4" /> Add Business Partner
         </button>
       </div>
+
+      {pageNotice && (
+        <div
+          className={`p-3 rounded-xl border text-xs font-semibold flex items-start justify-between gap-3 ${
+            pageNotice.kind === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : pageNotice.kind === 'warning'
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span>{pageNotice.text}</span>
+          <button
+            type="button"
+            onClick={() => setPageNotice(null)}
+            className="font-bold opacity-70 hover:opacity-100 cursor-pointer"
+            aria-label="Dismiss notice"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
@@ -966,7 +1399,16 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                       <div className="flex items-center gap-1.5">
                         <span className="text-slate-800 font-semibold">{bp.gstinPan || '—'}</span>
                         {bp.gstStatus === 'VERIFIED' ? (
-                          <span className="text-emerald-600 flex items-center gap-0.5" title="GSTIN Verified on Govt Portal">
+                          <span
+                            className="text-emerald-600 flex items-center gap-0.5"
+                            title={
+                              bp.gstVerification
+                                ? `GSTIN verified via ${bp.gstVerification.provider} on ${formatTimestamp(
+                                    bp.gstVerification.retrievedAt,
+                                  )}`
+                                : 'GSTIN status is not backed by provider data'
+                            }
+                          >
                             <ShieldCheck className="w-3.5 h-3.5" />
                           </span>
                         ) : (
@@ -1378,10 +1820,10 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
 
               {activeTab === 'GOVERNANCE' && (
                 <div className="space-y-4">
-                  <div className="p-3 bg-slate-900 text-white rounded-xl flex items-center justify-between">
+                  <div className="p-3 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-xs text-slate-400 uppercase font-bold">
-                        Current GSTIN Status
+                        Current GSTIN status
                       </div>
                       <div className="text-sm font-bold flex items-center gap-2 mt-0.5">
                         <span>{inspectedBp.gstinPan || 'No GSTIN'}</span>
@@ -1389,23 +1831,146 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             inspectedBp.gstStatus === 'VERIFIED'
                               ? 'bg-emerald-500 text-white'
+                              : inspectedBp.gstStatus === 'FAILED'
+                              ? 'bg-rose-500 text-white'
                               : 'bg-amber-500 text-slate-900'
                           }`}
                         >
                           {inspectedBp.gstStatus}
                         </span>
                       </div>
+                      {inspectedBp.gstVerification && (
+                        <p className="text-[10px] text-slate-300 mt-1">
+                          Source: {inspectedBp.gstVerification.provider} | Retrieved:{' '}
+                          {formatTimestamp(inspectedBp.gstVerification.retrievedAt)}
+                        </p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => handleVerifyGst(inspectedBp.id)}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" /> Re-Verify on GSTN API
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintGst(inspectedBp)}
+                        disabled={!inspectedBp.gstVerification}
+                        className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Print GST data
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleVerifyGst(inspectedBp.id)}
+                        disabled={verifyingId === inspectedBp.id}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 ${
+                            verifyingId === inspectedBp.id ? 'animate-spin' : ''
+                          }`}
+                        />
+                        Re-verify via provider
+                      </button>
+                    </div>
                   </div>
 
+                  {inspectedBp.gstVerification ? (
+                    <div className="border rounded-xl p-3 bg-white">
+                      <h5 className="font-bold text-slate-900 text-xs">
+                        Provider verification record
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Provider legal name
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {inspectedBp.gstVerification.profile.legalName}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Registration status
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {inspectedBp.gstVerification.profile.status}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Taxpayer type
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {inspectedBp.gstVerification.profile.taxpayerType ||
+                              'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Trade name
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {inspectedBp.gstVerification.profile.tradeName ||
+                              'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Registration date
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {inspectedBp.gstVerification.profile.registrationDate ||
+                              'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            State code
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {inspectedBp.gstVerification.profile.stateCode ||
+                              'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg col-span-1 md:col-span-2">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Registered address
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {[
+                              inspectedBp.gstVerification.profile.address,
+                              inspectedBp.gstVerification.profile.city,
+                              inspectedBp.gstVerification.profile.pincode,
+                            ]
+                              .filter(Boolean)
+                              .join(', ') || 'Unavailable'}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Provider credits remaining
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {inspectedBp.gstVerification.creditsRemaining ?? 'Unavailable'}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-2">
+                        Third-party data from {inspectedBp.gstVerification.provider}.
+                        This is not an official GST certificate or government document.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl font-semibold">
+                      No provider verification record is stored for this Business
+                      Partner. Run a verification to retrieve GST data.
+                    </div>
+                  )}
+
+                  {inspectedBp.gstinPan &&
+                    renderFilingHistoryPanel(inspectedBp.gstinPan)}
+
                   <div className="border rounded-xl p-3 bg-white space-y-2">
-                    <h5 className="font-bold text-slate-900 text-xs">Verification Audit Logs</h5>
+                    <h5 className="font-bold text-slate-900 text-xs">
+                      Verification activity
+                    </h5>
                     {!inspectedBp.governanceLogs || inspectedBp.governanceLogs.length === 0 ? (
                       <p className="text-slate-400 italic">No verification logs recorded.</p>
                     ) : (
@@ -1579,8 +2144,23 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                         </div>
                         <p className="text-[11px] mt-0.5">
                           {verificationFeedback ||
-                            'Run "Verify GST" below to validate GSTIN structure and check Legal Name match on Govt Portal before saving.'}
+                            'Run "Verify GST" to retrieve GSTIN details from the configured third-party provider before saving.'}
                         </p>
+                        {bpForm.gstVerification && (
+                          <div className="text-[10px] mt-1 text-slate-700 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                            <span>
+                              Source: {bpForm.gstVerification.provider}
+                            </span>
+                            <span>
+                              Retrieved:{' '}
+                              {formatTimestamp(bpForm.gstVerification.retrievedAt)}
+                            </span>
+                            <span>
+                              Registration status:{' '}
+                              {bpForm.gstVerification.profile.status}
+                            </span>
+                          </div>
+                        )}
                         {gstLegalName && (
                           <div className="text-[10px] font-bold font-mono mt-1 text-slate-800">
                             GST Legal Name: {gstLegalName}
@@ -1631,16 +2211,16 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                       />
                     </div>
 
-                    {/* OFFICIAL GST PORTAL LEGAL NAME (READ-ONLY / NOT EDITABLE) */}
+                    {/* THIRD-PARTY PROVIDER LEGAL NAME (READ-ONLY) */}
                     <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                           <Lock className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Legal Name (Official GST Portal Name)</span>
+                          <span>Provider Legal Name</span>
                         </label>
                         <span className="text-[10px] bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
                           <ShieldCheck className="w-3 h-3 text-indigo-600" />
-                          <span>Official GST Portal Value (Not Editable)</span>
+                          <span>Third-party provider value (read-only)</span>
                         </span>
                       </div>
                       <input
@@ -1649,15 +2229,16 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                         disabled
                         value={
                           gstLegalName ||
-                          bpForm.bpName ||
-                          (bpForm.gstinPan ? `VERIFIED LEGAL NAME FOR ${bpForm.gstinPan}` : 'Run GST Verification to Auto-Populate Legal Name')
+                          bpForm.gstVerification?.profile.legalName ||
+                          'Not verified — provider legal name will appear here'
                         }
                         className="w-full text-xs p-2.5 bg-slate-200/80 border border-slate-300 rounded-lg uppercase font-extrabold text-slate-900 cursor-not-allowed select-none shadow-inner"
                       />
                       <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
                         <span>🔒</span>
                         <span>
-                          This Legal Name is retrieved directly from Government GST Portal verification and cannot be edited manually.
+                          Retrieved from the configured third-party GST provider.
+                          This is not an official GST certificate or government document.
                         </span>
                       </p>
                     </div>
@@ -2223,32 +2804,79 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                     </div>
                   )}
 
-                  <div className="p-4 bg-slate-900 text-white rounded-xl flex items-center justify-between">
+                  <div className="p-4 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-xs text-slate-400 font-bold uppercase">
-                        Government GSTIN Live Verification Gateway
+                        GSTIN verification via third-party provider
                       </div>
                       <div className="font-mono font-bold text-sm text-indigo-300 mt-0.5">
                         {bpForm.gstinPan || 'NO GSTIN ENTERED'}
+                      </div>
+                      <div className="text-[10px] text-slate-300 mt-1">
+                        Source: gstinapi.in. Not an official government portal or certificate.
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={handleVerifyGstInModal}
                       disabled={verifyingId === 'MODAL'}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {verifyingId === 'MODAL' ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
                         <ShieldCheck className="w-4 h-4" />
                       )}
-                      Run GSTIN Live API Verification
+                      Verify GSTIN via provider
                     </button>
                   </div>
 
+                  {bpForm.gstVerification && (
+                    <div className="border rounded-xl p-3 bg-white">
+                      <h5 className="font-bold text-slate-900 text-xs">
+                        Provider verification record
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-[11px]">
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Provider legal name
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {bpForm.gstVerification.profile.legalName}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Registration status
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {bpForm.gstVerification.profile.status}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Source
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {bpForm.gstVerification.provider}
+                          </span>
+                        </div>
+                        <div className="p-2 bg-slate-50 border rounded-lg">
+                          <span className="text-slate-500 block text-[10px] font-semibold uppercase">
+                            Retrieved at
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {formatTimestamp(bpForm.gstVerification.retrievedAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {bpForm.gstinPan && renderFilingHistoryPanel(bpForm.gstinPan)}
+
                   <div className="border rounded-xl p-3 bg-white space-y-2">
-                    <h5 className="font-bold text-slate-900 text-xs">Recorded Verification Logs</h5>
+                    <h5 className="font-bold text-slate-900 text-xs">Recorded verification logs</h5>
                     {governanceLogs.length === 0 ? (
                       <p className="text-slate-400 italic">No verification logs yet.</p>
                     ) : (

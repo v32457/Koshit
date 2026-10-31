@@ -21,6 +21,8 @@
 
 ### 1.3 Business Rules & Save Gates
 - **GSTIN State-Code Consistency Gate:** Prevents saving a Business Partner if the 2-digit GSTIN state prefix (e.g. `33` Tamil Nadu) conflicts with the selected address state (e.g. `Maharashtra`).
+- **GST Provider Secret Isolation:** gstinapi.in calls are made only by the server. The `GST_API_PROVIDER_KEY` is read from server environment configuration and sent in the `x-api-key` header. It is never returned to the browser or included in the frontend bundle.
+- **GST Data Integrity:** Provider responses are accepted only when the GSTIN matches the request and required fields are valid. Provider, timeout, malformed payload, and database failures are surfaced as failures; no taxpayer or filing records are synthesized.
 - **Module Registry Feature Flags:** Disabling a module in Module Management (`/settings/module-management`) immediately gates all related routes, navigation items, and actions.
 
 ---
@@ -35,9 +37,13 @@
 | **Maker-Checker Control** | Self-Approval Prohibition | Tested with Item Maker & Checker accounts. | **PASSED** |
 | **Data Integrity Gate** | GSTIN State Code Consistency Check | Form save blocked on state mismatch. | **PASSED** |
 | **Secret Management** | Zero Secrets in Browser Bundles | Verified no raw secrets in `src/` or frontend bundles. | **PASSED** |
+| **GST Provider Credential Handling** | Server-Only `x-api-key` Usage | Provider tests assert the key is sent by the server and absent from client-facing responses. | **PASSED** |
+| **GST Data Truthfulness** | Fail-Closed Verification | Invalid GSTIN, mismatch, malformed response, provider failure, missing key, and DB failure all remain failures with no fabricated records. | **PASSED (automated tests)** |
 
 ---
 
 ## 3. Security Recommendation & Go-Live Approval
 
 The application meets OWASP Top 10 security standards for enterprise master data governance. All security gates, token obfuscations, and RBAC rules are fully operational and verified.
+
+**GST go-live condition:** Configure a valid `GST_API_PROVIDER_KEY` in the target server environment and complete one live GSTIN verification and filing-history lookup. Without that credential, the GST feature fails closed and remains externally blocked; it does not fall back to simulated data.

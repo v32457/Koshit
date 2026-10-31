@@ -8,8 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/test/itemCodeEngine.test.ts src/test/itemDescriptionEngine.test.ts"
+    "lint": "tsc --noEmit && tsc -p tsconfig.server.json",
+    "test": "node --import tsx --test src/test/itemCodeEngine.test.ts src/test/itemDescriptionEngine.test.ts src/test/gstin.test.ts src/test/financialYear.test.ts src/test/gstPrint.test.ts src/test/gstVerificationState.test.ts server/test/health.test.ts server/test/gstProvider.test.ts server/test/gstRoutes.test.ts",
+    "api:dev": "tsx watch server/src/index.ts",
+    "api:start": "tsx server/src/index.ts",
+    "db:migrate": "tsx server/src/migrate.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -19,6 +22,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "mysql2": "^3.15.3",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^8.3.0"

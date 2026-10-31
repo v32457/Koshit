@@ -22,6 +22,7 @@ import {
   Download,
 } from 'lucide-react';
 import { INITIAL_DASHBOARD_DEFINITIONS } from '../../data/dashboardCatalogue';
+import { INITIAL_BRANCHES } from '../../data/seedData';
 import { DashboardCustomizerModal } from './DashboardCustomizerModal';
 
 interface DashboardViewProps {
@@ -43,19 +44,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('ALL');
   const [timeframeFilter, setTimeframeFilter] = useState<string>('30D');
 
-  // Local Items State for interactive real-time sync actions
-  const [itemsList, setItemsList] = useState<GlobalItem[]>(items);
+  // Live items from the application state; this view never invents SAP outcomes.
   const [isSyncTableExpanded, setIsSyncTableExpanded] = useState<boolean>(false);
   const [syncActionMessage, setSyncActionMessage] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    setItemsList(items);
-  }, [items]);
-
-  // Filter items if branch drill-down selected
-  const filteredItems = itemsList.filter((item) => {
+  // Filter items to the selected branch using the item's recorded branch availability.
+  const filteredItems = items.filter((item) => {
     if (selectedBranchFilter === 'ALL') return true;
-    return true;
+    const branch = INITIAL_BRANCHES.find(
+      (b) => b.name.startsWith(selectedBranchFilter) || b.city === selectedBranchFilter,
+    );
+    if (!branch) return false;
+    return item.branchAvailability.some((a) => a.branchId === branch.id && a.isActive);
   });
 
   // Derived metric counts
@@ -91,69 +91,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const failedPct = totalSapItems > 0 ? Math.round((sapFailedCount / totalSapItems) * 100) : 0;
 
   // Interactive SAP Sync Actions
+  // No SAP connector or job queue exists in this build. These actions must not
+  // mutate local item state into a false "SYNCED" state.
   const handleForceSyncPending = () => {
-    if (sapPendingCount === 0) {
-      setSyncActionMessage('No pending items requiring Service Layer synchronization.');
-      setTimeout(() => setSyncActionMessage(null), 3000);
-      return;
-    }
-
-    setItemsList((prev) =>
-      prev.map((item) => {
-        if (
-          item.status === 'APPROVED' ||
-          item.status === 'SAP_PENDING' ||
-          item.sapSyncInfo?.syncStatus === 'PENDING'
-        ) {
-          return {
-            ...item,
-            status: 'SAP_CREATED',
-            sapSyncInfo: {
-              sapItemCode: item.globalItemCode,
-              companyDb: 'KOSH_PROD_HANA',
-              syncedAt: new Date().toISOString(),
-              syncStatus: 'SYNCED',
-            },
-          };
-        }
-        return item;
-      })
+    setSyncActionMessage(
+      'SAP dispatch is BLOCKED: no Business One Service Layer connector, credentials, or job queue is configured. No item was sent.',
     );
-
-    setSyncActionMessage(`Successfully dispatched ${sapPendingCount} pending item(s) to SAP Business One HANA Service Layer.`);
-    setTimeout(() => setSyncActionMessage(null), 4000);
   };
 
   const handleRetryFailedSync = () => {
-    if (sapFailedCount === 0) {
-      setSyncActionMessage('No failed synchronizations in dead-letter queue.');
-      setTimeout(() => setSyncActionMessage(null), 3000);
-      return;
-    }
-
-    setItemsList((prev) =>
-      prev.map((item) => {
-        if (
-          item.status === 'SAP_FAILED' ||
-          item.sapSyncInfo?.syncStatus === 'FAILED'
-        ) {
-          return {
-            ...item,
-            status: 'SAP_CREATED',
-            sapSyncInfo: {
-              sapItemCode: item.globalItemCode,
-              companyDb: 'KOSH_PROD_HANA',
-              syncedAt: new Date().toISOString(),
-              syncStatus: 'SYNCED',
-            },
-          };
-        }
-        return item;
-      })
+    setSyncActionMessage(
+      'DLQ retry is BLOCKED: no SAP connector or dead-letter queue backend is configured. No item was retried.',
     );
-
-    setSyncActionMessage(`Reprocessed and recovered ${sapFailedCount} failed item(s) to SAP B1 HANA.`);
-    setTimeout(() => setSyncActionMessage(null), 4000);
   };
 
   const handleDownloadSapAuditCsv = () => {
@@ -197,14 +146,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     MA: filteredItems.filter((i) => i.categoryCode === 'MA').length,
   };
 
-  // Branch allocation data
-  const branchData = [
-    { name: 'Pondicherry HQ', count: 3, percentage: 100 },
-    { name: 'Chennai Unit', count: 2, percentage: 67 },
-    { name: 'Hosur Plant', count: 2, percentage: 67 },
-    { name: 'Pune Assembly', count: 1, percentage: 33 },
-    { name: 'Dehradun Unit', count: 1, percentage: 33 },
-  ];
+  // Branch allocation derived from recorded branch availability on the live item set.
+  const branchTotalAssociations = filteredItems.reduce(
+    (sum, item) => sum + item.branchAvailability.filter((a) => a.isActive).length,
+    0,
+  );
+  const branchData = INITIAL_BRANCHES.map((b) => {
+    const count = filteredItems.filter((item) =>
+      item.branchAvailability.some((a) => a.branchId === b.id && a.isActive),
+    ).length;
+    return {
+      name: b.name,
+      count,
+      percentage: branchTotalAssociations > 0 ? Math.round((count / branchTotalAssociations) * 100) : 0,
+    };
+  });
 
   // Helper to map widget gridSpan to Tailwind col-span
   const getColSpanClass = (span: number) => {
@@ -295,9 +251,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <h3 className="font-bold text-sm text-white">
                   SAP Business One HANA — Real-Time Integration Sync Matrix
                 </h3>
-                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Service Layer Online
+                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Service Layer Not Configured
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -327,8 +283,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Sync Action Alert Message */}
         {syncActionMessage && (
-          <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 px-3.5 py-2 rounded-lg text-xs font-medium flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="bg-amber-500/20 border border-amber-500/40 text-amber-100 px-3.5 py-2 rounded-lg text-xs font-medium flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0" />
             <span>{syncActionMessage}</span>
           </div>
         )}
