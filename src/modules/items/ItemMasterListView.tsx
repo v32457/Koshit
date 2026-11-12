@@ -37,6 +37,8 @@ import { generateItemCode } from '../../services/itemCodeEngine';
 import { generateItemDescription } from '../../services/itemDescriptionEngine';
 import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
 import { OperatingContext } from '../../services/operatingContextService';
+import { ExportDropdown } from '../../components/ExportDropdown';
+import { isItemAvailableInBranch } from '../../utils/branchItemHelper';
 
 interface ItemMasterListViewProps {
   items: GlobalItem[];
@@ -132,13 +134,16 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
 
       // Branch filter
       if (branchFilter !== 'ALL') {
-        const hasBranch = item.branchAvailability.some((b) => b.branchId === branchFilter && b.isActive);
+        const targetBranch = allBranches.find(
+          (b) => b.id === branchFilter || b.code === branchFilter || b.portalBranchCode === branchFilter
+        );
+        const hasBranch = isItemAvailableInBranch(item, targetBranch);
         if (!hasBranch) return false;
       }
 
       return true;
     });
-  }, [items, searchTerm, categoryFilter, governanceFilter, sapFilter, branchFilter]);
+  }, [items, searchTerm, categoryFilter, governanceFilter, sapFilter, branchFilter, allBranches]);
 
   // Sort Logic
   const sortedItems = useMemo(() => {
@@ -220,37 +225,48 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
     sapFilter !== 'ALL' ||
     branchFilter !== 'ALL';
 
-  // Export CSV
-  const exportToCsv = () => {
+  // Multi-format Export Data Generator (PDF, Excel, Word, CSV)
+  const getExportData = () => {
     const headers = [
-      'GlobalItemCode',
+      'Global Item Code',
       'Category',
-      'GeneratedDescription',
-      'GovernanceStatus',
-      'SAPStatus',
-      'SAPItemCode',
-      'BranchCount',
-      'CreatedAt',
+      'Generated Description',
+      'Governance Status',
+      'SAP Status',
+      'SAP Item Code',
+      'Active Branches',
+      'Created Date',
     ];
-    const rows = sortedItems.map((i) => [
-      i.globalItemCode,
-      i.categoryCode,
-      `"${i.description.replace(/"/g, '""')}"`,
-      i.status,
-      i.sapSyncInfo?.syncStatus || 'NOT_SYNCED',
-      i.sapSyncInfo?.sapItemCode || '',
-      i.branchAvailability.length,
-      i.createdAt,
-    ]);
-    const csvContent =
-      'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `kosh_global_items_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const rows = sortedItems.map((i) => {
+      const activeBranchCodes = i.branchAvailability
+        .filter((ba) => ba.isActive === true)
+        .map((ba) => {
+          const br = allBranches.find((b) => b.id === ba.branchId);
+          return br?.code || br?.portalBranchCode || ba.branchId;
+        })
+        .join(', ');
+
+      return [
+        i.globalItemCode,
+        i.categoryCode,
+        i.description,
+        i.status,
+        i.sapSyncInfo?.syncStatus || 'NOT_SYNCED',
+        i.sapSyncInfo?.sapItemCode || 'N/A',
+        activeBranchCodes || 'None',
+        i.createdAt ? new Date(i.createdAt).toLocaleDateString() : '',
+      ];
+    });
+
+    const activeBranchObj = allBranches.find((b) => b.id === branchFilter);
+    return {
+      title: 'Kosh Innovations — Global Item Master',
+      subtitle: 'Authoritative Central Item Registry Across All Manufacturing Plants',
+      scopeLabel: branchFilter !== 'ALL' && activeBranchObj ? `Branch: ${activeBranchObj.name} [${activeBranchObj.portalBranchCode || activeBranchObj.code}]` : 'All Authorized Companies & Branches',
+      headers,
+      rows,
+      filenamePrefix: `global_items_catalog`,
+    };
   };
 
   // Bulk Import Parser & Validator
@@ -473,13 +489,7 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
             </button>
           )}
 
-          <button
-            onClick={exportToCsv}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition cursor-pointer shadow-xs"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-500" />
-            <span>Export CSV</span>
-          </button>
+          <ExportDropdown getData={getExportData} label="Export" />
 
           <button
             onClick={handleDownloadCsvTemplate}
@@ -666,19 +676,7 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                   </div>
                 </th>
 
-                {/* 2. Category */}
-                <th
-                  onClick={() => handleSort('categoryCode')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-200/70 transition"
-                  title="Sort by Category"
-                >
-                  <div className="flex items-center">
-                    <span>Category</span>
-                    {renderSortIcon('categoryCode')}
-                  </div>
-                </th>
-
-                {/* 3. Generated Description */}
+                {/* 2. Generated Description */}
                 <th
                   onClick={() => handleSort('description')}
                   className="p-3.5 cursor-pointer hover:bg-slate-200/70 transition"
@@ -690,19 +688,7 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                   </div>
                 </th>
 
-                {/* 4. Branch Availability */}
-                <th
-                  onClick={() => handleSort('branchCount')}
-                  className="p-3.5 cursor-pointer hover:bg-slate-200/70 transition"
-                  title="Sort by Branch Availability"
-                >
-                  <div className="flex items-center">
-                    <span>Branch Availability</span>
-                    {renderSortIcon('branchCount')}
-                  </div>
-                </th>
-
-                {/* 5. Governance Status */}
+                {/* 3. Governance Status */}
                 <th
                   onClick={() => handleSort('status')}
                   className="p-3.5 cursor-pointer hover:bg-slate-200/70 transition"
@@ -714,7 +700,7 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                   </div>
                 </th>
 
-                {/* 6. SAP Status */}
+                {/* 4. SAP Status */}
                 <th
                   onClick={() => handleSort('sapStatus')}
                   className="p-3.5 cursor-pointer hover:bg-slate-200/70 transition"
@@ -726,21 +712,25 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                   </div>
                 </th>
 
-                {/* 7. Action */}
+                {/* 5. Action */}
                 <th className="p-3.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">
+                  <td colSpan={5} className="p-8 text-center text-slate-500">
                     No items match the search or filter criteria.
                   </td>
                 </tr>
               ) : (
                 paginatedItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-mono font-bold text-cyan-800">
+                  <tr
+                    key={item.id}
+                    className="hover:bg-indigo-50/50 transition cursor-pointer"
+                    onClick={() => setSelectedItem(item)}
+                  >
+                    <td className="p-3.5 font-mono font-bold text-indigo-700 hover:underline">
                       {item.globalItemCode}
                       {item.isProvisionalCode && (
                         <span className="ml-1 text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-sans font-semibold">
@@ -749,31 +739,8 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                       )}
                     </td>
 
-                    <td className="p-3.5">
-                      <span className="font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[11px]">
-                        {item.categoryCode}
-                      </span>
-                    </td>
-
                     <td className="p-3.5 text-slate-800 font-medium max-w-md truncate" title={item.description}>
                       {item.description}
-                    </td>
-
-                    <td className="p-3.5">
-                      <div className="flex flex-wrap gap-1">
-                        {item.branchAvailability.map((ba) => {
-                          const br = allBranches.find((b) => b.id === ba.branchId);
-                          return (
-                            <span
-                              key={ba.branchId}
-                              className="bg-blue-50 border border-blue-200 text-blue-800 text-[10px] px-1.5 py-0.2 rounded font-semibold"
-                              title={`${br?.name || 'Branch'} • Stocked: ${ba.isStocked} • Mfg: ${ba.isManufactured}`}
-                            >
-                              {br?.code || 'BR'}
-                            </span>
-                          );
-                        })}
-                      </div>
                     </td>
 
                     <td className="p-3.5">
@@ -803,12 +770,12 @@ CO,Synthetic Industrial Lubricant ISO 68,OIL-68,20 Litre Drum,CH,NA,AM,CASTROL`;
                       )}
                     </td>
 
-                    <td className="p-3.5 text-right">
+                    <td className="p-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => setSelectedItem(item)}
-                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline cursor-pointer"
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ml-auto"
                       >
-                        Inspect Details
+                        <Eye className="w-3.5 h-3.5" /> Inspect Details
                       </button>
                     </td>
                   </tr>

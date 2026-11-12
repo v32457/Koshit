@@ -9,6 +9,7 @@ import {
   Inbox,
   Settings,
   Shield,
+  Clock,
   Layers,
   Code2,
   FileCode2,
@@ -38,6 +39,9 @@ import {
   LayoutGrid,
   Building2,
   RefreshCw,
+  Wrench,
+  Coins,
+  UserCheck,
 } from 'lucide-react';
 
 interface NavigationSidebarProps {
@@ -64,9 +68,16 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   const isBpMasterEnabled = moduleRegistry
     ? moduleRegistry.find((m) => m.moduleKey === 'BUSINESS_PARTNER_MASTER')?.isEnabled ?? true
     : true;
+  const isPrModuleEnabled = moduleRegistry
+    ? moduleRegistry.find((m) => m.moduleKey === 'PURCHASE_REQUISITION')?.isEnabled ?? true
+    : true;
+  const isRfqModuleEnabled = moduleRegistry
+    ? moduleRegistry.find((m) => m.moduleKey === 'RFQ_SOURCING')?.isEnabled ?? true
+    : true;
 
   // Section Expansion States
   const [itemsExpanded, setItemsExpanded] = useState(true);
+  const [rfqExpanded, setRfqExpanded] = useState(true);
   const [commHubExpanded, setCommHubExpanded] = useState(true);
   const [settingsExpanded, setSettingsExpanded] = useState(true);
   const [settingsItemExpanded, setSettingsItemExpanded] = useState(true);
@@ -165,6 +176,13 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                     <span className="truncate">Branch Item Availability</span>
                   </button>
                 )}
+
+                {matchesSearch('Branch-Created Items') && (
+                  <button onClick={() => onNavigate('/items/branch-catalog')} className={`w-full ${itemClass('/items/branch-catalog', true)}`}>
+                    <Box className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">Branch-Created Items</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -185,6 +203,172 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           <button onClick={() => onNavigate('/requests')} className={`w-full ${itemClass('/requests')}`}>
             <FileText className="w-4 h-4 text-blue-400 shrink-0" />
             <span className="truncate">My Requests</span>
+          </button>
+        )}
+
+        {/* Purchase Requisitions & Buyer Management (Phase 1) */}
+        {isPrModuleEnabled && (
+          <div className="space-y-0.5">
+            {matchesSearch('Purchase Requisitions') && (
+              <button onClick={() => onNavigate('/purchasing/requisitions')} className={`w-full ${itemClass('/purchasing/requisitions')}`}>
+                <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="truncate">Purchase Requisitions</span>
+              </button>
+            )}
+
+            {matchesSearch('Buyer & Procurement Queue') && (
+              <button onClick={() => onNavigate('/purchasing/buyer-management')} className={`w-full ${itemClass('/purchasing/buyer-management')}`}>
+                <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="truncate">Buyer Workload & Queue</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Procurement & RFQ Sourcing Subsystem */}
+        {isRfqModuleEnabled && (
+          <div className="pt-2 border-t border-slate-800/80">
+            <button
+              onClick={() => setRfqExpanded(!rfqExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5">
+                <Layers className="w-4 h-4 text-indigo-400 shrink-0" />
+                <span className="truncate font-bold text-indigo-300">Procurement & Sourcing</span>
+              </div>
+              {rfqExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
+            </button>
+
+            {rfqExpanded && (
+              <div className="space-y-0.5 mt-0.5">
+                {/* 1. SOURCING SUBGROUP */}
+                <div className="ml-2 pt-1">
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                    <FileText className="w-3 h-3 text-indigo-400" />
+                    <span>Sourcing</span>
+                  </div>
+
+                  {matchesSearch('Purchase Request') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/sourcing/purchase-requests')}
+                      className={`w-full ${itemClass('/procurement/sourcing/purchase-requests', true)}`}
+                    >
+                      <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <span className="truncate">Purchase Request</span>
+                    </button>
+                  )}
+
+                  {(matchesSearch('Future RFQ Floating') || matchesSearch('Sourcing Demand Pipeline')) && (
+                    <button
+                      onClick={() => onNavigate('/procurement/future-floating')}
+                      className={`w-full ${itemClass('/procurement/future-floating', true)}`}
+                    >
+                      <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="truncate">Future RFQ Floating – Sourcing Demand Pipeline</span>
+                    </button>
+                  )}
+
+                  {matchesSearch('RFQ') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/rfq')}
+                      className={`w-full ${itemClass('/procurement/rfq', true)}`}
+                    >
+                      <Layers className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span className="truncate">RFQ</span>
+                    </button>
+                  )}
+
+                  {/* Accessible secondary actions if searched */}
+                  {searchQuery.trim() && matchesSearch('Supplier Quotations') && (
+                    <button onClick={() => onNavigate('/procurement/quotations')} className={`w-full ${itemClass('/procurement/quotations', true)}`}>
+                      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="truncate">Supplier Quotations</span>
+                    </button>
+                  )}
+
+                  {searchQuery.trim() && matchesSearch('Comparative Statement') && (
+                    <button onClick={() => onNavigate('/procurement/comparative-statement')} className={`w-full ${itemClass('/procurement/comparative-statement', true)}`}>
+                      <BarChart3 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">Comparative Statement & Award</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 2. PRICE BOOKS SUBGROUP */}
+                <div className="ml-2 pt-1 border-t border-slate-800/40">
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1.5">
+                    <Warehouse className="w-3 h-3 text-teal-400" />
+                    <span>Price Books</span>
+                  </div>
+
+                  {(matchesSearch('Approved Vendor Item Price Register') || matchesSearch('Price Register')) && (
+                    <button
+                      onClick={() => onNavigate('/procurement/price-register')}
+                      className={`w-full ${itemClass('/procurement/price-register', true)}`}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                      <span className="truncate">Approved Vendor Item Price Register</span>
+                    </button>
+                  )}
+
+                  {matchesSearch('Purchase Price Book') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/price-book')}
+                      className={`w-full ${itemClass('/procurement/price-book', true)}`}
+                    >
+                      <Warehouse className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="truncate">Purchase Price Book</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 3. ORDERS & GOVERNANCE SUBGROUP */}
+                <div className="ml-2 pt-1 border-t border-slate-800/40">
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
+                    <Box className="w-3 h-3 text-rose-400" />
+                    <span>Orders & Governance</span>
+                  </div>
+
+                  {matchesSearch('Purchase Orders') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/purchase-orders')}
+                      className={`w-full ${itemClass('/procurement/purchase-orders', true)}`}
+                    >
+                      <Box className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span className="truncate">Purchase Orders & Allocations</span>
+                    </button>
+                  )}
+
+                  {matchesSearch('Goods Receipt') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/goods-receipt')}
+                      className={`w-full ${itemClass('/procurement/goods-receipt', true)}`}
+                    >
+                      <FileCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">Goods Receipt & UOM</span>
+                    </button>
+                  )}
+
+                  {matchesSearch('Procurement Dashboard') && (
+                    <button
+                      onClick={() => onNavigate('/procurement/dashboard')}
+                      className={`w-full ${itemClass('/procurement/dashboard', true)}`}
+                    >
+                      <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span className="truncate">Procurement Dashboard</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Asset, Equipment & Maintenance Master */}
+        {matchesSearch('Asset & Equipment Master') && (
+          <button onClick={() => onNavigate('/assets-equipment')} className={`w-full ${itemClass('/assets-equipment')}`}>
+            <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">Asset & Equipment Master</span>
           </button>
         )}
 
@@ -288,6 +472,13 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 </button>
               )}
 
+              {(matchesSearch('API Providers') || matchesSearch('API Providers & Usage') || matchesSearch('Verification')) && (
+                <button onClick={() => onNavigate('/settings/api-providers')} className={`w-full ${itemClass('/settings/api-providers', true)}`}>
+                  <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">API Providers & Usage</span>
+                </button>
+              )}
+
               {matchesSearch('Module Management') && (
                 <button onClick={() => onNavigate('/settings/module-management')} className={`w-full ${itemClass('/settings/module-management', true)}`}>
                   <Settings2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
@@ -301,6 +492,8 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                   <span className="truncate">Approval Workflows</span>
                 </button>
               )}
+
+
 
               {/* Organization Governance */}
               <div>
@@ -318,6 +511,13 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                       <button onClick={() => onNavigate('/settings/organizations')} className={`w-full ${itemClass('/settings/organizations', true)}`}>
                         <Building className="w-3 h-3 text-cyan-400 shrink-0" />
                         <span className="truncate">Organization & Branch</span>
+                      </button>
+                    )}
+
+                    {matchesSearch('Purchase Organization') && (
+                      <button onClick={() => onNavigate('/settings/purchase-org')} className={`w-full ${itemClass('/settings/purchase-org', true)}`}>
+                        <Layers className="w-3 h-3 text-indigo-400 shrink-0" />
+                        <span className="truncate">Purchase Organization</span>
                       </button>
                     )}
 

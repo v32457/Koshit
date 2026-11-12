@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { CLASSIFICATION_DIMENSIONS, INITIAL_ITEM_CODE_RULES, INITIAL_DESCRIPTION_RULES } from '../../data/seedData';
 import { generateItemCode } from '../../services/itemCodeEngine';
 import { generateItemDescription } from '../../services/itemDescriptionEngine';
-import { GlobalItem, User, ItemCodeRule, ItemDescriptionRule } from '../../types';
+import { BuyerService } from '../../services/buyerService';
+import { GlobalItem, User, ItemCodeRule, ItemDescriptionRule, BuyerAssignmentRecord } from '../../types';
 import {
   FilePlus2,
   CheckCircle2,
@@ -58,6 +59,27 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
   const [partModelNumber, setPartModelNumber] = useState<string>('B0010');
   const [ratingSize, setRatingSize] = useState<string>('');
   const [specification, setSpecification] = useState<string>('Injection Grade V0');
+  const [assignedBuyer, setAssignedBuyer] = useState<BuyerAssignmentRecord | null>(null);
+
+  // Auto-assign buyer
+  React.useEffect(() => {
+    if (operatingContext) {
+      const buyer = BuyerService.getDefaultBuyer(operatingContext.activeCompanyId, operatingContext.activeBranchId, category);
+      setAssignedBuyer(buyer || null);
+    }
+  }, [category, operatingContext]);
+
+  // Item Master Controls (Features 11-20)
+  const [shelfLifeApplicable, setShelfLifeApplicable] = useState(false);
+  const [shelfLifeDays, setShelfLifeDays] = useState(180);
+  const [minRemainingShelfLifeDays, setMinRemainingShelfLifeDays] = useState(30);
+  const [serialControlApplicable, setSerialControlApplicable] = useState(false);
+  const [warrantyApplicable, setWarrantyApplicable] = useState(false);
+  const [warrantyMonths, setWarrantyMonths] = useState(12);
+  const [moq, setMoq] = useState(1);
+  const [orderMultiple, setOrderMultiple] = useState(1);
+  const [inventoryUom, setInventoryUom] = useState('KG');
+  const [isServiceItem, setIsServiceItem] = useState(false);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationSuccess, setValidationSuccess] = useState<boolean | null>(null);
@@ -246,6 +268,24 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
         partModelNumber,
         ratingSize,
         specification,
+      },
+      shelfLifeControl: {
+        isApplicable: shelfLifeApplicable,
+        durationDays: shelfLifeDays,
+        minRemainingShelfLifeDays,
+      },
+      serialNumberControl: {
+        isApplicable: serialControlApplicable,
+      },
+      warrantyPolicy: {
+        isApplicable: warrantyApplicable,
+        standardDurationMonths: warrantyMonths,
+      },
+      procurementControls: {
+        moq,
+        orderMultiple,
+        inventoryUom,
+        isServiceItem,
       },
       createdBy: currentUser.id,
       codeRuleVersion: activeCodeRule.version,
@@ -817,10 +857,23 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
         <div>
           <h3 className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-bold">3</span>
-            Separate Custom Specifications
+            Separate Custom Specifications & Procurement
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 bg-indigo-50/40 p-4 rounded-xl border border-indigo-100">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 bg-indigo-50/40 p-4 rounded-xl border border-indigo-100">
+            {/* Buyer Assignment */}
+            <div className="md:col-span-1">
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Default Assigned Buyer
+              </label>
+              <div className="p-2 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700">
+                {assignedBuyer ? `${assignedBuyer.buyerName}` : 'No Buyer Assigned'}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Automatically assigned based on Category, Company & Branch.
+              </p>
+            </div>
+            
             {/* Customer / Manufacturer / Brand (Master) */}
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
@@ -856,6 +909,136 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
               <p className="text-[11px] text-slate-500 mt-1">
                 Customer-specific drawing, catalog part number, or equipment model.
               </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Item Master Controls & Compliance (Shelf Life, Serial, Warranty, MOQ, UOM, Service) */}
+        <div>
+          <h3 className="font-bold text-sm text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2 mt-6">
+            <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-xs flex items-center justify-center font-bold">4</span>
+            Item Master Controls & Compliance (Shelf Life, Serial, Warranty, MOQ, UOM, Service)
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 bg-emerald-50/40 p-4 rounded-xl border border-emerald-100 text-xs">
+            {/* Shelf Life Control */}
+            <div className="space-y-2 bg-white p-3 rounded-lg border border-slate-200">
+              <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={shelfLifeApplicable}
+                  onChange={(e) => setShelfLifeApplicable(e.target.checked)}
+                  className="rounded text-emerald-600 w-4 h-4 cursor-pointer"
+                />
+                <span>Shelf-Life Controlled</span>
+              </label>
+              {shelfLifeApplicable && (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700">Shelf-Life Duration (Days)</label>
+                    <input
+                      type="number"
+                      value={shelfLifeDays}
+                      onChange={(e) => setShelfLifeDays(Number(e.target.value) || 180)}
+                      className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700">Min Remaining Shelf Life (Days)</label>
+                    <input
+                      type="number"
+                      value={minRemainingShelfLifeDays}
+                      onChange={(e) => setMinRemainingShelfLifeDays(Number(e.target.value) || 30)}
+                      className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Serial & Warranty Controls */}
+            <div className="space-y-3 bg-white p-3 rounded-lg border border-slate-200">
+              <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={serialControlApplicable}
+                  onChange={(e) => setSerialControlApplicable(e.target.checked)}
+                  className="rounded text-emerald-600 w-4 h-4 cursor-pointer"
+                />
+                <span>Serial-Number Tracked</span>
+              </label>
+
+              <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer pt-2 border-t border-slate-100">
+                <input
+                  type="checkbox"
+                  checked={warrantyApplicable}
+                  onChange={(e) => setWarrantyApplicable(e.target.checked)}
+                  className="rounded text-emerald-600 w-4 h-4 cursor-pointer"
+                />
+                <span>Warranty Applicable</span>
+              </label>
+              {warrantyApplicable && (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700">Standard Warranty (Months)</label>
+                  <input
+                    type="number"
+                    value={warrantyMonths}
+                    onChange={(e) => setWarrantyMonths(Number(e.target.value) || 12)}
+                    className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Procurement & UOM Controls */}
+            <div className="space-y-3 bg-white p-3 rounded-lg border border-slate-200">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700">MOQ</label>
+                  <input
+                    type="number"
+                    value={moq}
+                    onChange={(e) => setMoq(Number(e.target.value) || 1)}
+                    className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700">Order Multiple</label>
+                  <input
+                    type="number"
+                    value={orderMultiple}
+                    onChange={(e) => setOrderMultiple(Number(e.target.value) || 1)}
+                    className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700">Inventory UOM *</label>
+                <select
+                  value={inventoryUom}
+                  onChange={(e) => setInventoryUom(e.target.value)}
+                  className="w-full p-1.5 border border-slate-300 rounded font-bold"
+                >
+                  <option value="KG">KG (Kilograms)</option>
+                  <option value="NOS">NOS (Numbers)</option>
+                  <option value="PCS">PCS (Pieces)</option>
+                  <option value="LTR">LTR (Litres)</option>
+                  <option value="BOX">BOX (Boxes)</option>
+                  <option value="METRE">METRE</option>
+                  <option value="SET">SET</option>
+                </select>
+              </div>
+
+              <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={isServiceItem}
+                  onChange={(e) => setIsServiceItem(e.target.checked)}
+                  className="rounded text-emerald-600 w-4 h-4 cursor-pointer"
+                />
+                <span>Service Item / Non-Catalogue</span>
+              </label>
             </div>
           </div>
         </div>

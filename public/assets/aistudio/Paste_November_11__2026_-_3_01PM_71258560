@@ -1,0 +1,1562 @@
+# MASTER AUTONOMOUS DEVELOPMENT PROMPT
+# ENTERPRISE-GRADE EXPORT-LEVEL RFQ AND PROCUREMENT SOURCING SYSTEM
+## Complete End-to-End Implementation — All Phases — No User Input Required Between Phases
+
+You are acting as a Principal Enterprise ERP Architect, Procurement Domain Architect, Senior Full-Stack Engineer, Database Architect, AI/LLM Infrastructure Engineer, Cybersecurity Architect, QA Automation Engineer and Technical Lead.
+
+Your assignment is to inspect, complete, integrate, test and deliver a fully functional, enterprise-grade RFQ (Request for Quotation) and procurement sourcing subsystem within the EXISTING application.
+
+This is not a greenfield project.
+
+Do not build a separate demonstration application. Do not create disconnected prototype screens. Do not replace functioning modules unnecessarily.
+
+The result must be a fully integrated procurement system with real database persistence, functioning APIs, real business rules, complete authorization, auditability, local AI model management and tested end-to-end workflows.
+
+==================================================
+0. AUTONOMOUS EXECUTION — NON-NEGOTIABLE
+==================================================
+
+Execute all implementation phases sequentially without asking the user to approve each phase.
+
+Do not stop after analysis, architecture documentation, database design, frontend mockups or initial implementation.
+
+Do not ask routine clarification questions.
+
+When a requirement is not completely specified:
+1. Inspect the existing application and database.
+2. Reuse existing business rules and services.
+3. Apply established enterprise procurement practices.
+4. Select the safest deterministic implementation.
+5. Record the assumption and implementation decision.
+6. Continue execution.
+
+If an existing capability is already correctly implemented, reuse it and test it. Do not duplicate it.
+
+If an integration is unavailable, implement the correct adapter interface, configuration, failure handling and operational UI. Clearly report the unavailable external dependency rather than fabricating functionality.
+
+Never fabricate data, supplier prices, quotations, GST verification, approval records, test results or LLM responses.
+
+Continue until all implementable phases are completed and verified.
+
+Only stop for a genuinely destructive or irreversible action that cannot safely be performed within the existing authorization. Preserve data and use reversible migrations.
+
+Maintain a persistent implementation checklist and progress record so execution can resume without losing completed work.
+
+==================================================
+1. INITIAL REPOSITORY AND APPLICATION AUDIT
+==================================================
+
+Before modifying code, inspect:
+
+- Complete frontend source tree.
+- Backend source tree.
+- Database schema and migrations.
+- Company Master.
+- Branch Master.
+- Purchase Organization.
+- Item Master.
+- Inventory UOM and Purchase UOM.
+- Vendor/Supplier Master.
+- User Master.
+- Buyer and Purchasing Manager assignments.
+- Purchase Requisition.
+- Existing approval engine.
+- Purchase Order.
+- Goods Receipt and inventory transactions.
+- Audit service.
+- Authentication and RBAC.
+- File/attachment storage.
+- Existing AI/LLM integration.
+- Existing search provider integrations.
+- Existing reporting and export services.
+
+Determine the actual technology stack and follow it.
+
+Produce an internal implementation gap report covering:
+- Existing reusable components.
+- Missing functionality.
+- Incomplete functionality.
+- Duplicate or conflicting logic.
+- Security weaknesses.
+- Database changes required.
+- API changes required.
+- Frontend changes required.
+- Integration dependencies.
+
+Do not claim that a feature exists merely because a menu item or placeholder component exists.
+
+Do not replace the existing database, authentication, approval engine or master data.
+
+Do not introduce duplicate Company, Branch, Vendor, Item, UOM or User masters.
+
+==================================================
+2. TARGET ARCHITECTURE
+==================================================
+
+Build the RFQ subsystem using the existing application's architecture.
+
+Maintain clear separation between:
+
+A. Master data.
+B. Procurement configuration.
+C. Purchase requisition and sourcing demand.
+D. RFQ and supplier communication.
+E. Supplier quotation management.
+F. Examination and evaluation.
+G. Award and vendor price agreements.
+H. Purchase Price Book.
+I. Purchase Order generation.
+J. LLM infrastructure and AI examiner.
+K. Audit, reporting and governance.
+
+Use service-layer business logic. Do not put critical procurement calculations exclusively in frontend code.
+
+All monetary, quantity, allocation, validity and approval rules must be enforced server-side.
+
+Use database transactions and appropriate concurrency controls for PO creation, allocation, price updates and award processing.
+
+Use the application's existing database technology. Add properly indexed relational entities and migrations only when required.
+
+==================================================
+3. PROCUREMENT NAVIGATION
+==================================================
+
+Provide a coherent procurement navigation structure.
+
+Procurement Management:
+
+1. Procurement Dashboard
+2. Purchase Requisitions
+3. RFQ Configuration
+4. Future RFQ Floating
+5. Market Price Benchmark
+6. Create RFQ
+7. Supplier Invitations
+8. Supplier Quotations
+9. RFQ Examiner
+10. Technical Evaluation
+11. Commercial Evaluation
+12. Comparative Statement
+13. Negotiation Management
+14. RFQ Award and Approval
+15. Vendor Item Price Register
+16. Purchase Price Book
+17. Purchase Order
+18. Procurement Reports
+19. Procurement Audit Log
+
+LLM Management:
+
+1. Local Model Registry
+2. Model Downloads
+3. Installed Models
+4. Model Deployment
+5. Default Model Configuration
+6. Examiner Engine Configuration
+7. Model Health and Performance
+8. Cloud Examiner Configuration (optional and disabled by default)
+
+ASN Management must remain reserved for future implementation. Do not activate ASN APIs, workflows or supplier functions now.
+
+Use the existing application navigation and design system. Do not introduce duplicate menus.
+
+==================================================
+4. COMPANY AND BRANCH RFQ POLICY
+==================================================
+
+RFQ enablement must be independently configurable by company, with branch inheritance and authorized overrides.
+
+Supported modes:
+
+- RFQ Enabled.
+- RFQ Disabled.
+
+Rules:
+
+IF RFQ IS ENABLED:
+Use approved RFQ awards and the Vendor Item Price Register as the purchasing price source.
+
+IF RFQ IS DISABLED:
+The approved Purchase Price Book becomes the mandatory purchasing price source.
+
+A branch may override the company default only if authorized by company policy.
+
+Store:
+- Company.
+- Branch.
+- Purchase Organization.
+- RFQ enabled/disabled.
+- Inheritance/override indicator.
+- Effective dates.
+- Configuration owner.
+- Approval reference.
+- Audit history.
+
+Never silently switch from RFQ pricing to Price Book pricing.
+
+If the configured purchasing mechanism has no valid approved price source, block normal PO release and initiate the configured exception process.
+
+Previously approved transactions must retain their original sourcing configuration and price snapshots.
+
+==================================================
+5. FUTURE RFQ FLOATING — SOURCING PIPELINE
+==================================================
+
+Implement Future RFQ Floating as a dedicated sourcing demand pipeline.
+
+It is not itself an RFQ document.
+
+Automatically retrieve eligible PR requirements for companies and branches where RFQ is enabled.
+
+Support visibility of:
+- Draft PR.
+- Pending PR approval.
+- Approved PR.
+- Partially sourced PR.
+- Scheduled sourcing.
+- On-hold sourcing.
+- Fully sourced PR.
+- Exempted PR.
+
+Do not allow supplier-facing RFQ invitations or RFQ release before required PR approvals unless an explicitly configured and authorized pre-approval sourcing policy permits it.
+
+Provide filters for:
+- Company.
+- Branch.
+- Purchase Organization.
+- PR number.
+- Buyer.
+- Purchasing Manager.
+- Department.
+- Item category.
+- Item code.
+- Required quantity.
+- Required delivery date.
+- Approval status.
+- RFQ status.
+- Planned sourcing date.
+- Ageing.
+
+Support:
+- Schedule RFQ.
+- Create RFQ.
+- Hold and release.
+- Authorized exemption with reason.
+- Consolidate compatible PR lines.
+- Split a PR across multiple RFQs.
+- Partially convert PR quantities.
+- Track remaining quantities.
+- View sourcing history.
+
+Prevent duplicate RFQ conversion and over-allocation.
+
+Preserve the original PR and quantity reconciliation.
+
+==================================================
+6. DUAL UOM GOVERNANCE — MANDATORY
+==================================================
+
+The existing Item Master is the authoritative source for both:
+
+1. Inventory UOM.
+2. Purchase UOM.
+
+Use this mandatory mapping:
+
+| Module | UOM |
+| Item Master | Defines Inventory UOM and Purchase UOM |
+| Purchase Requisition | Inventory UOM |
+| RFQ | Purchase UOM |
+| Supplier Quotation | Purchase UOM for normalized comparison |
+| RFQ Award | Purchase UOM |
+| Vendor Item Price Register | Purchase UOM |
+| Purchase Price Book | Purchase UOM |
+| Vendor Allocation | Purchase UOM |
+| Purchase Order | Purchase UOM |
+| Goods Receipt | Purchase UOM input converted to Inventory UOM |
+| Inventory Transactions | Inventory UOM |
+| Inventory Balance | Inventory UOM |
+
+Example:
+
+Item:
+Inventory UOM = EA.
+Purchase UOM = BOX.
+Conversion = 1 BOX = 10 EA.
+
+PR = 250 EA.
+RFQ = 25 BOX.
+Supplier price = ₹1,000 per BOX.
+PO = 25 BOX.
+Goods Receipt = 25 BOX.
+Inventory receipt = 250 EA.
+
+Requirements:
+
+- Retrieve both UOMs from Item Master.
+- Do not create duplicate UOM masters.
+- Use approved Item Master conversion factors.
+- Preserve the original UOM and conversion snapshot on transactions.
+- Do not assume that different UOMs are interchangeable.
+- Support partial receipts and accurate conversion.
+- Enforce precision and rounding rules.
+- If conversion is missing, invalid or ambiguous, block the transaction.
+- If Item Master conversion changes, never rewrite historical approved transactions.
+
+For supplier quotations submitted in a different UOM, retain the original quoted price and UOM as evidence. Normalize only using a valid approved conversion.
+
+==================================================
+7. WEB-BASED MARKET PRICE BENCHMARKING
+==================================================
+
+For each eligible PR item, provide a web-based vendor discovery and market price benchmarking engine.
+
+Search:
+- Manufacturer websites.
+- Authorized distributors.
+- Industrial suppliers.
+- B2B marketplaces.
+- Public product catalogues.
+
+Search exact manufacturer/model first.
+
+Identify up to 10 distinct vendor offers.
+
+Never fabricate missing results to reach 10.
+
+Retrieve:
+- Vendor name.
+- Website and product URL.
+- Manufacturer.
+- Brand.
+- Model.
+- Product specification.
+- Published price.
+- Currency.
+- UOM.
+- MOQ.
+- Quantity breaks.
+- GST/tax status.
+- Freight.
+- Availability.
+- Delivery lead time.
+- Vendor location.
+- Retrieval timestamp.
+- Source evidence.
+- Verification status.
+- Match classification.
+
+Separate exact matches from equivalent products.
+
+Do not rank incompatible products as valid matches.
+
+Calculate:
+- Published price.
+- Normalized Purchase UOM price.
+- Tax-inclusive price.
+- Estimated landed price.
+- Lowest comparable price.
+- Median comparable price.
+- Highest comparable price.
+- Recommended market benchmark.
+
+Use the median of eligible comparable offers as the default benchmark.
+
+Record sample size, calculation method, source dates and exclusions.
+
+Label web prices as INDICATIVE MARKET PRICES, NOT FORMAL SUPPLIER QUOTATIONS.
+
+A failed search must never generate fabricated prices.
+
+Use a configurable search-provider adapter. Do not assume a provider or API exists until verified.
+
+Respect applicable website terms, access restrictions and rate limits.
+
+Do not transmit confidential RFQ documents or internal commercial information to public search providers.
+
+==================================================
+8. RFQ CONFIGURATION
+==================================================
+
+Implement configurable RFQ rules by:
+
+- Company.
+- Branch.
+- Purchase Organization.
+- Department.
+- Item category.
+- Material/item code.
+- Value range.
+- Procurement type.
+
+Support:
+
+- RFQ disabled.
+- RFQ optional.
+- RFQ mandatory.
+- Authorized direct procurement exemption.
+
+Configure:
+- Minimum supplier invitations.
+- Maximum supplier invitations.
+- Supplier response deadline.
+- Quotation validity.
+- Technical/commercial evaluation.
+- Single-stage/two-stage evaluation.
+- Sealed commercial quotations.
+- Examiner requirements.
+- Negotiation rules.
+- Approval requirements.
+- Local examiner.
+- Optional cloud examiner.
+
+Do not allow unauthorized exemptions.
+
+==================================================
+9. RFQ CREATION AND MANAGEMENT
+==================================================
+
+RFQ header must include:
+
+- RFQ number.
+- Company.
+- Branch.
+- Purchase Organization.
+- RFQ date.
+- RFQ type.
+- Title and description.
+- Source PR references.
+- Buyer.
+- Purchasing Manager.
+- Currency.
+- Response deadline.
+- Quotation validity.
+- Delivery terms.
+- Payment terms.
+- Incoterms.
+- Evaluation method.
+- Approval status.
+
+RFQ lines must inherit the correct data from PR and Item Master.
+
+Include:
+- Item code.
+- Description.
+- Category.
+- Manufacturer/model requirements.
+- Specifications.
+- Quantity in Purchase UOM.
+- Required delivery date.
+- Warehouse.
+- Delivery schedules.
+- Quality and inspection requirements.
+- Warranty.
+- Packaging.
+- Attachments.
+
+Support:
+- One PR to one RFQ.
+- One PR to multiple RFQs.
+- Multiple compatible PRs to one RFQ.
+- One RFQ to multiple suppliers.
+- Multiple quotation rounds.
+
+Do not modify original PR quantities when creating RFQs.
+
+==================================================
+10. SUPPLIER INVITATIONS AND QUOTATIONS
+==================================================
+
+Use existing Vendor Master and Supplier Master.
+
+Support:
+- Supplier portal submission where available.
+- Authorized email-based submissions.
+- Manual quotation upload.
+- Structured quotation entry.
+- Multiple quotation revisions.
+- Supplier withdrawal.
+- Clarifications.
+- Negotiation rounds.
+
+Clearly identify the source and verification status of each quotation.
+
+Quotation fields:
+
+- Vendor.
+- Item.
+- Brand/model.
+- Specification.
+- Quoted quantity.
+- Purchase UOM.
+- Unit price.
+- Currency.
+- GST/tax.
+- Freight.
+- Insurance.
+- Other charges.
+- Discounts.
+- Payment terms.
+- Validity.
+- MOQ.
+- Price breaks.
+- Delivery lead time.
+- Delivery schedule.
+- Warranty.
+- Certificates.
+- Technical deviations.
+- Supporting documents.
+
+Preserve every quotation revision.
+
+Supplier quotations must remain confidential from competing suppliers.
+
+==================================================
+11. RFQ EXAMINER — LOCAL AND OPTIONAL CLOUD
+==================================================
+
+Create an intelligent RFQ Examiner.
+
+The default examiner must operate locally.
+
+Local processing should support:
+- Document extraction.
+- PDF/DOCX/XLSX reading.
+- OCR.
+- Supplier document comparison.
+- Technical compliance checking.
+- Commercial calculation validation.
+- Risk detection.
+- Evidence extraction.
+- Structured findings.
+- Natural-language questions and answers.
+
+Use compatible local components based on actual application infrastructure.
+
+Possible adapters include:
+- Ollama.
+- llama.cpp.
+- OpenAI-compatible local inference servers.
+- Other verified local inference runtimes.
+
+Do not hard-code one inference engine into business logic.
+
+The examiner must produce:
+- PASS.
+- PASS WITH WARNINGS.
+- CLARIFICATION REQUIRED.
+- FAIL.
+
+Each finding must include:
+- Finding ID.
+- Supplier.
+- Item/line.
+- Rule.
+- Severity.
+- Mandatory/advisory classification.
+- Evidence.
+- Source document.
+- Document version.
+- Page/line reference where available.
+- Explanation.
+- Confidence where AI-generated.
+- Recommended action.
+
+Do not treat an AI suspicion as verified supplier misconduct.
+
+Do not invent missing data.
+
+Mandatory regulatory or commercial controls cannot be silently overridden. An authorized exception must be recorded and approved.
+
+OPTIONAL CLOUD EXAMINER:
+
+Cloud examiner is disabled by default.
+
+Enable only through explicit company-level authorization and configured provider credentials.
+
+Record:
+- Provider.
+- Model.
+- Data categories transmitted.
+- Authorization.
+- Purpose.
+- Retention policy.
+- Region where available.
+- Execution timestamp.
+- Results.
+
+Do not send confidential documents to cloud services without authorization.
+
+The local examiner remains responsible for deterministic business rules and final calculations.
+
+==================================================
+12. LOCAL LLM MODEL MANAGEMENT — MAJOR REQUIREMENT
+==================================================
+
+Build a complete Local LLM Management module inside the application.
+
+The user must be able to download, install, deploy, test, manage, add and select multiple local LLMs without manually modifying source code.
+
+The application must support a pluggable inference-runtime architecture.
+
+Detect installed compatible runtimes.
+
+Support adapters for:
+- Ollama.
+- llama.cpp / llama-server.
+- Other verified OpenAI-compatible local inference servers.
+
+Do not assume every model is compatible with every runtime.
+
+A. MODEL CATALOGUE
+
+Provide a configurable model catalogue containing:
+- Model name.
+- Publisher.
+- Model family.
+- Version.
+- Parameter size.
+- Quantization.
+- Model format.
+- Context window.
+- Required RAM.
+- Recommended VRAM.
+- Download size.
+- License.
+- Supported languages.
+- Supported capabilities.
+- Runtime compatibility.
+- Source repository.
+- Model checksum where available.
+
+Use verified model metadata and official or authorized download sources.
+
+Do not invent model specifications or claim compatibility without verification.
+
+B. MODEL DOWNLOAD MANAGER
+
+Provide:
+- Search models.
+- View model details.
+- Select model.
+- Select compatible quantization.
+- Check system resources.
+- Download model.
+- Pause/resume where supported.
+- Download progress.
+- Verify checksum where available.
+- Handle interrupted downloads.
+- Install.
+- Remove.
+- Update.
+- View logs.
+
+Before downloading, calculate available disk space and estimated memory requirements.
+
+Warn when a model is incompatible with the available hardware.
+
+Never automatically download a huge model without displaying its size and resource requirements and obtaining the user's explicit action.
+
+C. MODEL DEPLOYMENT
+
+Allow installation and deployment within the application's configured local infrastructure.
+
+Support:
+- Runtime selection.
+- Model path.
+- Host and port.
+- Context length.
+- GPU/CPU allocation where supported.
+- GPU offload settings.
+- Parallel request settings.
+- Memory limits.
+- Startup/shutdown.
+- Health checks.
+- Restart.
+- Logs.
+- Deployment status.
+
+Do not expose inference services publicly by default.
+
+Bind local inference endpoints to a protected internal interface and enforce authentication and network restrictions.
+
+D. MULTIPLE MODEL REGISTRY
+
+Allow users to register more than one local model.
+
+Each registered model must have:
+- Model ID.
+- Name.
+- Runtime.
+- Version.
+- Installation path.
+- Deployment endpoint.
+- Capability profile.
+- Context limit.
+- Hardware profile.
+- Status.
+- Health.
+- License information.
+- Creation date.
+- Last used timestamp.
+
+E. DEFAULT LLM SELECTION
+
+Provide an application-wide default LLM selection.
+
+Also support task-specific model selection:
+
+- RFQ document extraction.
+- Technical examination.
+- Commercial examination assistance.
+- Supplier comparison.
+- Examiner chat.
+- Summary/report generation.
+
+The user must be able to choose the default installed model and override it for specific tasks.
+
+If a selected model becomes unavailable:
+1. Report the failure.
+2. Use a configured compatible fallback only if authorized.
+3. Record the fallback model and reason.
+4. Never silently switch to a cloud model.
+
+F. MODEL TESTING
+
+Provide:
+- Test connection.
+- Test inference.
+- Response latency.
+- Token throughput where supported.
+- Resource usage.
+- Context-window test.
+- Structured JSON output test.
+- Examiner task test.
+
+A model must pass compatibility and health checks before becoming an active default.
+
+G. LOCAL AI SECURITY
+
+- Keep model files locally.
+- Keep documents locally by default.
+- Keep inference requests local by default.
+- Do not send confidential procurement data to cloud without authorization.
+- Do not expose credentials in frontend code.
+- Validate uploaded files.
+- Isolate model processes as appropriate.
+- Enforce access control.
+- Log operational metadata without logging sensitive document contents unnecessarily.
+
+H. MODEL MANAGER UI
+
+Provide screens for:
+1. Model Catalogue.
+2. Download Manager.
+3. Installed Models.
+4. Deployment Manager.
+5. Model Registry.
+6. Default Model Selection.
+7. Task-to-Model Mapping.
+8. Health and Performance.
+9. Runtime Configuration.
+
+Do not create decorative controls. Every visible action must work.
+
+==================================================
+13. APPROVER EXAMINER CHAT AND DECISION INTELLIGENCE
+==================================================
+
+Provide an embedded RFQ Examiner Chat inside the approval screen.
+
+Approvers may ask questions such as:
+
+- Why is the recommended supplier better?
+- Why is the quoted price higher than the market benchmark?
+- Is this supplier technically compliant?
+- Which quotation is the lowest comparable offer?
+- What are the technical deviations?
+- What is the delivery risk?
+- What is the historical purchase price?
+- Why did the examiner flag this document?
+- Compare the original allocation with the proposed PO allocation.
+
+Answers must use authorized evidence from:
+- PR.
+- Item Master.
+- RFQ.
+- Supplier quotations.
+- Attachments.
+- Vendor Master.
+- Historical PO data where permitted.
+- Market benchmark.
+- Examiner findings.
+- Evaluation criteria.
+- Scores.
+- Approval history.
+
+Clearly distinguish:
+- Verified facts.
+- Source statements.
+- Calculated values.
+- Business rules.
+- AI interpretation.
+- Recommendation.
+- Missing or unverifiable information.
+
+Cite source document, version and page/line where available.
+
+If evidence is missing, say that it cannot be verified.
+
+Every question and answer must be recorded with:
+- User.
+- Company.
+- Branch.
+- RFQ.
+- Supplier/line reference.
+- Timestamp UTC.
+- Model and runtime.
+- Prompt/version reference.
+- Evidence references.
+- Response.
+- Correlation ID.
+
+The chat must NEVER approve an RFQ or PO.
+
+Approval must occur through the actual authorized workflow controls.
+
+Revised documents must trigger a new examination run while preserving previous results.
+
+==================================================
+14. TECHNICAL AND COMMERCIAL EVALUATION
+==================================================
+
+Support single-stage and two-stage evaluation.
+
+Two-stage process:
+1. Technical evaluation.
+2. Commercial evaluation after technical gate completion.
+
+Prevent unauthorized access to sealed commercial prices during technical evaluation.
+
+Support committee members:
+- Technical.
+- Engineering.
+- Quality.
+- Commercial.
+- Finance.
+- Purchase.
+- Manager.
+
+Support configurable evaluation criteria and weights.
+
+Example only:
+- Technical 40%.
+- Commercial 35%.
+- Delivery 10%.
+- Quality 10%.
+- Payment terms 5%.
+
+Weights must be configurable and total 100%.
+
+Provide transparent scoring formulas and preserve individual evaluator scores and comments.
+
+Do not assume cheapest supplier is automatically the best supplier.
+
+Support:
+- Individual scoring.
+- Committee scoring.
+- Consolidated score.
+- Evaluator reassignment.
+- Conflict-of-interest declaration.
+- Evaluation deadlines.
+- Locking.
+- Reopening with authorization.
+
+==================================================
+15. COMPARATIVE STATEMENT AND NEGOTIATION
+==================================================
+
+Generate line-wise comparative statements.
+
+Compare:
+- Quoted price.
+- Normalized Purchase UOM price.
+- Tax.
+- Freight.
+- Landed cost.
+- Evaluated cost.
+- Delivery lead time.
+- Payment terms.
+- Warranty.
+- Technical compliance.
+- Market benchmark.
+- Historical purchase price.
+- Budget variance.
+- Supplier ranking.
+
+Keep quoted price, landed cost and evaluated cost separate.
+
+Support:
+- Single vendor award.
+- Multiple vendor award.
+- Line-by-line award.
+- Split quantity.
+- Partial award.
+- No award.
+- Re-RFQ.
+- Negotiation.
+- Revised quotation.
+
+Do not automatically award a supplier based on AI recommendation.
+
+==================================================
+16. RFQ AWARD AND APPROVAL
+==================================================
+
+Reuse the existing approval engine.
+
+Support configurable approval rules for:
+- RFQ creation.
+- RFQ release.
+- Supplier invitation.
+- Deadline extension.
+- Amendment.
+- Evaluation.
+- Negotiation.
+- Award.
+- Exemption.
+- Vendor price agreement.
+- Allocation override.
+
+Separate:
+1. Examiner recommendation.
+2. Evaluation recommendation.
+3. Award recommendation.
+4. Human approval decision.
+
+The approver must retain final authority within delegated limits.
+
+Support accept, reject, override, return for clarification, re-examination, hold, escalation and authorized exception.
+
+Record original recommendation, human decision, reason, evidence and approval reference.
+
+==================================================
+17. VENDOR ITEM PRICE REGISTER
+==================================================
+
+After an RFQ award receives all mandatory approvals, create the Vendor Item Price Register entries.
+
+Store:
+- Company.
+- Branch.
+- Purchase Organization.
+- Vendor.
+- Item.
+- RFQ.
+- Award.
+- Supplier quotation.
+- Approved price.
+- Currency.
+- Purchase UOM.
+- Quantity limits.
+- MOQ.
+- Effective-from.
+- Effective-to.
+- Allocation percentage.
+- Delivery lead time.
+- Payment terms.
+- Tax/freight conditions.
+- Version.
+- Approval reference.
+- Status.
+
+Support multiple approved vendors for the same item.
+
+Preserve historical versions.
+
+Prevent ambiguous overlapping active agreements.
+
+Do not overwrite an existing approved agreement silently.
+
+==================================================
+18. PURCHASE PRICE BOOK — WHEN RFQ IS DISABLED
+==================================================
+
+The approved Purchase Price Book is mandatory when RFQ is disabled for the applicable company/branch.
+
+Support:
+- Company.
+- Branch.
+- Purchase Organization.
+- Vendor.
+- Item.
+- Purchase UOM.
+- Multiple price options.
+- Quantity range pricing.
+- Base unit price.
+- Percentage discount.
+- Fixed discount.
+- Quantity discount.
+- Contract discount.
+- Promotional discount.
+- Sequential or alternative discount rules.
+- Tax conditions.
+- Freight.
+- MOQ.
+- Maximum quantity.
+- Validity.
+- Approval.
+- Version history.
+
+Quantity pricing example:
+
+1–49 units: ₹1,200.
+50–99 units: ₹1,100.
+100–499 units: ₹1,000.
+500+ units: ₹920.
+
+These are examples, not production data.
+
+Support explicitly configured all-units or incremental tier pricing.
+
+Prevent overlapping or ambiguous quantity ranges.
+
+Each price option must have its own technical specification and commercial conditions.
+
+Never select a cheaper but technically incompatible option.
+
+==================================================
+19. AUTOMATIC PO PRICE RETRIEVAL AND VENDOR ALLOCATION
+==================================================
+
+When creating a PO:
+
+IF RFQ IS ENABLED:
+Retrieve the valid approved RFQ award and Vendor Item Price Register.
+
+IF RFQ IS DISABLED:
+Retrieve the valid approved Purchase Price Book.
+
+Do not silently fall back between the two.
+
+For multiple approved vendors, calculate the proposed quantity split using approved allocation percentages.
+
+Example:
+
+Required quantity: 250 BOX.
+
+Vendor A: 60%, ₹950/BOX.
+Vendor B: 40%, ₹980/BOX.
+
+Expected:
+Vendor A: 150 BOX.
+Vendor B: 100 BOX.
+
+Generate vendor-specific PO records or documents according to existing ERP PO architecture.
+
+Preserve traceability to original PR, RFQ, award and price agreement.
+
+Support:
+- Multiple vendors per item.
+- Different allocation per item.
+- Partial allocation.
+- Quantity limits.
+- Vendor capacity.
+- Remaining quantity.
+- Multiple delivery schedules.
+
+Use deterministic rounding. The sum of allocations must equal the required PO quantity exactly.
+
+If allocation cannot be satisfied, flag the remaining quantity and require an authorized decision.
+
+==================================================
+20. BUYER AND APPROVER OVERRIDES
+==================================================
+
+Provide controlled PO sourcing overrides.
+
+Buyer may propose a change if authorized.
+
+Approver may authorize within delegated authority.
+
+Store separately:
+1. Original approved allocation.
+2. Proposed PO allocation.
+3. Final authorized allocation.
+
+Display:
+- Original percentages.
+- Proposed percentages.
+- Final percentages.
+- Quantity differences.
+- Price differences.
+- Financial impact.
+- Override reason.
+- Evidence.
+- User.
+- Approval history.
+
+Make deviations prominent on the PO approval screen.
+
+Never silently change the RFQ award or Price Book.
+
+A permanent sourcing change must use an RFQ award amendment or new approved agreement.
+
+==================================================
+21. GOODS RECEIPT AND INVENTORY INTEGRATION
+==================================================
+
+PO quantity is in Purchase UOM.
+
+Goods Receipt captures received Purchase UOM quantity and converts it into Inventory UOM.
+
+Example:
+25 BOX × 10 EA = 250 EA.
+
+Support:
+- Partial receipts.
+- Multiple receipts.
+- Accepted quantity.
+- Rejected quantity.
+- Over-receipt tolerance.
+- Conversion precision.
+- Remaining PO balance.
+- Inventory posting.
+
+Inventory balances and inventory transactions must use Inventory UOM.
+
+Preserve the applicable conversion reference.
+
+Do not activate ASN functionality as part of this implementation.
+
+==================================================
+22. AUDIT, SECURITY AND GOVERNANCE
+==================================================
+
+Use the existing centralized audit service.
+
+Record:
+- Configuration changes.
+- RFQ creation and changes.
+- Supplier invitations.
+- Supplier submissions.
+- Quotation revisions.
+- Examiner runs.
+- Examiner questions and answers.
+- Evaluation scores.
+- Award decisions.
+- Vendor price register changes.
+- Price Book changes.
+- Price selection.
+- Allocation calculation.
+- Buyer override.
+- Approver decision.
+- PO creation and release.
+- UOM conversions.
+
+Audit fields must include:
+- User.
+- Role.
+- Company.
+- Branch.
+- Action.
+- Timestamp UTC.
+- Before/after values.
+- Reason.
+- Source.
+- Entity reference.
+- Version.
+- Correlation ID.
+
+Use append-only audit events at application level with appropriate database permissions and integrity controls.
+
+Do not falsely claim cryptographic immutability unless implemented and verified.
+
+Enforce:
+- RBAC.
+- Company isolation.
+- Branch isolation.
+- RFQ confidentiality.
+- Supplier quotation confidentiality.
+- Sealed commercial data access.
+- Document access controls.
+- Model management permissions.
+- Cloud AI authorization.
+
+Never expose API keys, passwords or credentials in frontend code or logs.
+
+==================================================
+23. REPORTING AND EXPORT
+==================================================
+
+Provide export-ready reports:
+
+- RFQ Register.
+- Future RFQ Floating Report.
+- Supplier Invitation Register.
+- Quotation Comparison.
+- Technical Evaluation.
+- Commercial Evaluation.
+- Comparative Statement.
+- Market Price Benchmark.
+- RFQ Examiner Report.
+- Award Recommendation.
+- Approved Vendor Item Price Register.
+- Purchase Price Book.
+- Vendor Allocation Report.
+- PO Sourcing Variance.
+- Override Report.
+- Approval History.
+- Audit Report.
+
+Support Excel, PDF and CSV using the existing application export architecture.
+
+Support filters, date ranges, company/branch and role-based access.
+
+==================================================
+24. PERFORMANCE, RELIABILITY AND OPERATIONS
+==================================================
+
+Implement:
+- Pagination.
+- Server-side filtering.
+- Indexed queries.
+- Background jobs for document extraction and web searches.
+- Job status and retries.
+- Idempotency.
+- Transaction safety.
+- Concurrency protection.
+- Error handling.
+- Structured logging.
+- Monitoring.
+- Health checks.
+- Database backup compatibility.
+- Recovery-safe migrations.
+
+Long-running model downloads, inference, OCR and supplier-document examination must not block normal web requests.
+
+Avoid unnecessary repeated inference.
+
+Cache only data that is safe and consistent with the configured retention policy.
+
+==================================================
+25. DATABASE AND API IMPLEMENTATION
+==================================================
+
+Inspect the existing schema first.
+
+Create only genuinely missing entities.
+
+Potential logical entities include:
+
+- RFQConfiguration.
+- FutureRFQQueue.
+- RFQHeader.
+- RFQLine.
+- RFQPRLink.
+- RFQSupplierInvitation.
+- RFQSupplierResponse.
+- RFQSupplierResponseLine.
+- RFQResponseRevision.
+- RFQAttachment.
+- RFQClarification.
+- RFQExaminerRun.
+- RFQExaminerFinding.
+- RFQChatConversation.
+- RFQChatMessage.
+- RFQEvaluationCriteria.
+- RFQEvaluatorAssignment.
+- RFQEvaluationScore.
+- RFQCommercialComparison.
+- RFQNegotiationRound.
+- RFQAwardRecommendation.
+- RFQAwardApproval.
+- RFQVendorAllocation.
+- VendorItemPriceAgreement.
+- VendorItemPriceHistory.
+- PurchasePriceBook.
+- PurchasePriceBookLine.
+- PurchasePriceTier.
+- PurchaseDiscountRule.
+- POAllocationProposal.
+- POAllocationApproval.
+- LocalLLMRegistry.
+- LocalLLMRuntime.
+- LocalLLMDeployment.
+- LocalLLMDownloadJob.
+- LLMTaskConfiguration.
+- MarketBenchmarkRun.
+- MarketBenchmarkOffer.
+- RFQAuditEvent.
+
+These are logical concepts, not mandatory table names. Reuse existing entities where appropriate.
+
+Provide:
+- Database migrations.
+- Foreign keys.
+- Unique constraints.
+- Indexes.
+- Referential integrity.
+- Effective-date validation.
+- Transactional operations.
+- API validation.
+- Consistent error responses.
+
+Do not create duplicate audit, approval, user or master-data tables.
+
+==================================================
+26. UI AND USER EXPERIENCE
+==================================================
+
+Deliver a professional enterprise procurement interface.
+
+Requirements:
+- Consistent existing design system.
+- Responsive layouts.
+- Clear status indicators.
+- Search and advanced filters.
+- Multi-column tables.
+- Column customization where existing framework supports it.
+- Pagination.
+- Bulk actions with authorization.
+- Detail drawers/modals.
+- Minimize/maximize/restore/close controls where applicable.
+- Draft and edit support.
+- Multi-record selection.
+- Clear validation errors.
+- Confirmation for destructive actions.
+- Visible approval and audit history.
+- Accessible controls.
+
+Do not duplicate controls.
+
+Do not create buttons that do nothing.
+
+Do not use placeholder text such as "Implementation Pending".
+
+Every menu item, action, modal, dropdown, filter, tab and form must be connected to real backend functionality.
+
+Verify the actual rendered application in the browser.
+
+==================================================
+27. PHASE-BY-PHASE EXECUTION PLAN
+==================================================
+
+Execute these phases in order, without waiting for user input between them.
+
+PHASE 0 — Repository audit, baseline and gap analysis.
+PHASE 1 — Architecture, data model and dependency planning.
+PHASE 2 — Company/branch RFQ configuration and RBAC.
+PHASE 3 — Dual UOM integration.
+PHASE 4 — Future RFQ Floating and PR integration.
+PHASE 5 — Web-based market benchmarking.
+PHASE 6 — RFQ creation and supplier invitation.
+PHASE 7 — Supplier quotation management.
+PHASE 8 — Local LLM runtime, download manager and model registry.
+PHASE 9 — Local RFQ Examiner and optional cloud adapter.
+PHASE 10 — Examiner chat and evidence management.
+PHASE 11 — Technical and commercial evaluation.
+PHASE 12 — Comparative statement and negotiation.
+PHASE 13 — Award and approval workflow.
+PHASE 14 — Vendor Item Price Register.
+PHASE 15 — Purchase Price Book and price/discount engine.
+PHASE 16 — PO price retrieval and automatic vendor allocation.
+PHASE 17 — Buyer/approver overrides and PO approval.
+PHASE 18 — Goods Receipt and Inventory UOM conversion.
+PHASE 19 — Reporting, exports and audit.
+PHASE 20 — Security, performance and recovery testing.
+PHASE 21 — End-to-end acceptance testing and production readiness report.
+
+For each phase:
+1. Inspect dependencies.
+2. Implement backend.
+3. Implement database migration.
+4. Implement frontend.
+5. Integrate with existing services.
+6. Execute unit tests.
+7. Execute integration tests.
+8. Fix failures.
+9. Execute regression tests.
+10. Record actual completion evidence.
+11. Continue to the next phase automatically.
+
+Do not wait for the user to say "continue".
+
+If a dependency is blocked by unavailable credentials or external infrastructure, complete all local work, provide an explicit configuration screen and document the remaining external dependency. Continue with independent phases.
+
+==================================================
+28. MANDATORY END-TO-END TEST SCENARIOS
+==================================================
+
+Test complete workflows using controlled test fixtures clearly separated from production data.
+
+TEST A — RFQ ENABLED:
+
+Company RFQ enabled.
+Approved PR exists.
+Future RFQ Floating retrieves the eligible PR.
+RFQ is created.
+Supplier invitations are issued.
+Supplier quotations are received.
+Examiner processes the quotations.
+Technical and commercial evaluations complete.
+Comparative statement is generated.
+Award is approved.
+Vendor Item Price Register is activated.
+PO retrieves approved prices.
+Vendor allocation is calculated.
+Approver reviews and approves.
+PO is released.
+
+TEST B — RFQ DISABLED:
+
+Company or branch RFQ disabled.
+Valid Purchase Price Book exists.
+PR is created.
+PO retrieves the approved Price Book price.
+Correct quantity tier and discount are applied.
+PO is approved and released.
+
+TEST C — MULTI-VENDOR ALLOCATION:
+
+Two or more vendors are approved for one item.
+Allocation totals 100%.
+PO quantity is split correctly.
+Price and allocation snapshots are preserved.
+Buyer proposes a deviation.
+Approver sees the original and proposed values.
+Authorized decision is recorded.
+
+TEST D — DUAL UOM:
+
+PR uses Inventory UOM.
+RFQ uses Purchase UOM.
+Price Register uses Purchase UOM.
+PO uses Purchase UOM.
+Goods Receipt converts into Inventory UOM.
+Inventory balance updates correctly.
+
+TEST E — LOCAL LLM:
+
+Download an eligible model.
+Verify download.
+Install compatible runtime.
+Deploy model.
+Run health check.
+Set model as default.
+Execute local RFQ examination.
+Ask a question in Examiner Chat.
+Verify evidence references.
+Change default model.
+Confirm task-specific selection.
+Stop model.
+Verify fallback behavior and error reporting.
+
+TEST F — SECURITY:
+
+Unauthorized user cannot access another company's RFQ.
+Supplier cannot access competing quotations.
+Technical evaluator cannot access sealed commercial information prematurely.
+Unauthorized user cannot override allocation.
+Chat cannot approve an RFQ.
+Cloud examiner remains unavailable unless explicitly authorized.
+
+TEST G — FAILURE AND RECOVERY:
+
+Missing price.
+Expired price.
+Invalid UOM conversion.
+Overlapping quantity tiers.
+Duplicate RFQ conversion.
+Insufficient supplier allocation.
+Unavailable LLM.
+Interrupted model download.
+Web search failure.
+Invalid supplier quotation document.
+Database transaction failure.
+
+All failures must be handled without corrupting approved data.
+
+==================================================
+29. COMPLETION CRITERIA — NO FALSE CLAIMS
+==================================================
+
+The application is not complete simply because:
+- The code compiles.
+- The server starts.
+- A page renders.
+- A button is visible.
+- A database table exists.
+- An API returns HTTP 200.
+
+Completion requires proof of actual functional behaviour.
+
+Provide a final implementation report containing:
+
+1. Original application audit.
+2. Features already present and reused.
+3. Features newly implemented.
+4. Database migrations executed.
+5. APIs created or modified.
+6. Frontend screens completed.
+7. Local LLM runtimes supported and tested.
+8. Models actually downloaded and tested, if any.
+9. RFQ workflow test results.
+10. Purchase Price Book test results.
+11. UOM conversion test results.
+12. Vendor allocation test results.
+13. Security test results.
+14. Regression test results.
+15. Known limitations.
+16. External credentials/dependencies still required.
+17. Production deployment instructions.
+18. Backup and rollback procedure.
+
+For every test, state:
+- Test ID.
+- Preconditions.
+- Execution.
+- Expected result.
+- Actual result.
+- PASS/FAIL.
+- Evidence or log reference.
+
+Never report a test as PASS without actually running it.
+
+Never claim an LLM is installed or deployed unless it has been installed, started and tested.
+
+Never claim a web vendor price is verified without source evidence.
+
+Never report an external integration as working when credentials or connectivity are missing.
+
+==================================================
+30. FINAL EXECUTION DIRECTIVE
+==================================================
+
+Begin immediately with the repository audit.
+
+Then execute all phases sequentially and autonomously.
+
+Do not ask me to approve individual phases.
+
+Do not stop after generating an implementation plan.
+
+Do not ask for repeated confirmation.
+
+Do not rewrite unrelated modules.
+
+Do not remove working functionality.
+
+Do not introduce mock production data.
+
+Do not bypass existing security or approval rules.
+
+Do not silently use cloud LLMs when local inference fails.
+
+Do not activate future ASN functionality.
+
+Maintain compatibility with the existing application and database.
+
+Complete the implementation, execute all available tests, correct failures, verify the running application and provide a factual final completion report.
+
+THE OBJECTIVE IS A FULLY INTEGRATED, FUNCTIONAL, AUDITABLE, ENTERPRISE-GRADE PROCUREMENT AND RFQ SYSTEM — NOT A UI PROTOTYPE OR A COLLECTION OF PLACEHOLDER MODULES.

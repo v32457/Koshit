@@ -34,18 +34,41 @@ import { ItemMasterListView } from './modules/items/ItemMasterListView';
 import { ItemCreationView } from './modules/items/ItemCreationView';
 import { CustomSpecificationsView } from './modules/items/CustomSpecificationsView';
 import { BranchAvailabilityView } from './modules/items/BranchAvailabilityView';
+import { BranchCreatedItemsView } from './modules/items/BranchCreatedItemsView';
 import { ModuleManagementView } from './modules/settings/ModuleManagementView';
 import { WorkflowManagementView } from './modules/settings/WorkflowManagementView';
 import { BusinessPartnerMasterView } from './modules/businessPartners/BusinessPartnerMasterView';
 import { ApprovalInboxView } from './modules/approvals/ApprovalInboxView';
 import { MyRequestsView } from './modules/requests/MyRequestsView';
+import { PurchaseRequisitionListView } from './modules/requests/PurchaseRequisitionListView';
+import { PurchaseCreationModal } from './modules/requests/PurchaseCreationModal';
+import { PurchaseRequisitionDetailsModal } from './modules/requests/PurchaseRequisitionDetailsModal';
+import { PRBulkCleanupView } from './modules/requests/PRBulkCleanupView';
+import { PurchaseRequisitionHeader } from './types/purchaseRequisition';
 import { SapIntegrationView } from './modules/integration/SapIntegrationView';
 import { RuleBuilderView } from './modules/settings/RuleBuilderView';
 import { GeneralSettingsView } from './modules/settings/GeneralSettingsView';
+import { ApiProvidersView } from './modules/settings/ApiProvidersView';
+import { AgingParameterMasterView } from './modules/settings/AgingParameterMasterView';
 import { ClassificationsView } from './modules/settings/ClassificationsView';
 import { OrganizationsView } from './modules/settings/OrganizationsView';
 import { WarehouseSetupView } from './modules/settings/WarehouseSetupView';
 import { FieldConfigurationsView } from './modules/settings/FieldConfigurationsView';
+import { FinanceBudgetView } from './modules/finance/FinanceBudgetView';
+import { AssetEquipmentView } from './modules/assets/AssetEquipmentView';
+import { BuyerManagementView } from './modules/procurement/BuyerManagementView';
+import { ProcurementDashboardView } from './modules/procurement/ProcurementDashboardView';
+import { RfqPolicyView } from './modules/procurement/RfqPolicyView';
+import { FutureRfqFloatingView } from './modules/procurement/FutureRfqFloatingView';
+import { RfqManagementView } from './modules/procurement/RfqManagementView';
+import { SupplierQuotationsView } from './modules/procurement/SupplierQuotationsView';
+import { ComparativeStatementView } from './modules/procurement/ComparativeStatementView';
+import { VendorPriceRegisterView } from './modules/procurement/VendorPriceRegisterView';
+import { PurchasePriceBookView } from './modules/procurement/PurchasePriceBookView';
+import { PurchaseOrderManagementView } from './modules/procurement/PurchaseOrderManagementView';
+import { GoodsReceiptView } from './modules/procurement/GoodsReceiptView';
+import { ProcurementReportsView } from './modules/procurement/ProcurementReportsView';
+import { LocalLlmManagementView } from './modules/llm/LocalLlmManagementView';
 import { AuditLogsView } from './modules/settings/AuditLogsView';
 import { CommunicationHubView } from './modules/communication/CommunicationHubView';
 import { WhatsAppHubView } from './modules/communication/WhatsAppHubView';
@@ -193,7 +216,11 @@ export default function App() {
       const saved = localStorage.getItem('kosh_module_registry');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingKeys = new Set(parsed.map((m: any) => m.moduleKey));
+          const missing = INITIAL_MODULE_REGISTRY.filter((m) => !existingKeys.has(m.moduleKey));
+          return [...parsed, ...missing];
+        }
       }
     } catch (err) {
       console.error('Error loading module registry from localStorage:', err);
@@ -232,6 +259,7 @@ export default function App() {
 
   const isItemMasterEnabled = moduleRegistry.find((m) => m.moduleKey === 'ITEM_MASTER')?.isEnabled ?? true;
   const isBpMasterEnabled = moduleRegistry.find((m) => m.moduleKey === 'BUSINESS_PARTNER_MASTER')?.isEnabled ?? true;
+  const isPrModuleEnabled = moduleRegistry.find((m) => m.moduleKey === 'PURCHASE_REQUISITION')?.isEnabled ?? true;
 
   // Navigation State
   const [currentRoute, setCurrentRoute] = useState<string>('/');
@@ -246,6 +274,11 @@ export default function App() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [notifications, setNotifications] = useState<InPortalNotification[]>(INITIAL_IN_PORTAL_NOTIFICATIONS);
+  const [activePrSessions, setActivePrSessions] = useState<string[]>([]);
+  const [selectedPrDetails, setSelectedPrDetails] = useState<PurchaseRequisitionHeader | null>(null);
+
+  const openNewPrSession = () => setActivePrSessions(prev => [...prev, `session-${Date.now()}`]);
+  const closePrSession = (sessionId: string) => setActivePrSessions(prev => prev.filter(s => s !== sessionId));
 
   // Find active page record
   const currentRecord = acceptanceRecords.find((r) => r.route === currentRoute) || {
@@ -361,9 +394,13 @@ export default function App() {
           newStatus: 'DRAFT',
         },
       ],
-      branchAvailability: [
-        { branchId: activeBranch.id, isStocked: true, isPurchased: true, isManufactured: false, isActive: true },
-      ],
+      branchAvailability: branches.map((b: Branch) => ({
+        branchId: b.id,
+        isStocked: true,
+        isPurchased: true,
+        isManufactured: draftItem.categoryCode === 'FG',
+        isActive: true,
+      })),
     };
 
     setItems([newItem, ...items]);
@@ -397,9 +434,13 @@ export default function App() {
           newStatus: 'SUBMITTED',
         },
       ],
-      branchAvailability: [
-        { branchId: activeBranch.id, isStocked: true, isPurchased: true, isManufactured: false, isActive: true },
-      ],
+      branchAvailability: branches.map((b: Branch) => ({
+        branchId: b.id,
+        isStocked: true,
+        isPurchased: true,
+        isManufactured: subItem.categoryCode === 'FG',
+        isActive: true,
+      })),
     };
 
     setItems([newItem, ...items]);
@@ -555,6 +596,9 @@ export default function App() {
     currentRoute.startsWith('/items') ||
     currentRoute === '/business-partners' ||
     currentRoute === '/requests' ||
+    currentRoute.startsWith('/purchasing') ||
+    currentRoute.startsWith('/procurement') ||
+    currentRoute === '/assets-equipment' ||
     currentRoute === '/approvals' ||
     currentRoute.startsWith('/settings') ||
     currentRoute.startsWith('/communication') ||
@@ -630,6 +674,7 @@ export default function App() {
                     moduleRegistry={moduleRegistry}
                     onToggleModule={handleToggleModule}
                     onAddModule={handleAddModule}
+                    onNavigate={(route) => setCurrentRoute(route)}
                   />
                 )}
 
@@ -682,6 +727,7 @@ export default function App() {
                     {currentRoute === '/items/new' && (
                       <ItemCreationView
                         currentUser={currentUser}
+                        operatingContext={operatingContext}
                         globalItems={items}
                         onSaveDraft={handleSaveDraft}
                         onSubmitForApproval={handleSubmitForApproval}
@@ -691,6 +737,14 @@ export default function App() {
 
                     {currentRoute === '/items/branch-availability' && (
                       <BranchAvailabilityView
+                        items={items}
+                        allBranches={branches}
+                        onUpdateItems={setItems}
+                      />
+                    )}
+
+                    {currentRoute === '/items/branch-catalog' && (
+                      <BranchCreatedItemsView
                         items={items}
                         allBranches={branches}
                       />
@@ -706,6 +760,109 @@ export default function App() {
                   />
                 )}
 
+                {currentRoute.startsWith('/purchasing') && (
+                  isPrModuleEnabled ? (
+                    currentRoute === '/purchasing/requisitions' || currentRoute === '/procurement/sourcing/purchase-requests' ? (
+                      <PurchaseRequisitionListView
+                        currentUser={currentUser}
+                        onOpenCreateModal={openNewPrSession}
+                        onOpenDetailsModal={(pr) => setSelectedPrDetails(pr)}
+                        onOpenCleanupView={() => setCurrentRoute('/purchasing/requisitions/cleanup')}
+                      />
+                    ) : currentRoute === '/purchasing/buyer-management' ? (
+                      <BuyerManagementView currentUser={currentUser} />
+                    ) : (
+                      <PRBulkCleanupView
+                        currentUser={currentUser}
+                        onBack={() => setCurrentRoute('/purchasing/requisitions')}
+                      />
+                    )
+                  ) : (
+                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-6 text-rose-900 space-y-2 text-xs">
+                      <h3 className="font-bold text-sm text-rose-800 flex items-center gap-2">
+                        <span>⚠️ Purchase Requisition Module is Currently Disabled</span>
+                      </h3>
+                      <p>Access to Purchase Requisitions, MRP imports, budget checks, and approval workflows has been disabled by a system administrator in Module Management.</p>
+                    </div>
+                  )
+                )}
+
+                {currentRoute.startsWith('/procurement') && (
+                  currentRoute === '/procurement/sourcing/purchase-requests' ? (
+                    <PurchaseRequisitionListView
+                      currentUser={currentUser}
+                      onOpenCreateModal={openNewPrSession}
+                      onOpenDetailsModal={(pr) => setSelectedPrDetails(pr)}
+                      onOpenCleanupView={() => setCurrentRoute('/purchasing/requisitions/cleanup')}
+                    />
+                  ) : currentRoute === '/procurement/dashboard' ? (
+                    <ProcurementDashboardView currentUser={currentUser} onNavigate={(r) => setCurrentRoute(r)} />
+                  ) : currentRoute === '/procurement/rfq-policy' ? (
+                    <GeneralSettingsView initialTab="rfq-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                  ) : (currentRoute === '/procurement/future-floating' || currentRoute === '/procurement/market-benchmark') ? (
+                    <FutureRfqFloatingView currentUser={currentUser} companies={companies} branches={branches} onNavigate={(r) => setCurrentRoute(r)} />
+                  ) : (currentRoute === '/procurement/rfq' || currentRoute === '/procurement/rfqs') ? (
+                    <RfqManagementView currentUser={currentUser} companies={companies} branches={branches} onNavigate={(r) => setCurrentRoute(r)} />
+                  ) : currentRoute === '/procurement/quotations' ? (
+                    <SupplierQuotationsView />
+                  ) : currentRoute === '/procurement/comparative-statement' ? (
+                    <ComparativeStatementView currentUser={currentUser} onNavigate={(r) => setCurrentRoute(r)} />
+                  ) : currentRoute === '/procurement/price-register' ? (
+                    <VendorPriceRegisterView />
+                  ) : currentRoute === '/procurement/price-book' ? (
+                    <PurchasePriceBookView />
+                  ) : currentRoute === '/procurement/purchase-orders' ? (
+                    <PurchaseOrderManagementView currentUser={currentUser} companies={companies} branches={branches} />
+                  ) : currentRoute === '/procurement/goods-receipt' ? (
+                    <GoodsReceiptView currentUser={currentUser} companies={companies} branches={branches} />
+                  ) : (
+                    <ProcurementReportsView />
+                  )
+                )}
+
+                {currentRoute === '/settings/local-llm' && (
+                  <LocalLlmManagementView currentUser={currentUser} />
+                )}
+
+                {currentRoute === '/assets-equipment' && (
+                  <AssetEquipmentView />
+                )}
+
+                {currentRoute === '/settings/general' && (
+                  <GeneralSettingsView onNavigate={handleNavigate} />
+                )}
+
+                {currentRoute === '/settings/general/pr' && (
+                  <GeneralSettingsView initialTab="pr-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/items' && (
+                  <GeneralSettingsView initialTab="item-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/aging' && (
+                  <GeneralSettingsView initialTab="aging-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/budget' && (
+                  <GeneralSettingsView initialTab="finance-module" view="full" onNavigate={handleNavigate} />
+                )}
+
+                {currentRoute === '/settings/general/security' && (
+                  <GeneralSettingsView initialTab="security-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/supplier' && (
+                  <GeneralSettingsView initialTab="supplier-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/customer' && (
+                  <GeneralSettingsView initialTab="customer-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/warehouse' && (
+                  <GeneralSettingsView initialTab="warehouse-module" view="full" onNavigate={handleNavigate} />
+                )}
+                {currentRoute === '/settings/general/rfq' && (
+                  <GeneralSettingsView initialTab="rfq-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+
+
+
                 {currentRoute === '/approvals' && (
                   <ApprovalInboxView
                     items={items}
@@ -716,7 +873,13 @@ export default function App() {
                   />
                 )}
 
-                {currentRoute === '/settings/general' && <GeneralSettingsView />}
+                {currentRoute === '/settings/api-providers' && (
+                  <ApiProvidersView />
+                )}
+
+                {currentRoute === '/settings/aging-parameters' && (
+                  <AgingParameterMasterView />
+                )}
 
                 {(currentRoute === '/settings/item-code-rules' || currentRoute === '/settings/item-description-rules') && (
                   <RuleBuilderView />
@@ -737,6 +900,16 @@ export default function App() {
                 {currentRoute === '/settings/warehouses' && (
                   <OrganizationsView
                     initialTab="warehouse"
+                    companies={companies}
+                    setCompanies={setCompanies}
+                    branches={branches}
+                    setBranches={setBranches}
+                  />
+                )}
+
+                {currentRoute === '/settings/purchase-org' && (
+                  <OrganizationsView
+                    initialTab="purchase_org"
                     companies={companies}
                     setCompanies={setCompanies}
                     branches={branches}
@@ -870,6 +1043,24 @@ export default function App() {
         }
         onNavigate={(route) => setCurrentRoute(route)}
       />
+
+      {activePrSessions.map(sessionId => (
+        <PurchaseCreationModal
+          key={sessionId}
+          currentUser={currentUser}
+          onClose={() => closePrSession(sessionId)}
+          onSuccess={() => closePrSession(sessionId)}
+        />
+      ))}
+
+      {selectedPrDetails && (
+        <PurchaseRequisitionDetailsModal
+          pr={selectedPrDetails}
+          currentUser={currentUser}
+          onClose={() => setSelectedPrDetails(null)}
+          onUpdated={() => {}}
+        />
+      )}
     </div>
   );
 }

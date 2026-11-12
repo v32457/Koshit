@@ -25,6 +25,9 @@ import {
   Filter,
   Layers,
   ArrowUpDown,
+  Eye,
+  X,
+  Boxes,
 } from 'lucide-react';
 
 interface CustomSpecificationsViewProps {
@@ -74,6 +77,10 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
     globalItemId: string;
     description: string;
   }>({ customerPartNumber: '', customerId: '', manufacturerBrandId: '', globalItemId: '', description: '' });
+
+  // Detailed View Inspector States
+  const [selectedCmbDetail, setSelectedCmbDetail] = useState<CustomerManufacturerBrandMaster | null>(null);
+  const [selectedPartDetail, setSelectedPartDetail] = useState<CustomerPartModelReference | null>(null);
 
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -389,7 +396,11 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                   </tr>
                 ) : (
                   filteredCmbList.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                    <tr
+                      key={item.id}
+                      className="hover:bg-indigo-50/50 transition cursor-pointer"
+                      onClick={() => setSelectedCmbDetail(item)}
+                    >
                       <td className="p-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -403,7 +414,7 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                           {item.entityType}
                         </span>
                       </td>
-                      <td className="p-3 font-mono font-bold text-slate-900">{item.code}</td>
+                      <td className="p-3 font-mono font-bold text-indigo-700 hover:underline">{item.code}</td>
                       <td className="p-3 font-semibold text-slate-800">{item.name}</td>
                       <td className="p-3 font-mono text-slate-600 text-[11px]">{item.displayLabel}</td>
                       <td className="p-3 text-slate-500 max-w-xs truncate">{item.description || '—'}</td>
@@ -423,7 +434,14 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-right space-x-1">
+                      <td className="p-3 text-right space-x-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setSelectedCmbDetail(item)}
+                          className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
+                          title="View Detailed Inspector"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={() => handleOpenCmbModal(item)}
                           className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
@@ -510,8 +528,12 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                   </tr>
                 ) : (
                   filteredPartList.map((ref) => (
-                    <tr key={ref.id} className="hover:bg-slate-50/80 transition">
-                      <td className="p-3 font-mono font-bold text-indigo-700">{ref.customerPartNumber}</td>
+                    <tr
+                      key={ref.id}
+                      className="hover:bg-indigo-50/50 transition cursor-pointer"
+                      onClick={() => setSelectedPartDetail(ref)}
+                    >
+                      <td className="p-3 font-mono font-bold text-indigo-700 hover:underline">{ref.customerPartNumber}</td>
                       <td className="p-3 font-semibold text-slate-800">{ref.customerName || '—'}</td>
                       <td className="p-3 text-slate-600">{ref.manufacturerBrandName || '—'}</td>
                       <td className="p-3 font-mono font-bold text-slate-900 flex items-center gap-1.5">
@@ -530,7 +552,14 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-right space-x-1">
+                      <td className="p-3 text-right space-x-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setSelectedPartDetail(ref)}
+                          className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
+                          title="View Detailed Inspector"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={() => handleOpenPartModal(ref)}
                           className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
@@ -754,6 +783,221 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                 className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-xs cursor-pointer"
               >
                 Save Part Reference
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* CMB DETAILED VIEW INSPECTOR MODAL */}
+      {selectedCmbDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="bg-[#0B192C] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-cyan-300">{selectedCmbDetail.code}</span>
+                    <span
+                      className={`px-2 py-0.2 rounded text-[10px] font-bold ${
+                        selectedCmbDetail.entityType === 'CUSTOMER'
+                          ? 'bg-blue-500 text-white'
+                          : selectedCmbDetail.entityType === 'MANUFACTURER'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-purple-500 text-white'
+                      }`}
+                    >
+                      {selectedCmbDetail.entityType}
+                    </span>
+                  </div>
+                  <h3 className="text-xs font-semibold text-slate-200 mt-0.5">{selectedCmbDetail.name}</h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedCmbDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded font-bold cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Entity Core Info Grid */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Display Label</span>
+                  <span className="font-mono font-bold text-slate-800">{selectedCmbDetail.displayLabel}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Status</span>
+                  <span className={`font-bold ${selectedCmbDetail.isActive ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {selectedCmbDetail.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Description / Scope</span>
+                  <span className="text-slate-800 font-medium">{selectedCmbDetail.description || 'No detailed description provided.'}</span>
+                </div>
+              </div>
+
+              {/* Referenced Customer Parts */}
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-indigo-600" />
+                  <span>Referenced Part & Model References ({partModelList.filter((p) => p.customerId === selectedCmbDetail.id || p.manufacturerBrandId === selectedCmbDetail.id).length})</span>
+                </h4>
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="p-2">Part / Model #</th>
+                        <th className="p-2">Linked Item Code</th>
+                        <th className="p-2">Description</th>
+                        <th className="p-2 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {partModelList
+                        .filter((p) => p.customerId === selectedCmbDetail.id || p.manufacturerBrandId === selectedCmbDetail.id)
+                        .map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50">
+                            <td className="p-2 font-mono font-bold text-indigo-700">{p.customerPartNumber}</td>
+                            <td className="p-2 font-mono text-slate-800">{p.globalItemCode || '—'}</td>
+                            <td className="p-2 text-slate-600 truncate max-w-xs">{p.description || '—'}</td>
+                            <td className="p-2 text-right">
+                              <span className={`font-bold text-[10px] ${p.isActive ? 'text-emerald-700' : 'text-rose-600'}`}>
+                                {p.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      {partModelList.filter((p) => p.customerId === selectedCmbDetail.id || p.manufacturerBrandId === selectedCmbDetail.id).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="p-4 text-center text-slate-400">
+                            No part or model number references linked to this master record yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Audit Metadata */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-[11px] text-slate-600">
+                <div><strong className="text-slate-700">Created At:</strong> {selectedCmbDetail.createdAt ? new Date(selectedCmbDetail.createdAt).toLocaleString() : 'System Seed'}</div>
+                <div><strong className="text-slate-700">Last Updated At:</strong> {selectedCmbDetail.updatedAt ? new Date(selectedCmbDetail.updatedAt).toLocaleString() : 'System Seed'}</div>
+                <div><strong className="text-slate-700">Updated By:</strong> {selectedCmbDetail.updatedBy || 'Platform Administrator'}</div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = selectedCmbDetail;
+                  setSelectedCmbDetail(null);
+                  handleOpenCmbModal(target);
+                }}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs cursor-pointer flex items-center gap-1"
+              >
+                <Edit2 className="w-3.5 h-3.5" /> Edit Master
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCmbDetail(null)}
+                className="px-4 py-1.5 bg-slate-800 text-white rounded-lg font-bold text-xs hover:bg-slate-700 cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PART MODEL DETAILED VIEW INSPECTOR MODAL */}
+      {selectedPartDetail && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="bg-[#0B192C] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tag className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="font-mono text-sm font-bold text-cyan-300">{selectedPartDetail.customerPartNumber}</h3>
+                  <p className="text-xs text-slate-300">Customer Part / Model Number Mapping Reference</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedPartDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded font-bold cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Main Mapping Grid */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Customer Entity</span>
+                  <span className="font-bold text-slate-900">{selectedPartDetail.customerName || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Manufacturer / Brand</span>
+                  <span className="font-bold text-slate-900">{selectedPartDetail.manufacturerBrandName || '—'}</span>
+                </div>
+                <div className="col-span-2 p-2 bg-white rounded border border-slate-200">
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase flex items-center gap-1">
+                    <Link className="w-3.5 h-3.5 text-blue-500" /> Linked Global Item Master
+                  </span>
+                  <span className="font-mono font-bold text-indigo-800 text-sm block mt-0.5">
+                    {selectedPartDetail.globalItemCode || 'Unlinked'}
+                  </span>
+                  {selectedPartDetail.globalItemId && (
+                    <span className="text-slate-600 font-medium text-[11px] block mt-0.5">
+                      {globalItems.find((i) => i.id === selectedPartDetail.globalItemId)?.description || 'Linked Item'}
+                    </span>
+                  )}
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Reference Notes / Specs</span>
+                  <span className="text-slate-800 font-medium">{selectedPartDetail.description || 'No additional specification notes.'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase">Active Status</span>
+                  <span className={`font-bold ${selectedPartDetail.isActive ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {selectedPartDetail.isActive ? 'ACTIVE REFERENCE' : 'INACTIVE'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Audit Metadata */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-[11px] text-slate-600">
+                <div><strong className="text-slate-700">Created At:</strong> {selectedPartDetail.createdAt ? new Date(selectedPartDetail.createdAt).toLocaleString() : 'System Seed'}</div>
+                <div><strong className="text-slate-700">Last Updated At:</strong> {selectedPartDetail.updatedAt ? new Date(selectedPartDetail.updatedAt).toLocaleString() : 'System Seed'}</div>
+                <div><strong className="text-slate-700">Updated By:</strong> {selectedPartDetail.updatedBy || 'Platform Administrator'}</div>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = selectedPartDetail;
+                  setSelectedPartDetail(null);
+                  handleOpenPartModal(target);
+                }}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs cursor-pointer flex items-center gap-1"
+              >
+                <Edit2 className="w-3.5 h-3.5" /> Edit Reference
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPartDetail(null)}
+                className="px-4 py-1.5 bg-slate-800 text-white rounded-lg font-bold text-xs hover:bg-slate-700 cursor-pointer"
+              >
+                Close Inspector
               </button>
             </div>
           </div>

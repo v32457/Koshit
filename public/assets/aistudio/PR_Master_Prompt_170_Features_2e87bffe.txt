@@ -1,0 +1,2093 @@
+CIPPLATFORM – PHASE 1 PURCHASE REQUEST (PR) MODULE SINGLE CONSOLIDATED
+MASTER PROMPT AND IMPLEMENTATION SPECIFICATION Business-approved
+requirements and implementation control document
+
+AUTHORITATIVE BUSINESS DECISIONS – OVERRIDE ANY OLDER CHECKLIST WORDING
+
+The decisions below are confirmed by the business owner and are
+requirements, not suggestions. If any earlier section or old checklist
+wording conflicts with these decisions, this section takes precedence.
+Do not treat a REQUIRED feature as optional. Do not implement a NOT
+REQUIRED feature.
+
+1.  Scope remains Phase 1 Purchase Request (PR) only. Do not implement
+    PO creation/modification, Direct PO, PR-to-PO conversion, PR
+    consolidation into PO, partial PR-to-PO allocation, PO quantity
+    allocation, PO approval, or PO tracking screens. Read-only display
+    of existing open PO/commitment information is allowed only where the
+    authorized ERP integration exposes it; it must not create or modify
+    POs.
+2.  Reuse the existing CIPPlatform architecture, masters, RBAC, approval
+    engine, ERP integration, budget controls, Communication and
+    Notification Hub, audit services, and database conventions. Do not
+    create duplicate masters, parallel workflow engines, or a standalone
+    application.
+3.  PR applicability must be evaluated before displaying the PR menu and
+    enforced again on every backend operation. Missing, invalid, or
+    ambiguous configuration denies access by default.
+4.  PR Types are MRP, Manual, Repair, and Maintenance, configurable
+    through existing General Settings. PR Type is distinct from Item
+    Category. Equipment/machine ID remains optional for Repair and
+    Maintenance.
+5.  Support material and service PR lines. Non-catalogue items/services
+    must pass controlled master-data review; no uncontrolled master
+    creation or duplicate master records.
+6.  MRP must support manual import and automatic authorized ERP
+    integration, with reviewable drafts, source traceability, duplicate
+    prevention/idempotency, batch history, retry, reconciliation, and
+    exception reporting. Never fabricate MRP data.
+7.  Buyer assignment is resolved from existing Item Master/branch
+    mapping. Do not guess or silently auto-assign a missing buyer; flag
+    Pending Buyer Configuration and notify the authorized administrator.
+8.  Duplicate PR detection is a warning, not an automatic rejection or
+    merge. Record acknowledgement/justification as configured.
+9.  Budget controls are configured by branch and item category with
+    enable/disable settings. When enabled for the applicable
+    branch/category, mandatory configured budget checks apply before
+    submission; insufficient budget, missing required assignment, or
+    unavailable authoritative budget validation blocks submission unless
+    an authorized budget-exception workflow is approved. When explicitly
+    disabled by authorized configuration, do not run that budget gate
+    for the applicable scope. Project/WBS budget check is NOT REQUIRED.
+    Do not infer a budget source or fabricate budget data.
+10. UOM rule: every PR material line uses the Item Master Inventory UOM
+    as its authoritative and displayed PR UOM. The requester cannot edit
+    or replace it. If an alternate purchasing/display conversion is
+    required by an approved business process, use configured approved
+    conversion factors only, show the conversion transparently, and
+    retain the Inventory-UOM quantity as the authoritative quantity. No
+    free-text or user-defined conversion.
+11. Stock/inventory values must come from the existing authorized ERP
+    integration. Show warehouse-level and multi-warehouse availability,
+    stock ageing, batch/lot and serial details only where applicable to
+    the item, open PR quantity, and open PO/commitment visibility only
+    if ERP exposes it. Stock-transfer suggestions must be based on
+    actual available stock and ageing data. Show retrieval timestamp and
+    freshness; stale/unavailable data must be clearly flagged and must
+    never be treated as zero or current. No inventory
+    reservation/deduction unless an existing authorized ERP process does
+    it.
+12. Approved alternate/substitute suggestions may be shown only when the
+    alternate is already configured as approved and stock is actually
+    available. Do not recommend unapproved or unavailable alternates.
+13. Approval must use the existing Approval Workflow Engine. Reporting
+    Manager Level 1 remains mandatory unless an explicitly authorized
+    exception is already supported and configured. Support parallel and
+    sequential approvals, item-level approvers, partial quantity
+    approval/rejection, delegation with start/end dates, SLA
+    escalation/reminders, withdrawal before final approval, and
+    approval-rule version retention. No ambiguous or missing rule may
+    bypass approval.
+14. Partial approvals must preserve requested, approved, rejected,
+    returned, and pending quantities at line level. Approved quantity
+    cannot exceed requested quantity. Parent PR status is derived from
+    line and workflow states.
+15. PR edits are frozen during active approval. Approved changes by
+    requester, assigned buyer, or authorized administrator require a
+    change request, reason, before/after comparison, budget revalidation
+    where applicable, configured reapproval, and preservation of the
+    previous approved version.
+16. Stale unapproved line cleanup is REQUIRED. XX days is an
+    administrator-configured value, not a hardcoded default. Cleanup
+    must support preview, authorized manual or scheduled execution,
+    advance warning, exemptions, soft archive only, full audit,
+    skipped/error reporting, parent-status recalculation, and authorized
+    restoration. Approved lines and approved quantities must never be
+    removed. Eligible unapproved balances on partially approved lines
+    may be archived only if explicitly configured. Do not physically
+    delete PR headers or lines.
+17. PR closure may be manual or automatic only under explicit General
+    Settings rules. Approval alone does not close a PR. PO conversion or
+    receipt completion cannot be a Phase 1 closure condition.
+18. Priority values are Normal, Urgent, and Critical, with role-based
+    controls, justification where configured, audit, and no approval
+    bypass.
+19. The 100-feature decision register below is authoritative: 99
+    features are REQUIRED and feature 33 (budget check by project/WBS)
+    is NOT REQUIRED. Feature 46 (dated approval delegation) is REQUIRED.
+20. No implementation may claim that an integration or feature works
+    until the existing source code, configuration, interface and runtime
+    behaviour have been inspected and the relevant tests have passed.
+    Where ERP/master-data capability is not present, document the gap
+    and required interface contract; do not mock or fabricate production
+    data.
+
+CIPPlatform – Purchase Request (PR) Module
+
+Phase 1 – Consolidated Functional and Technical Implementation
+Specification
+
+1.  Objective and Scope
+
+Implement the Purchase Request module within the existing CIPPlatform
+application.
+
+Phase 1 is strictly limited to PR functionality.
+
+Reuse existing: - Authentication and RBAC. - Employee and Reporting
+Manager hierarchy. - Company, Branch, Group and Department masters. -
+Business Unit / Plant masters. - Unit-specific Item Master. - Item
+Category and UOM masters. - General Settings. - Existing Approval
+Workflow Engine. - Existing ERP integration. - Budget and cost-centre
+functionality, where available. - Audit and notification services.
+
+Do not create duplicate masters, standalone applications or separate
+approval engines.
+
+Explicitly excluded from Phase 1
+
+Do not implement: - PO creation or modification. - Direct PO
+functionality. - PR-to-PO conversion. - Multiple PR consolidation into
+one PO. - Partial PR-to-PO allocation. - PO quantity allocation
+controls. - PO approval workflow. - PO tracking screens.
+
+Keep the PR data model compatible with future PO integration without
+implementing PO functionality now.
+
+2.  Stage 1 – Existing System Assessment
+
+Before coding, inspect:
+
+1.  Frontend framework and navigation.
+2.  Authentication and RBAC.
+3.  Employee master and reporting hierarchy.
+4.  Company, branch, group and department masters.
+5.  Business unit / plant masters.
+6.  Unit-specific Item Master.
+7.  Item category and UOM masters.
+8.  Branch-specific buyer assignment.
+9.  General Settings.
+10. Existing Approval Workflow Engine.
+11. Existing ERP integration and available inventory interfaces.
+12. Existing budget and cost-centre functionality.
+13. Audit and notification services.
+14. Existing database schema and migration framework.
+
+Prepare a file-level implementation plan identifying: - Existing
+reusable components. - Existing database tables. - Required new
+components. - Required API changes. - Required database changes. -
+Configuration changes. - ERP integration dependencies. - Regression
+risks.
+
+Do not modify source files until the assessment and implementation plan
+have been presented.
+
+3.  PR Type Classification
+
+PR Type is mandatory.
+
+Initial PR types:
+
+  PR Type       Description
+  ------------- -----------------------------------------
+  MRP           Material Requirements Planning
+  Manual        Manually initiated purchase requirement
+  Repair        Repair-related requirement
+  Maintenance   Maintenance-related requirement
+
+PR Type must be configurable through existing General Settings.
+
+Administrators can enable, disable or add PR types without code changes.
+
+PR Type and Item Category must remain separate fields.
+
+A Maintenance PR, for example, may contain electrical spares, mechanical
+spares or consumables.
+
+4.  PR Type-Specific Functionality
+
+4.1 MRP PR
+
+Support both generation methods:
+
+Option A – Manual import - Import MRP-generated requirements from an
+approved ERP export or supported import interface. - Validate the
+imported data. - Map item codes to the correct CIPPlatform Item
+Master. - Validate quantities and delivery dates. - Capture the source
+MRP reference. - Show imported records for user review before PR
+submission.
+
+Option B – Automatic ERP integration - Retrieve MRP requirements through
+an authorized existing ERP integration. - Identify the source planning
+run. - Retrieve required items and quantities. - Retrieve required
+delivery dates. - Validate branch and business-unit ownership. -
+Generate PR draft records for review and submission. - Record source
+transaction identifiers to prevent duplicate imports.
+
+Both methods must be supported.
+
+Do not fabricate MRP data or simulate ERP availability.
+
+If the existing ERP integration does not expose the required MRP data,
+document the interface gap and request the necessary integration details
+before implementation.
+
+Capture, where available: - MRP run/reference number. - Production order
+or work order. - Parent item or finished product. - Component item. -
+Requirement quantity. - Available stock. - Shortage quantity. - Required
+delivery date. - Source planning run and generation date.
+
+4.2 Manual PR
+
+Capture: - Purchase justification. - Business requirement. - Requesting
+department. - Requested item or service. - Estimated cost. - Supporting
+documents. - Reason for manually initiating the requirement.
+
+4.3 Repair PR
+
+Support optional: - Equipment or machine ID. - Asset reference. -
+Equipment location. - Breakdown or repair reference. - Breakdown date. -
+Repair description. - Spare parts required. - Repair urgency. - Downtime
+impact. - Maintenance/engineering reference. - Supporting photographs or
+technical reports.
+
+Equipment or machine ID is optional for Repair PR.
+
+4.4 Maintenance PR
+
+Support optional: - Equipment or machine ID. - Preventive or corrective
+maintenance classification. - Maintenance schedule reference. -
+Maintenance work order. - Planned maintenance date. - Required
+spares/materials. - Service requirements, where applicable. -
+Maintenance department. - Equipment criticality. - Technical
+specifications.
+
+Equipment or machine ID is optional for Maintenance PR.
+
+Mandatory fields must be configurable by PR Type. Do not make equipment
+ID mandatory for Repair or Maintenance PRs in Phase 1.
+
+5.  PR Applicability and Menu Visibility
+
+PR applicability must be configurable through existing General Settings.
+
+Support: - Company. - Branch. - Group. - Business unit / plant, where
+applicable. - Item category, where required. - PR Type. - Enabled /
+disabled status. - Asset category exclusion. - Explicitly permitted
+Asset exceptions.
+
+Mandatory PR menu rule
+
+The system must validate applicability before displaying the Purchase
+Request menu.
+
+1.  User logs in.
+2.  Identify authenticated employee.
+3.  Retrieve company, branch, department, group and business unit.
+4.  Evaluate PR applicability using existing General Settings.
+5.  If PR is enabled for the applicable branch and group, display the PR
+    menu.
+6.  If PR is disabled, hide the PR menu.
+7.  If configuration is missing, invalid or ambiguous, deny PR access by
+    default.
+8.  Reevaluate after organizational assignment or configuration changes.
+
+Apply the same centralized validation at the backend for module access,
+PR creation, retrieval, editing, submission and approval.
+
+Menu hiding alone is not sufficient security enforcement.
+
+6.  Requester and Department Details
+
+Automatically populate: - Requester name. - Employee ID. -
+Designation. - Department. - Company. - Branch. - Group. - Business unit
+/ plant. - Reporting Manager.
+
+Capture: - Purchase purpose. - Business justification. - Cost centre. -
+Delivery location. - Specifications. - Attachments. - Remarks.
+
+Support authorized PR creation on behalf of another employee only if
+permitted by existing RBAC.
+
+Record actual creator and requesting employee separately.
+
+7.  Unit-Specific Item Master
+
+Different business units maintain their own Item Masters.
+
+The PR must retrieve items from the selected and authorized business
+unit’s Item Master.
+
+Retrieve: - Item code. - Description. - Category. - UOM. -
+Specifications. - Branch applicability. - Assigned buyer.
+
+Prevent unauthorized cross-unit selection.
+
+Do not create a duplicate Item Master.
+
+8.  Buyer Configuration
+
+Buyer assignment must be resolved through the existing Item Master based
+on branch.
+
+Required mapping: - Item code. - Item category. - Branch. - Assigned
+buyer. - Active/inactive status. - Effective dates, where supported.
+
+Support item-level buyer assignment when a PR contains multiple items.
+
+If the same item has different buyers in different branches, resolve the
+buyer using the applicable branch-specific mapping.
+
+If buyer assignment is missing or inactive: - Do not automatically
+assign another buyer. - Set the item/PR to Pending Buyer
+Configuration. - Notify the authorized administrator. - Prevent the item
+from being treated as ready for buyer action.
+
+9.  PR Item Details and Approximate Pricing
+
+Each PR supports multiple item lines.
+
+Capture: - Item code. - Description. - Item category. - UOM. - Requested
+quantity. - Approximate unit price. - Currency. - Estimated total
+value. - Specifications. - Remarks.
+
+Calculate:
+
+Estimated item value = Requested quantity × Approximate unit price.
+
+Calculate the PR estimated total from all item lines.
+
+Approximate price is used for budgeting and approval routing. It is not
+a final purchase price.
+
+10. Multiple Delivery Dates and Quantities
+
+Each PR item must support multiple delivery schedules.
+
+Example:
+
+  Item     Delivery date     Quantity
+  -------- --------------- ----------
+  Item A   15-Nov-2026            100
+  Item A   30-Nov-2026            150
+  Item A   15-Dec-2026            250
+  Total                           500
+
+Requirements: - Multiple delivery dates per item. - Independent quantity
+for each schedule. - Total scheduled quantity must equal requested item
+quantity. - Support editing schedules before submission. - Preserve
+schedules after approval. - Maintain delivery schedule revision
+history. - Apply reapproval when approved schedules change.
+
+11. ERP Stock Availability Integration
+
+Stock availability must be obtained through the existing ERP
+integration.
+
+Do not create fabricated stock balances or treat unavailable data as
+zero stock.
+
+Where the ERP interface supports it, retrieve: - Item code. -
+Branch/plant. - Warehouse/store. - Stock on hand. - Reserved quantity. -
+Blocked or unavailable stock. - Relevant committed quantity. - Available
+quantity. - Retrieval timestamp. - ERP source reference.
+
+Use the ERP’s authoritative availability calculation where provided.
+
+If the ERP does not provide an authoritative available quantity,
+document the calculation and source fields before implementing it.
+
+Stock validation
+
+-   Display stock availability during PR creation.
+-   Identify potential shortages.
+-   Show the source and retrieval timestamp.
+-   Warn when ERP information is unavailable or stale.
+-   Do not silently use cached or fabricated values as current
+    availability.
+-   Apply configured rules for stock checks when submitting the PR.
+
+The stock check must not silently change the requested quantity.
+
+Any inventory reservation or stock deduction is outside Phase 1 unless
+an existing approved ERP workflow explicitly supports it.
+
+12. Duplicate PR and Item Requirement Warning
+
+The system must identify potential duplicate requirements.
+
+Check relevant open PRs using: - Item code. - Company. - Branch. -
+Business unit. - Requesting department. - Relevant open PR statuses. -
+Applicable date range, where configured.
+
+When a potential duplicate is found:
+
+1.  Display a warning to the requester.
+2.  Show relevant existing PR references according to RBAC.
+3.  Display available quantities and statuses where authorized.
+4.  Allow the requester to continue submitting the PR.
+5.  Record that a duplicate warning was displayed.
+6.  Record the user’s acknowledgement or justification where configured.
+
+Duplicate detection is a warning, not a submission block.
+
+Do not automatically reject or merge duplicate PRs.
+
+13. Mandatory Budget Validation
+
+Budget validation is mandatory before PR submission.
+
+Reuse the existing budget and cost-centre functionality or the existing
+authorized ERP integration.
+
+Validate, where supported: - Company. - Branch. - Department. - Cost
+centre. - Project/WBS, where applicable. - Financial year. - Budget
+allocation. - Actual expenditure. - Existing commitments. - Available
+budget. - Estimated PR value.
+
+The budget validation must use the authoritative budget source
+configured for the company.
+
+Budget validation rules
+
+1.  A PR must have the required budget assignment.
+2.  Validate available budget before submission.
+3.  Compare estimated PR value against available budget.
+4.  If sufficient budget exists, allow submission to continue.
+5.  If budget is insufficient, prevent submission under the mandatory
+    validation rule.
+6.  Record the budget validation result and timestamp.
+7.  Show the requester the validation outcome.
+8.  Preserve the budget source reference and relevant calculation
+    details.
+9.  Revalidate at submission to prevent reliance on stale draft-time
+    checks.
+10. Do not fabricate budget availability.
+
+If budget integration is unavailable, the PR must not bypass mandatory
+budget validation. Return a clear configuration/integration error and
+notify the authorized administrator.
+
+Budget reservation and actual budget consumption must follow existing
+financial controls. Do not assume that merely submitting a PR reserves
+or consumes budget.
+
+14. Approval Workflow
+
+Reuse the existing CIPPlatform Approval Workflow Engine.
+
+Level 1 – Reporting Manager
+
+Every submitted PR must first go to the requester’s Reporting Manager.
+
+Level 1 approval is mandatory.
+
+Resolve the Reporting Manager through the existing employee hierarchy.
+
+Do not permit unauthorized self-approval.
+
+Subsequent category and price-based approvals
+
+After Level 1, evaluate: - Item category. - Estimated PR value. - PR
+Type. - Applicable branch and group. - Configured approval level. -
+Assigned approval manager.
+
+Example configuration only:
+
+  Category           Estimated value Approver
+  -------------- ------------------- -----------
+  Consumables          Up to ₹25,000 Manager A
+  Consumables      ₹25,001–₹1,00,000 Manager B
+  Consumables        Above ₹1,00,000 Manager C
+  IT Equipment         Up to ₹50,000 Manager D
+  IT Equipment         Above ₹50,000 Manager E
+
+Administrators configure actual values and approvers.
+
+Support PR Type-based workflow differences where explicitly configured.
+
+Prevent overlapping or ambiguous approval rules.
+
+Missing approval configuration must not silently bypass approval.
+
+For multiple categories in one PR, evaluate all applicable approval
+requirements and use existing sequential or parallel workflow
+capabilities.
+
+15. Approval Delegation, Escalation and SLA
+
+Reuse existing workflow functionality where available.
+
+Support: - Authorized approval delegation. - Approval escalation. -
+Configurable approval SLA. - Pending approval reminders. - Rejection
+comments. - Return-for-correction comments. - Complete approval
+history. - Approval manager reassignment with audit.
+
+Do not introduce a separate workflow engine.
+
+16. Approved PR Changes and Reapproval
+
+Approved PR changes may be initiated by all three authorized parties:
+
+1.  Requester.
+2.  Assigned buyer.
+3.  Authorized administrator.
+
+All three must follow the controlled change and reapproval process.
+
+Change process
+
+1.  User initiates a change request.
+2.  System records the original approved values.
+3.  System records proposed new values.
+4.  User supplies a mandatory reason for the change.
+5.  System identifies affected PR fields and items.
+6.  System triggers the configured reapproval workflow.
+7.  The PR is marked as Pending Reapproval.
+8.  The original approved version remains available for audit.
+9.  The revised version becomes effective only after all required
+    reapprovals are completed.
+10. The requester, buyer and relevant approvers are notified.
+
+Fields subject to change control
+
+-   PR Type.
+-   Item code.
+-   Item description where editable.
+-   Item category.
+-   Quantity.
+-   Approximate unit price.
+-   Estimated total.
+-   Delivery dates.
+-   Delivery quantities.
+-   Cost centre.
+-   Department.
+-   Branch or business unit, where authorized.
+-   Equipment reference.
+-   Business justification.
+
+Restrictions
+
+-   Do not silently overwrite approved values.
+-   Do not permit ordinary editing to bypass reapproval.
+-   Do not erase earlier approval history.
+-   Do not treat a proposed change as approved.
+-   Do not permit unauthorized changes to organizational ownership.
+-   PR Type changes must receive explicit authorization and reapproval.
+
+Use the existing workflow engine to determine the required approval
+levels for revised data.
+
+17. PR Status and Buyer-Based Pending Status
+
+Support:
+
+1.  Draft.
+2.  Submitted.
+3.  Pending Reporting Manager Approval.
+4.  Pending Subsequent Approval.
+5.  Pending Reapproval.
+6.  Approved – Pending Buyer Action.
+7.  Pending Buyer Configuration.
+8.  Rejected.
+9.  Returned for Correction.
+10. Resubmitted.
+11. Cancelled, where permitted.
+
+After approval, resolve the buyer using branch-specific Item Master
+mapping.
+
+For every item, display: - Assigned buyer. - Buyer status. - Approved
+quantity. - Required delivery schedules. - Pending action.
+
+For multiple buyers within one PR, maintain item-level buyer status and
+derive the overall PR status accordingly.
+
+18. PR Revision, Cancellation and Duplicate Control
+
+Support: - Draft editing. - Controlled post-submission changes. -
+Approved PR revision with reapproval. - Cancellation with mandatory
+reason. - Authorization for cancellation. - Complete revision history. -
+Duplicate requirement warning. - Controlled reopening, where permitted.
+
+Do not physically delete approved PR records.
+
+19. PR Tracking and Dashboard
+
+Provide tracking by: - PR Type. - Company. - Branch. - Group. -
+Department. - Business unit. - Requester. - Item category. - Buyer. -
+Approver. - Status. - Date range. - Required delivery date.
+
+Display: - PR number. - PR Type. - Requester. - Department. - Branch. -
+Submission date. - Item count. - Estimated value. - Budget validation
+status. - Stock availability status. - Approval status. - Pending
+approver. - Assigned buyer. - Buyer status. - Required delivery date. -
+PR ageing.
+
+Provide dashboard summaries for: - MRP PR. - Manual PR. - Repair PR. -
+Maintenance PR. - Pending approval. - Pending buyer action. - Pending
+buyer configuration. - Approved PR. - Rejected PR. - Pending
+reapproval. - Cancelled PR.
+
+Provide estimated value, approval turnaround, PR ageing and overdue
+delivery reports.
+
+Allow controlled Excel export.
+
+20. Notifications
+
+Reuse existing notification services.
+
+Support notifications for: - PR submission. - Reporting Manager
+approval. - Subsequent approval. - Approval overdue. - PR approved. - PR
+rejected. - PR returned for correction. - Buyer assignment. - Missing
+buyer configuration. - Duplicate PR warning. - Budget validation
+failure. - ERP stock availability failure. - PR change request. -
+Pending reapproval. - PR cancellation. - Approaching required delivery
+date.
+
+21. Database and Data Integrity
+
+Inspect the existing schema before introducing tables.
+
+Reuse existing: - Employee. - Branch. - Group. - Department. - Item
+Master. - Buyer. - Item Category. - Budget. - ERP integration. -
+Approval Workflow. - Audit.
+
+Create new PR structures only where necessary.
+
+Potential normalized structures: - PR header. - PR item lines. - PR item
+delivery schedules. - PR Type configuration, if not already supported. -
+PR change/revision history, if existing audit facilities are
+insufficient. - PR approval references, if not already supported.
+
+Maintain: - Unique PR number. - Referential integrity. - Transactional
+consistency. - Duplicate prevention. - Item Master source reference. -
+Requester and creator identity. - Branch and business-unit ownership. -
+Budget validation reference. - ERP stock retrieval reference. - Approval
+history. - Buyer mapping reference. - Revision history. - Creation and
+modification timestamps.
+
+Design PR identifiers and line references so that a future PO module can
+reference approved PR quantities and delivery schedules.
+
+Do not implement PO conversion or allocation in Phase 1.
+
+22. Security and Audit
+
+Implement: - Existing authentication and RBAC. - Backend applicability
+validation. - Branch and business-unit isolation. - Item Master access
+restrictions. - Buyer assignment validation. - Approval segregation of
+duties. - Budget validation enforcement. - ERP data provenance. -
+Attachment access control. - Audit logging for all PR changes. - Audit
+logging for approval decisions. - Audit logging for budget validation. -
+Audit logging for configuration changes.
+
+23. Acceptance Tests
+
+PR Type and generation
+
+1.  MRP manual import.
+2.  MRP automatic ERP integration.
+3.  Duplicate MRP source import prevention.
+4.  Manual PR.
+5.  Repair PR without equipment ID.
+6.  Maintenance PR without equipment ID.
+7.  PR Type mandatory validation.
+
+Applicability
+
+1.  Enabled branch/group displays PR menu.
+2.  Disabled branch/group hides PR menu.
+3.  Missing configuration denies access.
+4.  Unauthorized API access rejected.
+
+Item and delivery
+
+1.  Correct unit-specific Item Master.
+2.  Cross-unit selection blocked.
+3.  Multiple item lines.
+4.  Multiple delivery dates.
+5.  Quantity reconciliation.
+6.  Approximate price calculation.
+
+ERP inventory
+
+1.  Correct ERP stock retrieval.
+2.  Branch and warehouse-specific stock.
+3.  Reserved and blocked stock handling.
+4.  Stale stock information warning.
+5.  ERP unavailable handling.
+6.  No fabricated stock values.
+
+Duplicate requirements
+
+1.  Existing duplicate detected.
+2.  Requester warned.
+3.  Requester permitted to continue.
+4.  Warning acknowledgement recorded.
+
+Budget
+
+1.  Sufficient budget permits submission.
+2.  Insufficient budget blocks submission.
+3.  Missing budget assignment blocks submission.
+4.  Budget source unavailable blocks submission.
+5.  Budget revalidation at submission.
+6.  Budget validation audit recorded.
+
+Approval
+
+1.  Mandatory Reporting Manager Level 1.
+2.  Category-based approval.
+3.  Price-range-based approval.
+4.  PR Type-based approval where configured.
+5.  Multiple categories.
+6.  Delegation and escalation.
+7.  Rejection and resubmission.
+
+Approved PR changes
+
+1.  Requester initiates change and reapproval.
+2.  Buyer initiates change and reapproval.
+3.  Administrator initiates change and reapproval.
+4.  Original approved version retained.
+5.  Change reason mandatory.
+6.  Unauthorized change rejected.
+7.  Revised values effective only after approval.
+
+Regression
+
+Verify existing authentication, RBAC, employee hierarchy, General
+Settings, Item Master, budget integration, ERP integration, Approval
+Workflow Engine and PO module continue to function without regression.
+
+24. Deliverables
+
+25. Existing-system assessment.
+
+26. Existing component and database mapping.
+
+27. PR applicability design.
+
+28. PR Type configuration.
+
+29. MRP import and ERP integration design.
+
+30. Requester and department interface.
+
+31. Unit-specific Item Master integration.
+
+32. Multiple delivery schedule functionality.
+
+33. Approximate pricing calculation.
+
+34. ERP stock availability integration.
+
+35. Duplicate PR warning.
+
+36. Mandatory budget validation.
+
+37. Buyer assignment integration.
+
+38. Approval workflow integration.
+
+39. Approved PR revision and reapproval.
+
+40. PR status and tracking dashboard.
+
+41. Database migrations, only where necessary.
+
+42. Automated tests and execution results.
+
+43. Installation and migration commands.
+
+44. Rollback procedure.
+
+45. Known gaps and limitations.
+
+46. Final acceptance report.
+
+47. Implementation Sequence
+
+Stage 1 – Inspect existing CIPPlatform architecture.
+
+Stage 2 – Present file-level implementation plan.
+
+Stage 3 – Map PR Type, applicability, Item Master, ERP, budget and
+approval dependencies.
+
+Stage 4 – Implement PR applicability and menu visibility.
+
+Stage 5 – Implement PR Type classification and type-specific fields.
+
+Stage 6 – Implement requester, department and unit-specific Item Master
+integration.
+
+Stage 7 – Implement MRP manual import and automatic ERP integration.
+
+Stage 8 – Implement item entry, approximate pricing and multiple
+delivery schedules.
+
+Stage 9 – Implement ERP stock availability checks.
+
+Stage 10 – Implement duplicate PR warning.
+
+Stage 11 – Implement mandatory budget validation.
+
+Stage 12 – Implement branch-specific buyer assignment.
+
+Stage 13 – Implement approval routing, delegation and escalation.
+
+Stage 14 – Implement PR revisions and mandatory reapproval.
+
+Stage 15 – Implement status tracking, dashboards, notifications and
+audit.
+
+Stage 16 – Execute acceptance and regression tests.
+
+Stage 17 – Provide deployment instructions and final test report.
+
+26. Final Mandatory Instructions
+
+-   Phase 1 is PR only.
+-   Do not implement PO functionality.
+-   Do not fabricate ERP stock, MRP or budget data.
+-   Support both manual and automatic MRP generation.
+-   Equipment ID is optional for Repair and Maintenance.
+-   Duplicate PR detection must warn but allow submission.
+-   Budget validation is mandatory.
+-   ERP stock availability must use the existing ERP integration.
+-   Requester, buyer and authorized administrator may initiate approved
+    PR changes.
+-   All approved PR changes must follow reapproval.
+-   Do not bypass mandatory Reporting Manager Level 1 approval.
+-   Do not hardcode buyer or approval assignments.
+-   Do not display the PR menu before applicability validation.
+-   Do not modify existing PO functionality.
+-   Do not claim production readiness without successful integration and
+    acceptance tests.
+
+First deliverable: Complete the Stage 1 technical assessment and present
+the Stage 2 file-level implementation plan. Do not modify source files
+until the plan has been presented.
+
+ADDENDUM A – PHASE 1 DECISIONS AND BULK CLEANUP
+
+This addendum supplements the uploaded Phase 1 PR specification. Phase 1
+remains PR-only. PO creation, Direct PO, PR-to-PO conversion, PO
+consolidation and PO allocation remain excluded.
+
+A1. Confirmed decisions
+
+1.  MRP PR generation supports both manual import and automatic ERP
+    integration.
+2.  Equipment/machine ID is optional for Repair and Maintenance PRs.
+3.  Stock availability comes from the existing ERP integration. Never
+    fabricate stock data.
+4.  Duplicate PR detection warns the requester but permits submission;
+    record acknowledgement where configured.
+5.  Budget validation is mandatory before submission. Insufficient
+    budget or unavailable authoritative budget validation blocks
+    submission.
+6.  Requester, assigned buyer and authorized administrator may initiate
+    approved PR changes. All such changes require configured reapproval.
+7.  Support both material and service PRs.
+8.  Non-catalogue items/services require controlled master-data review
+    and approval.
+9.  Support item-level and partial-quantity approval with line-level
+    audit.
+10. Priority supports requester selection and system determination,
+    subject to authorization. Initial levels: Normal, Urgent, Critical.
+11. PR closure supports manual and automatic methods, controlled by
+    General Settings. Approval alone does not close a PR.
+
+A2. Bulk removal/archive of unapproved PR items after configurable XX
+days
+
+Add a configurable cleanup function for unapproved PR item/service lines
+older than a business-defined number of days (XX).
+
+Configuration: - Enable/disable cleanup. - Age threshold in days. Do not
+hardcode XX; an authorized administrator must configure it. - Explicit
+age calculation basis: line creation date, PR creation date, last
+submission date or last activity date. - Eligible PR types, branches,
+groups and statuses. - Exemptions for Urgent/Critical PRs, active
+approvals, change requests, master-data review, budget checks, ERP
+failures or other protected workflows. - Execution mode: preview only,
+administrator-triggered bulk cleanup, or scheduled cleanup. - Advance
+warning period and notification recipients.
+
+Rules and safeguards: - Only unapproved lines matching configured
+age/status rules are candidates. - Approved lines and approved
+quantities must never be removed. - For partially approved lines,
+preserve approved quantity and approval history. Only an eligible
+unapproved balance may be archived if explicitly configured. - For
+multi-line PRs, archive eligible lines individually; do not delete the
+entire PR if other lines remain active or approved. - Do not clean up
+records while a protected workflow is active unless explicitly permitted
+by configuration. - Generate a preview showing PR number, line,
+requester, branch, PR type, item/service, requested/approved/unapproved
+quantity, status, age, eligibility reason and proposed action. - Require
+authorized confirmation for manual bulk cleanup. Scheduled cleanup must
+use approved configuration and produce a report. - Use soft
+archive/removal, not physical deletion. Retain original data,
+attachments/metadata references, approval history, user identity,
+timestamps, cleanup reason, rule version, execution user/job and
+execution time. - Recalculate parent PR status. If no active lines
+remain, apply a configured expired/cancelled/closed status; do not
+silently delete the PR header. - Notify requester, buyer and relevant
+approvers according to configuration. - Produce skipped-record and
+failure reports. - Prevent duplicate and concurrent cleanup execution. -
+Allow authorized restoration where permitted. Restored lines must return
+to an appropriate draft/returned state and must not silently regain
+obsolete approvals. - Audit candidates, skipped records, removals,
+failures and restorations.
+
+Acceptance tests: 1. A line younger than XX days is not selected. 2. An
+eligible line older than XX days appears in preview. 3. Approved lines
+are never removed. 4. Partially approved lines retain approved
+quantities and history. 5. Ineligible statuses and protected workflows
+are skipped. 6. Multi-line PRs retain non-eligible lines. 7. Parent PR
+status is recalculated. 8. Soft archive retains audit history. 9.
+Scheduled and manual jobs enforce permissions. 10. Notifications and
+exception reports are generated. 11. Concurrent jobs cannot process a
+line twice. 12. Authorized restoration does not reinstate obsolete
+approvals.
+
+A3. Additional controls carried into Phase 1 design
+
+Assess and include where applicable: - PR priority and authorized
+priority changes. - Material and service lines, including service scope,
+service UOM, location and service dates. - Non-catalogue master-data
+approval and duplicate/equivalent master checks. - Item-level and
+partial-quantity approvals with quantity reconciliation. - UOM
+conversion, MOQ and quantity precision checks. - PR templates, copy
+previous PR, Excel bulk line import/export. - PR ageing by
+approval/buyer/workflow stage and SLA escalation. - Approval delegation
+and inactive approver handling. - Approval value snapshot and
+approval-rule version at decision time. - Approval withdrawal before
+final approval where configured. - Cancellation and reopening with
+reason, authorization and history. - Currency/exchange-rate handling
+using an approved source. - MRP import batch history, source run IDs,
+idempotency, retry and reconciliation. - Attachment type/size
+restrictions, access control and retention. - Employee transfer/exit and
+approver replacement handling. - Branch/department data access and
+confidentiality. - Manual/automatic closure rules; approval alone is not
+closure.
+
+------------------------------------------------------------------------
+
+CONFIRMED 100-FEATURE DECISION REGISTER
+
+B1. PR creation and user experience 1. PR templates by department or PR
+type — REQUIRED 2. Copy an existing PR to create a new draft — REQUIRED
+3. Automatic draft saving — REQUIRED 4. Excel bulk upload of PR lines —
+REQUIRED 5. Downloadable Excel import template with validation —
+REQUIRED 6. Bulk edit of PR lines before submission — REQUIRED 7.
+Header-level and line-level attachments — REQUIRED 8. Attachment preview
+within CIPPlatform — REQUIRED 9. Configurable attachment size and
+file-type restrictions — REQUIRED 10. Requester dashboard for drafts,
+submitted and returned PRs, integrated with the existing Communication
+and Notification Hub — REQUIRED
+
+B2. Item and service controls 11. Suggest approved alternate/substitute
+items only when the alternate is already configured and stock is
+available — REQUIRED 12. Minimum order quantity validation — REQUIRED
+13. Maximum quantity validation by item and branch — REQUIRED 14. PR
+line UOM must always be the Item Master Inventory UOM and must not be
+editable or alterable by the requester; any conversion must use approved
+conversion factors and must preserve the inventory-UOM quantity as the
+authoritative quantity — REQUIRED 15. Item lead-time visibility from
+authorized ERP or master data — REQUIRED 16. Item criticality
+classification — REQUIRED 17. Catalogue versus non-catalogue indicator —
+REQUIRED 18. Service category and service UOM master — REQUIRED 19.
+Service scope-of-work template — REQUIRED 20. Service milestone or visit
+schedule — REQUIRED
+
+B3. Inventory and ERP controls 21. Warehouse-level stock selection —
+REQUIRED 22. Stock availability across multiple warehouses — REQUIRED
+23. Stock ageing visibility — REQUIRED 24. Batch/lot-controlled stock
+visibility when the item is batch/lot controlled — REQUIRED 25.
+Serial-number-controlled stock visibility when the item is serial
+controlled — REQUIRED 26. Open PR quantity visibility for the same item
+— REQUIRED 27. Existing open PO/commitment visibility, read-only and
+only when exposed by the authorized ERP integration; this is visibility
+only and does not implement PO functions — REQUIRED 28. Stock transfer
+suggestion before purchase, based on stock ageing and available
+transferable stock — REQUIRED 29. Configurable ERP stock snapshot
+freshness threshold — REQUIRED 30. ERP integration health dashboard —
+REQUIRED
+
+B4. Budget and financial controls 31. Budget check by department —
+REQUIRED 32. Budget check by cost centre — REQUIRED 33. Budget check by
+project/WBS — NOT REQUIRED 34. Budget check by capital versus operating
+expenditure — REQUIRED 35. Financial-year boundary handling with
+historical last-year trend visibility — REQUIRED 36. Currency conversion
+using an approved exchange-rate source — REQUIRED 37. Configurable
+budget tolerance — REQUIRED 38. Budget exception approval route —
+REQUIRED 39. Budget snapshot retained at submission and approval —
+REQUIRED 40. Budget reservation at a defined lifecycle stage, subject to
+Finance approval and existing financial controls — REQUIRED
+
+B5. Approval workflow 41. Parallel approval by multiple departments —
+REQUIRED 42. Sequential approval with configurable order — REQUIRED 43.
+Item-level approver assignment — REQUIRED 44. Partial quantity approval
+— REQUIRED 45. Partial line or quantity rejection while other lines
+continue through the workflow — REQUIRED 46. Approval delegation with
+configured start and end dates — REQUIRED 47. Escalation after approval
+SLA expiry — REQUIRED 48. Automatic reminder schedule — REQUIRED 49.
+Approval withdrawal before final approval — REQUIRED 50. Approval rule
+version retained with each approval decision — REQUIRED
+
+B6. PR lifecycle and exception handling 51. PR expiry date — REQUIRED
+52. Configurable automatic expiry of stale drafts — REQUIRED 53.
+Configurable bulk soft-archive of stale unapproved PR lines after an
+administrator-configured XX days; preserve approved quantities and
+history — REQUIRED 54. Advance warning before stale-line cleanup —
+REQUIRED 55. Restore an archived PR line through an authorized action,
+with audit and controlled return to draft/returned state — REQUIRED 56.
+Cancel individual PR lines without cancelling the entire PR — REQUIRED
+57. Reopen a cancelled PR with authorization and reason — REQUIRED 58.
+Freeze PR editing while approval is in progress, except through
+controlled change/return workflows — REQUIRED 59. Change-request
+workflow for approved PRs — REQUIRED 60. Field-level before/after
+revision comparison — REQUIRED
+
+B7. MRP and planning 61. MRP import batch dashboard — REQUIRED 62. MRP
+source-run reconciliation report — REQUIRED 63. MRP import retry for
+failed records — REQUIRED 64. MRP duplicate source-transaction detection
+and idempotency — REQUIRED 65. MRP-generated PR draft review queue —
+REQUIRED 66. Manual MRP quantity adjustment with mandatory reason and
+audit — REQUIRED 67. MRP exception report for unmapped items — REQUIRED
+68. MRP exception report for missing delivery dates — REQUIRED 69. MRP
+planning-run cancellation handling — REQUIRED 70. Trace every MRP PR
+line to its original MRP planning requirement/source transaction —
+REQUIRED
+
+B8. Repair and Maintenance 71. Equipment criticality master integration
+— REQUIRED 72. Breakdown severity classification — REQUIRED 73.
+Production downtime hours capture — REQUIRED 74. Maintenance work-order
+reference validation — REQUIRED 75. Preventive-maintenance schedule
+reference validation — REQUIRED 76. Repair/maintenance photographs and
+technical-report attachments — REQUIRED 77. Emergency repair PR route
+with authorized priority controls — REQUIRED 78. Maintenance service
+milestone scheduling — REQUIRED 79. Repair history reference for the
+same equipment — REQUIRED 80. Equipment location and
+responsible-department validation — REQUIRED
+
+B9. Buyer and operational management 81. Buyer workload dashboard —
+REQUIRED 82. Buyer pending-PR ageing — REQUIRED 83. Buyer
+acknowledgement of an assigned PR — REQUIRED 84. Buyer reassignment with
+authorization and audit — REQUIRED 85. Buyer reassignment during
+employee absence or exit — REQUIRED 86. Buyer comments and clarification
+requests — REQUIRED 87. Buyer queue filters by PR type and item category
+— REQUIRED 88. Buyer SLA and overdue-action alerts — REQUIRED 89.
+Buyer-wise estimated-value reporting — REQUIRED 90.
+Missing-buyer-mapping dashboard — REQUIRED
+
+B10. Governance, reporting and administration 91. PR dashboard by
+branch, group and department — REQUIRED 92. PR dashboard by PR type,
+category and priority — REQUIRED 93. Approval turnaround and SLA reports
+— REQUIRED 94. PR ageing report by workflow stage — REQUIRED 95. Overdue
+required-delivery report — REQUIRED 96. Configurable notification
+templates — REQUIRED 97. Email and in-app notification preferences,
+integrated with the existing Communication and Notification Hub —
+REQUIRED 98. Full audit export for authorized auditors — REQUIRED 99.
+Data retention and archival policy configuration — REQUIRED 100.
+Scheduled reports to authorized managers — REQUIRED
+
+MANDATORY IMPLEMENTATION METHOD AND DELIVERABLES
+
+A. Inspect first; do not code immediately. - Inspect the actual
+repository, current branch/commit, package manifests, frontend
+routing/navigation, backend/API structure, authentication/RBAC, employee
+hierarchy, organization masters, General Settings, Item Master and
+Inventory UOM, service/category masters, buyer mapping, ERP interfaces,
+stock/batch/serial/ageing data, MRP interfaces, budget and
+financial-year data, currency source, approval engine, Communication and
+Notification Hub, attachments/storage, audit, reporting/export,
+scheduled jobs, database schema/migrations, and existing tests. - Use
+the actual repository contents. Do not assume paths, frameworks, table
+names, endpoints, columns, or capabilities from earlier descriptions. -
+Do not alter files, run destructive migrations, install packages, or
+change configuration during assessment. - Identify what is reusable,
+what is missing, and what requires an external ERP/provider contract. -
+For each requirement, classify: EXISTS AND REUSABLE; EXISTS BUT REQUIRES
+EXTENSION; NOT PRESENT; BLOCKED BY EXTERNAL INTEGRATION; or NEEDS
+BUSINESS CLARIFICATION. - Identify data ownership and system of record
+for each field. Distinguish CIPPlatform-owned data from ERP-owned data.
+
+B. Produce a file-level technical assessment and implementation plan
+before coding. Include: 1. Current architecture and request/data flow.
+2. Existing component, page, service, API, database-table and
+configuration mapping. 3. Requirement-to-existing-system traceability
+matrix for all core requirements and features 1–100. 4. Proposed PR
+header, line, delivery schedule, service, MRP source, approval
+reference, budget snapshot, buyer assignment, revision, attachment and
+archive data model, reusing existing structures wherever possible. 5.
+API contracts, validation rules, permissions and error responses. 6. ERP
+interface contracts and gaps for MRP, stock, warehouse, ageing,
+batch/lot, serial, open PR/PO commitments, lead time, work orders and
+maintenance schedules. 7. Budget configuration matrix by branch and item
+category, including enabled/disabled behaviour and Finance
+exception/reservation controls. 8. Approval routing design, including
+mandatory Reporting Manager Level 1, sequential/parallel branches,
+item-level routing, partial decisions, delegation, escalation and
+versioning. 9. Notification events and Communication and Notification
+Hub integration. 10. Security, tenant/company/branch/group/business-unit
+isolation, audit, retention and attachment access. 11. Migration
+strategy, rollback plan, regression risks, test plan and deployment
+steps. 12. A phased implementation sequence with dependencies and
+acceptance criteria.
+
+C. Approval gate. Stop after delivering the assessment and file-level
+implementation plan. Do not modify source files until the user has
+reviewed and explicitly approved the plan. If the user requests changes,
+revise the plan first.
+
+D. Implementation after approval. - Implement incrementally in the
+existing application. - Use existing design system, routing, services,
+RBAC, approval engine, notification hub and audit conventions. - Add
+database migrations only where demonstrably necessary. Migrations must
+be reversible where technically possible and must not destroy existing
+data. - Validate all rules server-side; frontend validation is for
+usability, not security. - Use transactions and idempotency for imports,
+approvals, archive jobs and other retryable operations. - Do not
+fabricate ERP, MRP, inventory, budget, exchange-rate, buyer, equipment
+or approval data. Use clearly labelled test fixtures only in automated
+tests. - Never silently default missing configuration to permissive
+behaviour. - Add unit, integration, API, permission, workflow,
+migration, regression and end-to-end tests. - Include tests for boundary
+dates, timezone handling, decimal precision, UOM conversions, partial
+quantities, stale snapshots, duplicate imports, retries, concurrent
+cleanup, employee transfer/exit, and changed approval rules. - Provide
+exact commands run, expected outcomes, actual outcomes, failures, logs
+and remediation. Do not claim a test passed unless it was executed and
+passed.
+
+E. Required final deliverables. - Architecture assessment and
+requirement traceability matrix. - Approved file-level implementation
+plan. - Database schema/migrations and rollback instructions. -
+API/interface documentation. - PR screens and workflows. - General
+Settings configuration for applicability, PR types, budget enablement by
+branch/category, approval rules, priority, cleanup, expiry, attachment
+rules, notifications and closure. - ERP integration gap register and
+verified interface contracts. - Automated test suite and execution
+report. - Deployment/runbook with exact copy-paste commands and expected
+results. - Security and audit verification. - Known limitations and
+outstanding dependencies. - Final acceptance report.
+
+PHASE 1 ACCEPTANCE GATE The phase is not complete merely because screens
+render or records can be saved. It is complete only when the approved
+requirements are implemented in the existing application, backend
+enforcement is proven, required ERP/budget/workflow integrations are
+verified against real authorized interfaces, all acceptance and
+regression tests pass, audit evidence is retained, and the user signs
+off. Any blocked external interface must be reported as BLOCKED, not
+represented as completed.
+
+STARTING INSTRUCTION Begin with Stage 1: inspect the existing
+CIPPlatform repository and runtime architecture in read-only mode. Then
+present the Stage 2 assessment, requirement traceability matrix,
+integration-gap register, and file-level implementation plan. Do not
+start coding until explicit approval is received.
+
+===============================================================================
+AUTHORITATIVE ADDENDUM – SHELF LIFE, SERIAL WARRANTY, QUALITY,
+ENGINEERING AND PROCUREMENT CONTROLS; CONFIGURATION SCOPE
+===============================================================================
+
+This addendum records the business owner’s latest decisions. It is part
+of the single consolidated Phase 1 PR master specification and takes
+precedence over any conflicting or less-specific wording elsewhere in
+the document. Do not remove or weaken earlier confirmed requirements.
+
+A. CONFIGURATION MODEL – BRANCH, GROUP AND ITEM LEVEL
+
+1.  The following controls must be configurable, not hardcoded:
+    -   Company/group/branch applicability, according to the existing
+        CIPPlatform organization hierarchy and the user’s authorized
+        scope.
+    -   Item-level applicability, where the control is relevant to an
+        individual item.
+    -   Item-category applicability, where the control is relevant to a
+        category.
+    -   Group-level applicability, where the business requires a common
+        policy across branches.
+2.  The configuration must support enable/disable at the applicable
+    scope and resolve precedence deterministically. The assessment phase
+    must inspect the existing organization hierarchy and configuration
+    framework and propose an explicit precedence rule (for example, item
+    override within branch, branch override within group, then group
+    default). Do not assume or implement a precedence rule without
+    documenting it for approval.
+3.  A more specific configuration must not silently broaden a user’s
+    access. Access control and feature applicability are separate: RBAC
+    and backend authorization remain mandatory even when a feature is
+    enabled.
+4.  Missing, conflicting or invalid configuration must fail safely. For
+    compliance, shelf-life, serial tracking, quality certificates and
+    other mandatory item controls, the system must not silently treat
+    missing configuration as “not applicable”. Flag the record for
+    authorized configuration resolution.
+5.  Maintain effective dates, active/inactive status, configuration
+    owner, reason, version and audit history for configuration changes
+    wherever the existing platform supports them. Configuration changes
+    must not rewrite historical PR decisions.
+
+B. SHELF-LIFE AND EXPIRY MANAGEMENT – REQUIRED
+
+1.  Item Master must provide a functional applicability setting:
+    -   Shelf-life controlled: Applicable / Not Applicable.
+    -   This is an item-level master setting, with authorized
+        group/branch overrides only if approved in the configuration
+        design.
+2.  For Applicable items, maintain or retrieve the relevant shelf-life
+    policy:
+    -   Shelf-life duration and unit.
+    -   Whether manufacturing date is required.
+    -   Whether expiry date is required or calculated from manufacturing
+        date.
+    -   Minimum remaining shelf life required at receipt/delivery.
+    -   Any item/branch/group-specific minimum remaining shelf-life
+        rule.
+    -   Required date/point against which remaining shelf life is
+        evaluated.
+3.  During PR creation and review, display the item’s shelf-life
+    requirement and validate that the requested procurement/delivery
+    requirement is compatible with the configured policy. If actual
+    batch expiry information is not available before receipt, do not
+    invent it or claim that a future batch passes validation. Show the
+    control as pending supplier/batch confirmation or downstream receipt
+    validation, as appropriate.
+4.  Capture the required minimum remaining shelf life in the PR line as
+    a requirement snapshot so later master changes do not alter the
+    approved PR.
+5.  At the downstream ERP receipt/batch event, validate actual
+    manufacturing date, expiry date and remaining shelf life against the
+    approved PR requirement, provided the existing ERP integration
+    exposes those events. If not exposed, report the integration gap; do
+    not implement a fake receipt process in the PR module.
+6.  Show expiry information, near-expiry warnings and expired/blocked
+    stock status from the authoritative ERP/inventory source when
+    available.
+7.  Support FEFO visibility/suggestion only when authoritative batch
+    expiry and stock data are available. Do not allocate, reserve or
+    issue stock in the PR module.
+8.  Expired, quarantined, quality-rejected or blocked stock must not be
+    counted as available stock. Use the ERP’s authoritative availability
+    calculation where provided; document the calculation and source
+    where it is not.
+9.  Support configurable warning thresholds, exception approval and
+    reporting for shelf-life-controlled items. Exception approval must
+    not bypass mandatory quality or regulatory controls.
+10. Non-shelf-life-controlled items must not be forced to provide expiry
+    data. The Applicable / Not Applicable setting and any policy changes
+    must be audited.
+
+C. SERIAL-NUMBER LIFECYCLE AND TRACEABILITY – REQUIRED
+
+1.  Item Master must identify whether an item is serial-number
+    controlled.
+2.  For serial-controlled items, support traceability using the
+    authoritative ERP/asset/inventory records, including where
+    available:
+    -   Item code and description.
+    -   Manufacturer serial number and internal serial number.
+    -   Manufacturer and supplier.
+    -   Batch/lot reference where relevant.
+    -   PR reference and approved PR line.
+    -   Downstream purchase/receipt reference as read-only ERP data, if
+        exposed.
+    -   Receipt/inspection status.
+    -   Current location, branch and custodian/owner.
+    -   Installation/commissioning date and equipment/asset reference.
+    -   Transfer, repair, service and movement history.
+    -   Warranty details and supporting evidence.
+3.  Validate serial-number uniqueness according to the authoritative
+    system’s rules. Do not invent serial numbers at PR creation or treat
+    requested quantity as actual serial allocation.
+4.  PR may capture serial-tracking requirements and display actual
+    serial lifecycle information only when supplied by an authorized
+    downstream source. Actual serial allocation, receipt, installation
+    and asset transactions remain outside Phase 1 PR unless already
+    provided by an existing integrated service.
+5.  Where serial information is unavailable, show the integration/data
+    status clearly; do not fabricate lifecycle events.
+
+D. WARRANTY POLICY AND SERIAL-LEVEL WARRANTY TRACKING – REQUIRED
+
+1.  Item Master must have a Warranty Applicable / Not Applicable
+    functional setting. It may also define the standard warranty
+    policy/expected duration.
+2.  For serialized equipment, actual warranty must be tracked at the
+    individual serial-number level, not only at Item Master level.
+3.  The serial-level warranty record must support, where available:
+    -   Item and unique serial number.
+    -   Manufacturer warranty and supplier warranty as separate coverage
+        records where applicable.
+    -   Warranty duration and coverage terms.
+    -   Warranty start-date basis, configurable as invoice, receipt,
+        installation or commissioning.
+    -   Actual warranty start date and calculated/confirmed end date.
+    -   Warranty certificate, invoice, supplier/manufacturer evidence
+        and attachments.
+    -   Coverage, exclusions, conditions and claim contact/reference.
+    -   Status such as not started, active, expired, claimed, voided or
+        disputed.
+    -   Warranty claim, repair, replacement and service history.
+    -   Expiry alerts and warranty reports.
+4.  The Item Master policy is the default requirement only. It must not
+    overwrite the actual serial-level dates, coverage or evidence.
+5.  Capture expected warranty duration/coverage in the PR line when
+    required and retain it as an approved requirement snapshot. Actual
+    warranty activation must occur only from the configured
+    authoritative downstream event/source. Do not activate warranty
+    merely because a PR is approved.
+6.  For non-serialized items, warranty may be tracked at
+    item/batch/receipt level only if the existing business process and
+    authoritative source support it. Do not force serial-level data for
+    non-serialized items.
+7.  Warranty applicability, policy and exceptions must be configurable
+    by item and, where approved, group/branch scope. Missing
+    configuration must be flagged for resolution when the item/category
+    requires warranty control.
+
+E. QUALITY, CERTIFICATES AND COMPLIANCE – REQUIRED
+
+1.  Item Master/configuration must identify whether quality inspection
+    and certificates are applicable/required for the item.
+2.  Support a configurable certificate/document requirement catalogue.
+    For each applicable item, the configuration must define:
+    -   Certificate/document type.
+    -   Mandatory or optional.
+    -   Applicable item, item category, branch and/or group scope.
+    -   Required stage (with PR submission, supplier confirmation,
+        delivery/ receipt, inspection or another explicitly configured
+        stage).
+    -   Validity/expiry requirement, if applicable.
+    -   Issuer/authority or acceptance criteria, where required.
+3.  Examples of certificate types may include Certificate of Analysis
+    (CoA), Certificate of Conformance (CoC), material test certificate,
+    calibration certificate, inspection report, safety/compliance
+    certificate and other organization-defined documents. These are
+    examples only; administrators configure the actual list and
+    applicability.
+4.  The PR must display mandatory certificate requirements and capture
+    supplier/document commitments where the process requires them.
+5.  A mandatory certificate must not be treated as received or verified
+    merely because a checkbox is selected. Verification status,
+    verifier, date, document reference and outcome must be recorded at
+    the configured stage.
+6.  Support certificate attachment, preview, version/history, validity
+    date and rejection/expiry status, subject to existing document
+    services.
+7.  Where a mandatory certificate is missing or invalid at its
+    configured enforcement stage, block the relevant transition or route
+    an explicitly configured exception approval. Do not silently bypass
+    the requirement.
+8.  Quality status must distinguish inspection pending, accepted,
+    rejected, blocked and quarantined where those statuses are supplied
+    by the authoritative quality/ERP system.
+9.  Actual inspection, goods receipt, quality disposition and stock
+    release are not new PR transactions. Reuse existing ERP/QMS
+    functions and display their status if integrated; otherwise document
+    the interface gap.
+
+F. STORAGE AND HANDLING CONDITIONS – NOT REQUIRED
+
+The user has explicitly marked the proposed storage-condition and
+special handling requirement group (for example, temperature, humidity
+and handling conditions) as NOT REQUIRED for this Phase 1 PR scope. Do
+not implement it as a Phase 1 feature. Do not add mandatory
+storage/handling fields or workflows unless the business owner changes
+this decision in writing.
+
+G. ENGINEERING REVISION AND SPARE-PART COMPATIBILITY – REQUIRED
+
+1.  Support controlled engineering drawing/specification revision
+    references for items where applicable.
+2.  Show the approved/current revision from the authoritative Item
+    Master, PLM or engineering source. Do not allow requesters to select
+    an obsolete revision as current.
+3.  Retain the drawing/specification document reference and revision
+    snapshot used when the PR was submitted/approved.
+4.  For repair and maintenance PRs, validate or display spare-part
+    compatibility against equipment make/model/variant/serial or
+    approved equipment BOM where the authoritative source provides it.
+5.  If compatibility data is missing, flag for engineering/maintenance
+    review; do not assert compatibility or auto-substitute based on
+    description alone.
+6.  Changes to a controlled drawing/specification revision after PR
+    approval must be visible and handled through the approved PR
+    change/review process where they affect the requirement.
+7.  Actual engineering master/BOM maintenance remains with the
+    authoritative engineering/ERP system unless an existing CIPPlatform
+    capability already owns it.
+
+H. PROCUREMENT HISTORY AND SUPPLIER RESTRICTIONS – REQUIRED
+
+1.  Display authorized, relevant procurement history for the selected
+    item, where the ERP/procurement source exposes it:
+    -   Previous purchase price and currency.
+    -   Purchase date and supplier.
+    -   Historical price trend.
+    -   Last purchase reference and quantity.
+    -   Lead time history where available.
+2.  Clearly label historical prices as reference information, not
+    guaranteed current quotations or approved PR prices. Apply
+    currency/date context and authorized access restrictions.
+3.  Support approved supplier/manufacturer restrictions by item,
+    category, branch or group, according to existing
+    master/configuration capability.
+4.  Show approved supplier/manufacturer lists and flag a proposed
+    supplier outside the permitted list.
+5.  Supplier exceptions require an authorized, auditable approval route.
+    Do not silently approve an unlisted supplier or invent supplier
+    status.
+6.  Supplier selection/quotation/PO creation remains outside Phase 1 PR
+    unless an existing integrated process already provides a read-only
+    reference.
+
+I. SCOPE AND DATA OWNERSHIP BOUNDARY
+
+1.  Phase 1 remains a PR module, not a replacement for ERP inventory,
+    purchasing, goods receipt, QMS, PLM or asset management.
+2.  CIPPlatform must capture the PR requirement snapshots, enforce
+    PR-stage validations, and display authoritative downstream lifecycle
+    information where integrated.
+3.  Actual batch creation, serial allocation, goods receipt, inspection,
+    stock movements, asset commissioning, warranty activation and
+    warranty claims must remain with their existing system of record
+    unless the repository assessment proves that an existing CIPPlatform
+    module already owns that process and the business approves reuse.
+4.  Every field must have a documented system of record,
+    source/interface, refresh behaviour and fallback/error state.
+5.  If an ERP/QMS/PLM/asset interface does not expose required data or
+    events, record the exact gap and proposed interface contract. Do not
+    simulate production data or mark the requirement complete.
+
+J. REQUIRED CONFIGURATION MATRIX AND TEST COVERAGE
+
+The technical assessment must include a configuration matrix for at
+least: - Shelf-life applicable/not applicable and shelf-life rules. -
+Serial-number controlled/not controlled. - Warranty applicable/not
+applicable and warranty policy. - Quality inspection applicable/not
+applicable. - Certificate/document type and mandatory/optional status. -
+Engineering revision control and spare-part compatibility. - Approved
+supplier/manufacturer restrictions. - PR feature applicability by group,
+branch and item/item category.
+
+For every configuration, document: - Scope level(s) supported. -
+Precedence and conflict resolution. - Who can view/change it. -
+Effective dates and versioning. - What happens when configuration is
+missing or conflicting. - Whether the control blocks PR submission,
+approval, buyer action or a downstream ERP event. - Audit event and
+notification behaviour.
+
+Mandatory test scenarios include: - Item with shelf life Applicable
+versus Not Applicable. - Missing shelf-life policy for an item that
+requires it. - Remaining shelf life below and exactly at the configured
+minimum. - Expired, quarantined, blocked and quality-rejected stock not
+counted as available. - FEFO display based on real batch expiry data. -
+Serial-controlled versus non-serial-controlled items. - Duplicate serial
+number and serial history retrieval. - Warranty Applicable versus Not
+Applicable. - Different warranty start-date bases and exact end-date
+calculation. - Item Master standard warranty differing from actual
+serial warranty. - Missing warranty evidence and warranty expiry
+alert. - Mandatory versus optional certificate, missing/expired/invalid
+certificate, and authorized exception. - Current versus obsolete
+engineering revision. - Compatible versus incompatible spare part,
+including missing compatibility data. - Approved versus unapproved
+supplier/manufacturer and exception approval. - Group/branch/item
+configuration conflicts and configuration changes after PR approval. -
+Unauthorized users attempting to view or change restricted data.
+
+K. UPDATED BUSINESS DECISION REGISTER FOR THESE ADDITIONS
+
+-   Shelf-life and expiry management: REQUIRED.
+-   Serial-number lifecycle and traceability: REQUIRED.
+-   Warranty applicability at Item Master level (Applicable/Not
+    Applicable): REQUIRED.
+-   Actual warranty tracking for serialized equipment at serial-number
+    level: REQUIRED.
+-   Quality, certificates and compliance controls: REQUIRED.
+-   Certificate type catalogue with Mandatory/Optional configuration:
+    REQUIRED.
+-   Storage and special handling conditions: NOT REQUIRED for Phase 1.
+-   Engineering revision and spare-part compatibility: REQUIRED.
+-   Procurement history and supplier/manufacturer restrictions:
+    REQUIRED.
+-   Configuration by group, branch and item/item category where
+    relevant: REQUIRED, with documented precedence and audit.
+
+END OF AUTHORITATIVE ADDENDUM
+
+===============================================================================
+BUSINESS CONFIRMATION – ALL FOUR CONFIGURATION LEVELS ARE MANDATORY
+===============================================================================
+
+The business owner has explicitly confirmed that ALL FOUR configuration
+levels are required:
+
+1.  Group level – REQUIRED.
+2.  Branch level – REQUIRED.
+3.  Item level – REQUIRED.
+4.  Item-category level – REQUIRED.
+
+This is a confirmation of all four levels, not an either/or selection
+and not a request to choose only the applicable levels.
+
+Implementation requirements: - The configuration framework must support
+all four levels for the relevant PR controls and feature applicability,
+including shelf-life, serial control, warranty, quality inspection,
+certificate/document requirements, engineering revision and spare-part
+compatibility, supplier/manufacturer restrictions, budget controls, and
+other configurable PR rules. - Administrators must be able to configure,
+view and audit each supported level according to their RBAC
+permissions. - The technical assessment must identify which controls can
+be configured at each of the four levels and document any
+control-specific limitations. Do not silently omit a level for a
+control. - Define and obtain business approval for deterministic
+precedence and conflict resolution when group, branch, item-category and
+item settings differ. Do not invent precedence or allow ambiguous
+configuration to bypass a mandatory control. - Preserve effective dates,
+active/inactive status, configuration version, configuration owner,
+change reason and audit history. - Apply configuration consistently in
+the user interface and enforce it server-side. A hidden menu or disabled
+UI control is not authorization. - Where settings conflict or required
+configuration is missing, fail safely and route the issue to an
+authorized administrator for resolution.
+
+This clarification supersedes any earlier phrase such as “where
+applicable” when it could be interpreted to mean that one or more of the
+four configuration levels are optional. All four levels are mandatory
+capabilities of the configuration framework.
+
+END OF CONFIGURATION-LEVEL CONFIRMATION
+
+===============================================================================
+AUTHORITATIVE ADDENDUM – FEATURES 101–135: BUSINESS-SELECTED
+REQUIREMENTS
+===============================================================================
+
+This addendum incorporates the user’s uploaded decision matrix. These
+decisions are authoritative. Preserve the original feature IDs 101–135.
+Do not reinterpret “Based on branch enable/Disable” as globally
+mandatory functionality enabled for every branch. The
+feature/configuration capability must exist, while each branch’s
+activation is controlled by authorized configuration. All four
+configuration levels (Group, Branch, Item and Item Category) remain
+mandatory capabilities as previously confirmed. Where a feature is
+marked branch-configurable below, branch enable/disable must be
+supported and the configuration framework must also support the
+previously confirmed hierarchy and its approved precedence rules.
+
+FEATURE 101 – PR NUMBER GENERATION – REQUIRED Generate unique PR numbers
+with company, branch, financial year and PR type context. Number
+generation must be concurrency-safe, auditable, configurable through
+existing settings where appropriate, and must not create duplicates
+under simultaneous submissions or retries.
+
+FEATURES 102–106 – BRANCH-CONFIGURABLE 102. PR amendment after
+submission but before approval: Enable/disable by branch. When enabled,
+define eligible workflow states, authorized roles, amendment reason,
+revision history, revalidation and whether the amendment restarts or
+re-routes approval. Preserve the submitted version and audit the amended
+version. 103. PR withdrawal by requester before approval: Enable/disable
+by branch. When enabled, enforce permitted states, requester ownership
+or authorized on-behalf-of rules, mandatory reason, workflow
+cancellation, notification and audit. Do not allow withdrawal after a
+prohibited lifecycle point. 104. Line-level delivery location and
+warehouse validation: Enable/disable by branch. Where enabled, validate
+each line’s delivery location and warehouse against the authorized
+branch, item and ERP configuration. Do not infer a warehouse or permit
+unauthorized cross-branch locations. 105. Delivery date feasibility
+validation against item lead time: Enable/disable by branch. Where
+enabled, compare requested dates with authoritative lead-time data and
+configured calendars/buffers. Missing or stale lead-time data must be
+flagged, not invented. 106. Supplier quotation/reference attachment with
+preview, where available: Enable/disable by branch. Reuse the existing
+attachment service, enforce file security and permissions, preview
+supported formats, and retain document version/reference. A quotation is
+supporting information only; it does not create a supplier selection or
+PO process.
+
+FEATURES 107–108 – REQUIRED 107. Tax, freight, insurance and other
+estimated charges: Support configured charge categories and
+amounts/currencies at the appropriate PR header or line level. Clearly
+distinguish base estimated amount, estimated charges and total estimated
+PR value. Define whether charges are included in budget validation and
+approval thresholds. Do not calculate statutory tax without an
+authorized tax rule/source. 108. Budget currency and exchange-rate
+snapshot: Retain transaction currency, budget/base currency,
+exchange-rate value, rate date/time, rate type and authoritative
+source/reference used for budget evaluation. Preserve the snapshot at
+the required lifecycle points so historical decisions are reproducible.
+Do not use an unapproved or fabricated exchange rate.
+
+FEATURE 109 – PR APPROVAL SNAPSHOT – BRANCH-CONFIGURABLE Enable/disable
+by branch. When enabled, preserve a read-only, versioned snapshot of the
+exact PR header, lines, quantities, UOM, estimated prices, charges,
+delivery schedules, budget result, attachments/document references,
+item/master references and approval-routing rule version presented for
+approval. Each decision must be traceable to the snapshot/version
+reviewed. The snapshot must not be overwritten by later edits or
+master-data changes.
+
+FEATURES 110–115 – REQUIRED 110. Approval comments and supporting
+attachments: Capture comments and supporting documents at the approval
+decision or return/rejection stage, with author, timestamp, decision,
+access control and audit. Apply mandatory-comment rules for
+rejection/return and configured exceptions. 111. Duplicate
+attachment/document detection: Detect likely duplicate uploads using a
+reliable file fingerprint/hash and relevant metadata where appropriate.
+Do not delete or merge files automatically. Show a warning and preserve
+user/audit evidence. Respect permissions and retention rules. 112.
+Attachment security scanning and download permissions: Integrate with an
+approved malware/file-scanning capability where available. Quarantine or
+block unsafe/unscanned files according to security policy. Enforce role,
+record, branch and document-level access on preview/download. Do not
+claim scanning is active if no scanner integration exists; document the
+gap. 113. Master-data synchronization failure dashboard: Show failed,
+pending, stale and retried master-data sync operations, affected
+source/entity, timestamps, error details, retry state and reconciliation
+outcome. Restrict operational actions by RBAC. 114. Item
+deactivation/obsolescence validation: Validate item status at PR
+creation and submission using the authoritative Item Master. Block or
+route for authorized exception according to configured policy. Preserve
+already approved historical references; do not rewrite old PRs when an
+item later becomes obsolete. 115. PR line-level cancellation reason and
+quantity reconciliation: Support authorized cancellation of a line or
+remaining quantity with mandatory reason, actor, timestamp and
+notifications. Reconcile requested, approved, rejected, cancelled and
+outstanding quantities. Do not cancel unrelated lines or the entire PR
+unless separately authorized.
+
+FEATURES 116–125 – BRANCH-CONFIGURABLE Each feature below must have
+branch-level enable/disable capability and must also participate in the
+confirmed Group, Branch, Item and Item Category configuration framework
+where relevant. The branch setting must not bypass RBAC, mandatory
+legal/quality controls or an approved higher-scope policy.
+
+116. Approved manufacturer part-number cross-reference: When enabled,
+     map internal item codes to approved manufacturer part numbers,
+     manufacturer identities and applicable revisions. Validate against
+     authoritative master data.
+117. Drawing/specification attachment revision validation: When enabled,
+     validate the drawing/specification reference and revision against
+     the authoritative engineering source. Preserve the revision
+     snapshot used for the PR.
+118. Material grade and technical specification validation: When
+     enabled, capture/validate required grade, dimensions, standards,
+     specification attributes and revision against approved
+     item/engineering data. Do not accept free-text substitutions for
+     controlled fields unless explicitly configured.
+119. Item procurement status: When enabled, validate Active, Blocked,
+     Obsolete and Under Review (or the authoritative configured status
+     values). Define allowed PR actions per status. Never silently treat
+     blocked/obsolete items as active.
+120. Supplier minimum order quantity and pack-size validation: When
+     enabled and authoritative supplier/item data exists, validate
+     requested quantities against MOQ, pack size and order multiples.
+     Any override must follow configured authorization and audit.
+121. Material substitution technical approval: When enabled, require the
+     designated engineering/technical approval before accepting a
+     substitute. Reuse approved alternate-item mapping and existing
+     workflow capabilities. Do not infer technical equivalence.
+122. Calibration requirement for measuring instruments: When enabled for
+     applicable instruments, capture the calibration
+     certificate/validity requirements and validate evidence at the
+     configured enforcement stage. Actual calibration record ownership
+     remains with the authoritative quality/asset system.
+123. Certificate validity verification: When enabled, validate
+     certificate type, issuer/acceptance criteria, issue/expiry dates
+     and verification status at the configured stage. Expired or invalid
+     mandatory certificates must block or follow an explicitly approved
+     exception route.
+124. Warranty claim notification before expiry: When enabled, generate
+     configurable notifications before serial-level warranty expiry
+     using actual authoritative warranty dates and approved notification
+     recipients. Do not invent dates or notify unauthorized users.
+125. Warranty coverage exception approval: When enabled, route
+     non-standard warranty duration/coverage or exceptions through an
+     authorized approval path with reason, evidence, decision and audit.
+     Preserve the standard Item Master policy and actual serial-level
+     warranty record separately.
+
+FEATURES 126–135 – REQUIRED 126. Segregation of duties: Enforce
+incompatible role/action combinations across requester, approver, buyer,
+master-data administrator, budget controller and configuration
+administrator according to approved policy. Prevent self-approval and
+conflicting actions except through explicitly approved, audited
+exceptions. 127. Approval delegation conflict prevention: Validate
+delegate eligibility, active employment/status, authority, branch/group
+scope, delegation dates and circular/self-delegation. Prevent
+overlapping or conflicting delegations unless explicitly permitted by
+policy. Retain delegator/delegate identity in audit. 128. Concurrent PR
+editing protection: Use optimistic concurrency/version checks or an
+equivalent safe mechanism. Detect stale edits, prevent silent
+overwrites, show conflicts and require controlled reload/merge. Preserve
+revision history. 129. Idempotent ERP synchronization and retry: Use
+stable source transaction identifiers/idempotency keys, safe retry,
+duplicate prevention and reconciliation. Repeated requests must not
+create duplicate PRs or duplicate source lines. 130. Integration failure
+and recovery dashboard: Display interface health, last successful sync,
+pending/failed messages, retries, error categories, source/target
+references and recovery status. Restrict retry/replay actions to
+authorized users and audit every action. 131. Immutable audit history
+for approvals and configuration: Preserve append-only or tamper-evident
+history for approval decisions, configuration changes, delegation,
+access-sensitive actions and lifecycle transitions. Corrections must be
+additional events, not silent edits/deletions. Retention/export follows
+approved policy. 132. Financial-year PR numbering and archival: Support
+financial-year boundary rules, number-series continuity and authorized
+archival/search of historical PRs. Do not reset numbering in a way that
+creates collisions. Retain references and audit. 133. Configurable
+timezone and date handling: Define authoritative timezone per
+company/branch or existing platform standard. Store timestamps
+consistently, display in the user’s authorized/local context, and handle
+daylight-saving/timezone boundaries where relevant. Date-only business
+fields must not shift due to timezone conversion. 134. API access
+control and rate limiting: Enforce authentication, authorization, scope
+checks, input validation, rate limits, abuse protection and audit on PR
+APIs and integration endpoints. Do not expose cross-branch/group/item
+data through API parameters or exports. 135. Data export permissions and
+sensitive-data masking: Enforce RBAC and organizational scope on
+exports. Mask or omit sensitive personal, commercial and attachment data
+according to role and policy. Audit export requester, filters, record
+count, timestamp and output handling. Apply equivalent rules to
+scheduled reports.
+
+CONFIGURATION AND ACCEPTANCE RULES FOR FEATURES 101–135
+
+1.  Branch-configurable means an authorized administrator can enable or
+    disable the feature for each branch. It does not mean the feature is
+    absent from the product or that a user can toggle it.
+2.  The platform must support all four configuration levels previously
+    confirmed: Group, Branch, Item and Item Category. For each feature,
+    document which levels are meaningful and supported. Do not omit any
+    level without a documented technical/business reason and owner
+    approval.
+3.  Resolve conflicting settings using a documented precedence model
+    approved by the business owner. Do not invent precedence in code.
+    Missing or ambiguous configuration must fail safely for mandatory
+    controls.
+4.  All configuration changes must be authorized, effective-dated,
+    versioned and audited. Existing approved PR snapshots and decisions
+    must remain historically reproducible.
+5.  Features that depend on ERP, engineering, supplier, QMS, asset or
+    security integrations must be assessed against actual interfaces.
+    Missing interfaces must be marked as integration gaps, not simulated
+    as completed features.
+6.  The development team must add acceptance criteria and tests for each
+    feature, including branch enabled/disabled behaviour, all applicable
+    configuration levels, permissions, boundary conditions, integration
+    failure, retry and audit.
+
+END OF AUTHORITATIVE ADDENDUM – FEATURES 101–135
+
+===============================================================================
+AUTHORITATIVE ADDENDUM – FEATURES 136–170: ADDITIONAL BUSINESS AND
+PLATFORM CONTROLS
+===============================================================================
+
+The business owner has instructed that all 35 proposed features below be
+included in the consolidated Phase 1 PR specification. All are REQUIRED.
+These requirements must be implemented by reusing existing CIPPlatform
+capabilities wherever they already exist. Do not create duplicate
+services, engines, dashboards or infrastructure unnecessarily.
+
+FEATURES 136–142 – PR WORKFLOW AND APPROVAL GOVERNANCE – REQUIRED
+
+136. Approval workflow simulation before activating a new rule: Provide
+     an administrator-only simulation facility to test representative PR
+     scenarios against proposed approval rules before activation. Show
+     matched rules, approvers, sequence, parallel branches, line-level
+     routes, exceptions and missing configuration. Simulation must not
+     create live approvals, send real approval notifications or mutate
+     production PRs. Clearly distinguish simulation from actual approval
+     execution.
+
+137. Effective-date management and version history for approval rules:
+     Maintain rule versions, effective-from/effective-to dates,
+     activation status, author, approver where required, change reason
+     and audit history. Each PR decision must retain the exact rule
+     version used. Rule changes must not silently reroute or rewrite
+     decisions already made.
+
+138. Approver absence handling and fallback routing when no delegate
+     exists: Detect inactive/unavailable approvers using authoritative
+     employee and delegation data. Apply only an explicitly configured
+     fallback route. If no valid delegate or fallback exists, hold the
+     approval safely, identify the configuration exception and notify
+     authorized administrators. Never auto-approve or silently skip an
+     approval level.
+
+139. SLA calculation using working days, holidays and branch calendars:
+     Calculate approval and operational SLAs using configured
+     branch/company working calendars, holidays, weekends, time zones
+     and working hours. Preserve the SLA calendar/version used for each
+     calculation. Define pause/resume conditions for returned, withdrawn
+     or externally blocked workflows.
+
+140. Approval decision evidence and electronic acknowledgement: Retain
+     approver identity, decision, timestamp, comments, supporting
+     evidence and acknowledgement/audit metadata. Use authenticated user
+     actions; do not represent a typed name or checkbox alone as a
+     legally binding digital signature. Any formal electronic-signature
+     requirement must use an approved signature service and policy.
+
+141. Administrative correction of incorrectly routed PRs, with reason
+     and audit: Permit only authorized administrators to correct routing
+     errors through a controlled action. Require reason, before/after
+     route, affected decisions, impact assessment, notification and
+     audit. Do not erase previous approval history or use correction to
+     bypass required approval.
+
+142. Configurable PR lifecycle transition rules: Define allowed
+     transitions between PR header and line states by role, current
+     status, PR type and configured conditions. Enforce transitions
+     server-side, reject illegal transitions, and audit each successful
+     or rejected administrative override. Keep header status derived
+     consistently from line and workflow states.
+
+FEATURES 143–149 – REQUESTER AND COLLABORATION – REQUIRED
+
+143. PR discussion/comments thread with user mentions: Provide a
+     contextual discussion thread on a PR and, where appropriate,
+     individual lines. Support authorized user mentions and
+     notifications. Preserve author, timestamp, edit history and access
+     scope. Discussion comments must not replace formal approval
+     decisions or their audit records.
+
+144. Clarification response tracking between requester and approver:
+     Support clarification requests with question, responsible
+     respondent, response, attachments, due date, status and timestamps.
+     Link each clarification to the relevant PR/line and approval stage.
+     Define whether and how clarification pauses the approval SLA. A
+     clarification must not silently modify approved PR data.
+
+145. Saved PR filters and personal dashboard preferences: Allow users to
+     save authorized filters, column choices, sorting and dashboard
+     preferences. Apply RBAC and organizational scope every time saved
+     views are loaded; saved filters must not grant additional access.
+
+146. PR search by item code, description, PR number and reference:
+     Provide searchable PR records using authorized fields and records
+     only. Support exact and partial search where appropriate,
+     pagination and clear handling of large result sets. Do not expose
+     restricted records through search suggestions, counts or exports.
+
+147. Downloadable Excel import error report with row and column details:
+     For PR Excel imports, report source row, column/field, submitted
+     value, validation error and corrective guidance. Preserve the
+     original upload reference and import batch ID. Do not silently skip
+     invalid rows or create duplicate lines on retry. Apply export
+     permissions and attachment security.
+
+148. Versioned PR templates with authorized ownership: Support template
+     owner, version, effective status, PR type/department applicability,
+     permitted fields, default values and audit history. Existing drafts
+     must not be silently changed when a template is updated. Template
+     publication and retirement must be permission-controlled.
+
+149. PR activity timeline showing all important events: Display a
+     chronological, permission-filtered timeline covering creation,
+     edits, submissions, approvals, returns, clarifications, buyer
+     actions, budget checks, integration events, cancellations,
+     archival/restoration and closure. Show actor, timestamp, event,
+     reference and outcome. Timeline entries must be derived from
+     authoritative audit/workflow events, not independently editable
+     notes.
+
+FEATURES 150–155 – FINANCIAL AND QUANTITY CONTROLS – REQUIRED
+
+150. Decimal precision and rounding rules by item UOM and currency: Use
+     configured precision and rounding rules for quantities, unit
+     prices, exchange rates, taxes and totals. Preserve sufficient
+     calculation precision internally and apply defined rounding only at
+     specified boundaries. Prevent floating-point arithmetic errors in
+     financial calculations. Retain calculation inputs and rounded
+     outputs for audit.
+
+151. Approval threshold calculation including configured additional
+     charges: Calculate approval thresholds using the approved
+     definition of PR value, including applicable tax, freight,
+     insurance and other configured charges. Document whether thresholds
+     are evaluated at header, line, category or combined PR level.
+     Prevent splitting or restructuring lines to evade approval
+     thresholds.
+
+152. Budget revalidation after every approved PR change: Revalidate
+     budget after any approved change that affects quantity, price,
+     charges, currency, cost centre, department, branch, project
+     reference where used, or financial-year allocation. Preserve the
+     prior budget snapshot and require the configured approval route
+     before revised values become effective. Respect the previously
+     confirmed rule that Project/WBS budget checking is NOT REQUIRED.
+
+153. Estimated value comparison against historical purchase price:
+     Display authorized historical purchase-price references with
+     supplier, currency, purchase date, quantity and source. Compare on
+     a like-for-like basis only where unit, currency, tax/charge
+     treatment and item revision are compatible. Label results as
+     historical reference, not a live quote or guaranteed price. Do not
+     fabricate missing history.
+
+154. Configurable maximum PR value by branch and PR type: Allow
+     authorized administrators to configure maximum PR value limits by
+     branch and PR type, using the approved currency conversion and
+     total value calculation. Define block versus exception-approval
+     behaviour. Audit configuration and overrides. This control must not
+     bypass existing budget or approval rules.
+
+155. Quantity tolerance and over-request exception approval: Support
+     configured quantity tolerance by item, item category, branch and PR
+     type where required. Validate against the authoritative UOM and
+     approved conversion factors. Requests exceeding tolerance must be
+     blocked or routed through an explicitly configured exception
+     approval. Do not silently change requested quantity.
+
+FEATURES 156–162 – OPERATIONAL AND ADMINISTRATIVE CONTROLS – REQUIRED
+
+156. Saved administrative configuration profiles: Allow authorized
+     administrators to create and manage reusable, versioned
+     configuration profiles for applicable PR settings. Applying a
+     profile must show its scope and impact, preserve effective dates
+     and audit the administrator, reason and resulting configuration.
+     Profiles must not override RBAC or silently alter historical PR
+     decisions.
+
+157. Configuration change impact analysis before activation: Before
+     activating a configuration change, show affected groups, branches,
+     item categories, items, PR types, active drafts, in-flight
+     approvals and relevant future transactions where determinable.
+     Identify conflicts, missing dependencies and expected behaviour.
+     Require confirmation and any configured second-person approval
+     before activation. Do not rewrite historical approved snapshots.
+
+158. Bulk configuration import/export with validation: Support
+     controlled import/export of configuration using a documented
+     template, schema/version, validation report and preview. Validate
+     references, scope, permissions, duplicates and conflicts before
+     apply. No partial application unless explicitly designed and
+     reported. Protect exported configuration and audit all operations.
+     Never export secrets or credentials.
+
+159. Authorized PR reassignment when an employee transfers or exits:
+     Support controlled reassignment of PR ownership/responsibility when
+     an employee transfers, becomes inactive or exits. Resolve eligible
+     replacement users using organization hierarchy and RBAC. Preserve
+     the original requester/creator and full history; record old/new
+     owner, reason, approver and timestamp. Do not silently change
+     ownership or approval decisions.
+
+160. Notification delivery failure monitoring and retry: Monitor failed,
+     delayed and undelivered email/in-app notifications. Show
+     event/reference, recipient, channel, attempts, timestamps and
+     failure reason. Provide authorized retry with
+     duplicate-notification protection and delivery status. A
+     notification failure must not be interpreted as an approval or
+     transaction failure unless the workflow policy explicitly requires
+     successful delivery.
+
+161. Scheduled job execution history and failure alerts: Maintain
+     execution history for scheduled PR tasks such as stale-line
+     archive, draft expiry, reminders, reports, synchronization and
+     reconciliation. Record job/version, start/end, outcome, counts,
+     errors and retry. Prevent unsafe concurrent duplicate execution and
+     alert authorized administrators on failures.
+
+162. Searchable audit history with correlation/reference IDs: Provide
+     authorized search across PR, line, approval, integration,
+     configuration, attachment and scheduled-job audit events. Include
+     correlation IDs and source/target references to trace a transaction
+     across services. Apply RBAC, masking, retention and export
+     controls. Audit records must not be editable by ordinary
+     administrators.
+
+FEATURES 163–170 – TECHNICAL ARCHITECTURE AND SECURITY – REQUIRED
+
+163. Database backup and verified restore procedure: Define automated
+     backup scope, frequency, encryption, access control, retention and
+     monitoring for databases and required attachment/object storage.
+     Periodically test restoration in an isolated environment and record
+     evidence, duration, data integrity and failures. A successful
+     backup job alone is not proof of recoverability.
+
+164. Disaster recovery and recovery-point/recovery-time objectives:
+     Define business-approved RPO and RTO for CIPPlatform and its PR
+     dependencies. Document backup/replication, recovery sequence,
+     dependency restoration, responsible roles, communications and
+     periodic disaster-recovery exercises. Do not invent RPO/RTO
+     targets; obtain business/IT approval.
+
+165. Application performance and transaction monitoring: Monitor key PR
+     operations such as draft save, Excel import, submission, approval
+     routing, search, dashboards, ERP synchronization and scheduled
+     jobs. Record latency, error rate, throughput and resource health.
+     Establish measurable service thresholds with the system owner.
+     Avoid logging sensitive document contents or credentials.
+
+166. API versioning and backward compatibility: Version public/internal
+     APIs and integration contracts where needed. Document supported
+     versions, deprecation policy, compatibility rules and migration
+     windows. Prevent a frontend or ERP integration update from silently
+     breaking existing clients or workflows.
+
+167. Attachment retention, legal hold and secure deletion policy: Define
+     retention by document type, PR status, legal/regulatory need and
+     approved retention schedule. Support legal hold to suspend
+     deletion. Secure deletion must follow authorization, retention and
+     audit rules, including attachment versions and derived copies where
+     technically controlled. Do not delete records under hold or
+     required retention.
+
+168. UAT versus production configuration separation: Separate
+     environment-specific endpoints, credentials, integration settings,
+     notification destinations, scheduled jobs and configuration.
+     Prevent UAT transactions or notifications from reaching production
+     systems unintentionally. Promote approved configuration through a
+     controlled, auditable deployment process; never copy secrets into
+     exported configuration.
+
+169. Accessibility and responsive mobile interface: Ensure PR creation,
+     review, approvals, notifications and dashboards are usable on
+     supported mobile/tablet and desktop viewports. Apply accessibility
+     practices including keyboard operation, labels, focus visibility,
+     contrast and screen-reader semantics. Define supported
+     browsers/devices and test them.
+
+170. Automated regression testing for existing CIPPlatform modules:
+     Build and execute regression tests for existing modules and shared
+     services affected by PR changes, including authentication/RBAC,
+     organization masters, Item Master, General Settings, approval
+     engine, Communication and Notification Hub, ERP integration,
+     budget, audit, attachments, reporting and navigation. Record
+     baseline and post-change results. A PR feature is not accepted if
+     it breaks existing approved functionality.
+
+IMPLEMENTATION AND ACCEPTANCE RULES FOR FEATURES 136–170
+
+1.  All features 136–170 are REQUIRED business requirements. Where a
+    feature is already available in CIPPlatform, reuse it and
+    demonstrate it through inspection and tests instead of rebuilding
+    it.
+2.  These features do not authorize PO creation, PO approval, PR-to-PO
+    conversion, goods receipt, inventory transactions or other excluded
+    downstream functions.
+3.  All four previously confirmed configuration levels remain mandatory
+    capabilities: Group, Branch, Item and Item Category. Apply them to
+    features where meaningful, document the supported scope per feature
+    and obtain approval for any justified limitation.
+4.  Configuration precedence and conflict resolution must be explicitly
+    documented and approved. Do not invent precedence or allow mandatory
+    security, budget, approval, quality or compliance controls to be
+    bypassed.
+5.  Use existing CIPPlatform services, infrastructure and standards
+    wherever possible. Do not introduce duplicate workflow,
+    notification, audit, attachment, scheduling or configuration
+    engines.
+6.  For features dependent on infrastructure or external systems, assess
+    the actual current capability. Record gaps and proposed contracts;
+    do not mark a capability complete based only on a screen or mock
+    data.
+7.  Add positive, negative, permission, concurrency, failure/retry,
+    audit, regression and recovery tests as appropriate for each
+    feature.
+8.  Define acceptance evidence and operational ownership for every
+    feature.
+
+END OF AUTHORITATIVE ADDENDUM – FEATURES 136–170

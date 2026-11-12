@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GSTVerificationDetails } from '../types';
-import { formatGstRegistrationDate } from '../services/gstService';
+import { formatGstRegistrationDate, exportGstDetailsToCsv } from '../services/gstService';
 import {
   ShieldCheck,
   Building2,
@@ -14,6 +14,7 @@ import {
   Hash,
   ChevronDown,
   ChevronUp,
+  Download,
 } from 'lucide-react';
 
 interface GSTDetailsInspectorProps {
@@ -50,12 +51,20 @@ export const GSTDetailsInspector: React.FC<GSTDetailsInspectorProps> = ({ detail
     <div className="space-y-4 text-xs font-sans">
       {/* 1. Registration Details Section */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+        <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-2.5 gap-2">
           <div className="font-bold text-slate-900 text-xs flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-indigo-600" />
             <span>Official GST Registration Details</span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => exportGstDetailsToCsv(details)}
+              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-[11px] flex items-center gap-1 cursor-pointer transition"
+            >
+              <Download className="w-3 h-3" />
+              <span>Download CSV</span>
+            </button>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 font-mono">
               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
               {details.registrationStatus || 'ACTIVE'}

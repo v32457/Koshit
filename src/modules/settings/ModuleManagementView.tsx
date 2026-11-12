@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ModuleAuditEvent, ModuleRegistryItem, User } from '../../types';
 import { INITIAL_MODULE_REGISTRY } from '../../data/seedData';
+import { GeneralSettingsView } from './GeneralSettingsView';
 import {
   ToggleLeft,
   ToggleRight,
@@ -26,6 +27,11 @@ import {
   Settings2,
   Database,
   Lock,
+  FileText,
+  Sliders,
+  SlidersHorizontal,
+  Building2,
+  MapPin,
 } from 'lucide-react';
 
 interface ModuleManagementViewProps {
@@ -33,6 +39,7 @@ interface ModuleManagementViewProps {
   moduleRegistry: ModuleRegistryItem[];
   onToggleModule: (moduleKey: string, isEnabled: boolean, reason: string) => void;
   onAddModule: (newModule: ModuleRegistryItem) => void;
+  onNavigate?: (route: string) => void;
 }
 
 export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
@@ -40,8 +47,10 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
   moduleRegistry,
   onToggleModule,
   onAddModule,
+  onNavigate,
 }) => {
-  const [activeTab, setActiveTab] = useState<'primary' | 'registry' | 'audit'>('primary');
+  const [activeTab, setActiveTab] = useState<'primary' | 'settings' | 'registry' | 'audit'>('primary');
+  const [selectedSettingsTab, setSelectedSettingsTab] = useState<'pr-module' | 'item-module' | 'security-module'>('pr-module');
 
   // Disable Confirmation Modal State
   const [targetModule, setTargetModule] = useState<ModuleRegistryItem | null>(null);
@@ -66,6 +75,19 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
       reason: 'Initial system rollout verification',
       timestamp: '2026-10-22T08:00:00Z',
       impactedJobCount: 3,
+    },
+    {
+      id: 'aud-002',
+      moduleId: 'mod-pr-module',
+      moduleKey: 'PURCHASE_REQUISITION',
+      actorUserId: currentUser.id,
+      actorUserName: currentUser.fullName,
+      eventType: 'ENABLE',
+      previousState: false,
+      newState: true,
+      reason: 'Phase 1 PR workflow, budget gate, and branch policy initialization',
+      timestamp: '2026-11-05T10:00:00Z',
+      impactedJobCount: 1,
     },
   ]);
 
@@ -229,26 +251,37 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Settings2 className="w-5 h-5 text-indigo-600" />
-            Global Module Enable / Disable Management
+            Global Module Enable / Disable & Settings Management
           </h2>
           <p className="text-slate-500 text-xs mt-0.5">
-            Central feature flag & server-enforced gating for Item Master, Business Partner Master, and registered enterprise modules.
+            Central feature flag, server-enforced gating, and branch-level policy settings for Purchase Requisitions, Item Master, and enterprise modules.
           </p>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab('primary')}
-            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'primary' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <ShieldAlert className="w-3.5 h-3.5" /> Module Enable / Disable
           </button>
           <button
+            onClick={() => {
+              setActiveTab('settings');
+              setSelectedSettingsTab('pr-module');
+            }}
+            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5 text-amber-600" /> Module Settings & Policies
+          </button>
+          <button
             onClick={() => setActiveTab('registry')}
-            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'registry' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -256,7 +289,7 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('audit')}
-            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-md font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'audit' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -285,8 +318,12 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                     >
                       {mod.moduleKey === 'ITEM_MASTER' ? (
                         <Boxes className="w-5 h-5" />
-                      ) : (
+                      ) : mod.moduleKey === 'BUSINESS_PARTNER_MASTER' ? (
                         <Users2 className="w-5 h-5" />
+                      ) : mod.moduleKey === 'PURCHASE_REQUISITION' ? (
+                        <Clock className="w-5 h-5 text-amber-300" />
+                      ) : (
+                        <FileText className="w-5 h-5" />
                       )}
                     </div>
                     <div>
@@ -332,7 +369,7 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                   <div>
                     <span className="text-slate-400 block font-semibold">Active Background Processing:</span>
                     <span className="font-bold text-slate-800 mt-0.5 block">
-                      {mod.isEnabled ? `${mod.activeJobCount} Active SAP Jobs` : '0 Jobs (Processing Paused)'}
+                      {mod.isEnabled ? `${mod.activeJobCount} ${mod.moduleKey === 'PURCHASE_REQUISITION' ? 'Active PR Workflows' : 'Active SAP Jobs'}` : '0 Jobs (Processing Paused)'}
                     </span>
                   </div>
 
@@ -342,8 +379,29 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                   </div>
                 </div>
 
-                {/* Actionable Button */}
-                <div className="flex justify-end pt-1">
+                {/* Actionable Buttons */}
+                <div className="flex items-center justify-between pt-1 gap-2">
+                  <button
+                    onClick={() => {
+                      if (mod.moduleKey === 'BUSINESS_PARTNER_MASTER' && onNavigate) {
+                        onNavigate('/settings/api-providers');
+                        return;
+                      }
+                      setActiveTab('settings');
+                      if (mod.moduleKey === 'PURCHASE_REQUISITION') {
+                        setSelectedSettingsTab('pr-module');
+                      } else if (mod.moduleKey === 'ITEM_MASTER') {
+                        setSelectedSettingsTab('item-module');
+                      } else {
+                        setSelectedSettingsTab('pr-module');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg font-bold text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Configure {mod.displayName} Settings</span>
+                  </button>
+
                   <button
                     onClick={() => handleOpenDisableModal(mod)}
                     className={`px-3.5 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5 ${
@@ -354,11 +412,11 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                   >
                     {mod.isEnabled ? (
                       <>
-                        <Pause className="w-3.5 h-3.5" /> Disable {mod.displayName} Module
+                        <Pause className="w-3.5 h-3.5" /> Disable Module
                       </>
                     ) : (
                       <>
-                        <Play className="w-3.5 h-3.5" /> Enable {mod.displayName} Module
+                        <Play className="w-3.5 h-3.5" /> Enable Module
                       </>
                     )}
                   </button>
@@ -367,6 +425,11 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
             ))}
           </div>
         </div>
+      )}
+
+      {/* TAB 2: MODULE SETTINGS & POLICIES (INTEGRATED CONSOLE) */}
+      {activeTab === 'settings' && (
+        <GeneralSettingsView key={selectedSettingsTab} initialTab={selectedSettingsTab} hideHeader={true} />
       )}
 
       {/* TAB 2: MODULE REGISTRY & BUILDER */}

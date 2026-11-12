@@ -3,7 +3,7 @@ import {
   GSTVerificationDetails,
   GSTVerificationMode,
 } from '../types';
-import { formatGstRegistrationDate } from '../services/gstService';
+import { formatGstRegistrationDate, exportGstDetailsToCsv } from '../services/gstService';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -17,6 +17,7 @@ import {
   Check,
   X,
   FileText,
+  Download,
 } from 'lucide-react';
 
 interface GSTVerificationReviewModalProps {
@@ -45,6 +46,14 @@ export const GSTVerificationReviewModal: React.FC<GSTVerificationReviewModalProp
   onCancel,
 }) => {
   const [activeReviewTab, setActiveReviewTab] = useState<'REGISTRATION' | 'ADDRESSES' | 'ACTIVITIES' | 'GOODS_SERVICES' | 'FILING_HISTORY'>('REGISTRATION');
+  const [editedLegalName, setEditedLegalName] = useState(details?.legalName || '');
+  const [editedTradeName, setEditedTradeName] = useState(details?.tradeName || '');
+  const [editedTaxpayerType, setEditedTaxpayerType] = useState(details?.taxpayerType || 'Regular');
+  const [editedConstitution, setEditedConstitution] = useState(details?.constitutionOfBusiness || '');
+  const [editedCity, setEditedCity] = useState(details?.principalPlaceOfBusiness?.city || '');
+  const [editedState, setEditedState] = useState(details?.principalPlaceOfBusiness?.state || '');
+  const [editedStreet, setEditedStreet] = useState(details?.principalPlaceOfBusiness?.streetName || '');
+  const [editedPostalCode, setEditedPostalCode] = useState(details?.principalPlaceOfBusiness?.postalCode || '');
 
   if (!isOpen) return null;
 
@@ -166,45 +175,45 @@ export const GSTVerificationReviewModal: React.FC<GSTVerificationReviewModalProp
                     <tr>
                       <td className="p-2.5 font-bold text-slate-800">Legal Name of Business</td>
                       <td className="p-2.5 text-slate-500 font-mono">{currentValues?.name || '— (Unsaved)'}</td>
-                      <td className="p-2.5 font-bold text-indigo-900 font-mono">{details.legalName}</td>
+                      <td className="p-2.5 font-bold text-indigo-900 font-mono bg-indigo-50/50">
+                        {details.legalName}
+                      </td>
                       <td className="p-2.5 text-emerald-700 font-bold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Apply & Lock
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Official Lock
                       </td>
                     </tr>
                     <tr>
                       <td className="p-2.5 font-bold text-slate-800">Trade Name</td>
                       <td className="p-2.5 text-slate-500 font-mono">{currentValues?.tradeName || '— (Unsaved)'}</td>
-                      <td className="p-2.5 font-bold text-indigo-900 font-mono">{details.tradeName || '—'}</td>
+                      <td className="p-2.5 font-bold text-indigo-900 font-mono bg-indigo-50/50">
+                        {details.tradeName || details.legalName}
+                      </td>
                       <td className="p-2.5 text-emerald-700 font-bold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Apply & Lock
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Official Lock
                       </td>
                     </tr>
                     <tr>
                       <td className="p-2.5 font-bold text-slate-800">Taxpayer Type</td>
                       <td className="p-2.5 text-slate-500 font-mono">Regular</td>
-                      <td className="p-2.5 font-bold text-slate-900 font-mono">{details.taxpayerType || 'Regular'}</td>
+                      <td className="p-2.5 font-bold text-slate-900 font-mono bg-indigo-50/50">
+                        {details.taxpayerType || 'Regular'}
+                      </td>
                       <td className="p-2.5 text-emerald-700 font-bold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Apply
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Immutable
                       </td>
                     </tr>
                     <tr>
                       <td className="p-2.5 font-bold text-slate-800">Business Constitution</td>
                       <td className="p-2.5 text-slate-500 font-mono">—</td>
-                      <td className="p-2.5 font-bold text-slate-900">
+                      <td className="p-2.5 font-bold text-slate-900 bg-indigo-50/50">
                         {details.constitutionOfBusiness ? (
                           <span className="font-mono">{details.constitutionOfBusiness}</span>
                         ) : (
-                          <span className="text-amber-700 font-sans italic font-normal">Unavailable / Not Supplied by Source</span>
+                          <span className="text-slate-500 italic">Not Supplied by Portal</span>
                         )}
                       </td>
-                      <td className="p-2.5 text-slate-600 font-medium">
-                        {details.constitutionOfBusiness ? (
-                          <span className="text-emerald-700 font-bold flex items-center gap-1">
-                            <Check className="w-3.5 h-3.5 text-emerald-600" /> Apply
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 italic">Leave Blank</span>
-                        )}
+                      <td className="p-2.5 text-emerald-700 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Immutable
                       </td>
                     </tr>
                     <tr>
@@ -514,6 +523,15 @@ export const GSTVerificationReviewModal: React.FC<GSTVerificationReviewModalProp
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => exportGstDetailsToCsv(details)}
+              className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download CSV Report</span>
+            </button>
+
+            <button
+              type="button"
               onClick={onCancel}
               className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-bold text-xs cursor-pointer transition"
             >
@@ -523,7 +541,15 @@ export const GSTVerificationReviewModal: React.FC<GSTVerificationReviewModalProp
             <button
               type="button"
               disabled={!canConfirm}
-              onClick={() => canConfirm && onConfirm(details)}
+              onClick={() => {
+                if (canConfirm) {
+                  const updatedDetails: GSTVerificationDetails = {
+                    ...details,
+                  };
+                  exportGstDetailsToCsv(updatedDetails);
+                  onConfirm(updatedDetails);
+                }
+              }}
               className={`px-5 py-2 rounded-lg font-bold text-xs shadow-xs transition flex items-center gap-1.5 ${
                 canConfirm
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'

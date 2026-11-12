@@ -18,6 +18,10 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
+  employeeId?: string;
+  designation?: string;
+  department?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
   phone?: string;
   role: UserRole;
   orgId: string;
@@ -45,6 +49,7 @@ export interface Company {
   postalCode?: string;
   streetAddress?: string;
   msmeInfo?: MSMEInfo;
+  msmeVerificationDetails?: MSMEVerificationDetails;
   gstVerificationDetails?: GSTVerificationDetails;
   createdAt?: string;
   updatedAt?: string;
@@ -78,17 +83,75 @@ export type GSTVerificationStatus =
   | 'FAILED'
   | 'MANUAL_REVIEW_REQUIRED';
 
+export interface ApiProviderConfig {
+  id: string;
+  serviceType: 'GST' | 'MSME';
+  providerName: string;
+  displayName: string;
+  endpointUrl: string;
+  apiKey: string;
+  clientId?: string;
+  clientSecret?: string;
+  isActive: boolean;
+  priority: number;
+  selectionStrategy: 'HIGHEST_BALANCE' | 'HIGHEST_PERCENTAGE' | 'PRIORITY_ORDER' | 'ROUND_ROBIN';
+  totalCredits: number;
+  remainingCredits: number;
+  dailyLimit: number;
+  dailyUsed: number;
+  monthlyLimit: number;
+  monthlyUsed: number;
+  resetTimezone: string;
+  healthStatus: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'COOLDOWN';
+  lastTestedAt?: string;
+  testStatus?: 'SUCCESS' | 'FAILED' | 'UNTESTED';
+  lastError?: string;
+  cooldownUntil?: number;
+  timeoutSeconds: number;
+  costPerRequest: number;
+}
+
+export interface ApiUsageLogRecord {
+  id: string;
+  timestamp: string;
+  serviceType: 'GST' | 'MSME';
+  providerId: string;
+  providerName: string;
+  targetIdentifier: string;
+  status: 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'QUOTA_EXCEEDED' | 'BLOCKED';
+  latencyMs: number;
+  creditsConsumed: number;
+  requestedBy: string;
+  responseSummary?: string;
+  errorMessage?: string;
+}
+
 export interface GSTProviderConfig {
-  providerName: 'CLEAR_TAX' | 'MASTERS_INDIA' | 'IRIS_GST' | 'GOVT_DIRECT_SANDBOX' | 'CUSTOM_REST';
+  id?: string;
+  displayName?: string;
+  serviceType?: 'GST' | 'MSME';
+  providerName: 'CLEAR_TAX' | 'MASTERS_INDIA' | 'IRIS_GST' | 'GOVT_DIRECT_SANDBOX' | 'CUSTOM_REST' | string;
   endpointUrl: string;
   apiKey: string;
   clientId: string;
   clientSecret: string;
   timeoutSeconds: number;
   isActive: boolean;
+  priority?: number;
+  selectionStrategy?: 'HIGHEST_BALANCE' | 'HIGHEST_PERCENTAGE' | 'PRIORITY_ORDER' | 'ROUND_ROBIN';
+  totalCredits?: number;
+  remainingCredits?: number;
+  dailyLimit?: number;
+  dailyUsed?: number;
+  monthlyLimit?: number;
+  monthlyUsed?: number;
+  resetTimezone?: string;
+  healthStatus?: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'COOLDOWN';
   lastTestedAt?: string;
   testStatus?: 'SUCCESS' | 'FAILED' | 'UNTESTED';
   lastError?: string;
+  cooldownUntil?: number;
+  costPerRequest?: number;
 }
 
 export interface GSTVerificationSession {
@@ -193,6 +256,22 @@ export interface Warehouse {
   country?: string;
 }
 
+export interface Department {
+  id: string;
+  companyId: string;
+  branchId: string;
+  departmentCode: string; // e.g. 'DEPT-PROD', 'DEPT-QUAL'
+  departmentName: string; // e.g. 'Production & Plant Operations'
+  description?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  headName?: string;
+  headEmail?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
 export interface Branch {
   id: string;
   orgId: string;
@@ -222,7 +301,9 @@ export interface Branch {
   lifecycleStatus: BranchLifecycleStatus;
   plants: Plant[];
   warehouses: Warehouse[];
+  departments?: Department[];
   defaultWarehouseId?: string;
+  msmeVerificationDetails?: MSMEVerificationDetails;
   gstVerificationDetails?: GSTVerificationDetails;
 }
 
@@ -342,6 +423,7 @@ export interface GlobalItem {
   isProvisionalCode: boolean;
   categoryCode: string;
   description: string;
+  inventoryUom?: string;
   status: ItemStatus;
   attributes: {
     material?: string;
@@ -354,6 +436,25 @@ export interface GlobalItem {
     partModelNumber?: string;
     ratingSize?: string;
     specification?: string;
+  };
+  shelfLifeControl?: {
+    isApplicable: boolean;
+    durationDays?: number;
+    minRemainingShelfLifeDays?: number;
+  };
+  serialNumberControl?: {
+    isApplicable: boolean;
+  };
+  warrantyPolicy?: {
+    isApplicable: boolean;
+    standardDurationMonths?: number;
+    terms?: string;
+  };
+  procurementControls?: {
+    moq?: number;
+    orderMultiple?: number;
+    inventoryUom: string;
+    isServiceItem?: boolean;
   };
   createdBy: string;
   createdAt: string;
@@ -525,6 +626,7 @@ export interface BusinessPartner {
   gstRegisteredMobile?: string;
   gstVerificationDetails?: GSTVerificationDetails;
   msmeInfo?: MSMEInfo;
+  msmeVerificationDetails?: MSMEVerificationDetails;
   phone: string;
   email: string;
   website?: string;
@@ -957,7 +1059,109 @@ export interface CustomerPartModelReference {
   updatedBy: string;
 }
 
+export interface MSMEProviderConfig {
+  id: string;
+  providerName: 'UDYAM_GOVT_SANDBOX' | 'CLEARTAX_MSME' | 'MASTERS_INDIA_MSME' | 'CUSTOM_REST' | 'CERTIFIED_OFFLINE_REGISTRY';
+  displayName: string;
+  serviceType: 'GST' | 'MSME';
+  endpointUrl: string;
+  apiKey: string;
+  clientId?: string;
+  clientSecret?: string;
+  isActive: boolean;
+  priority: number;
+  selectionStrategy: 'HIGHEST_BALANCE' | 'HIGHEST_PERCENTAGE' | 'PRIORITY_ORDER' | 'ROUND_ROBIN';
+  totalCredits: number;
+  remainingCredits: number;
+  dailyLimit: number;
+  dailyUsed: number;
+  monthlyLimit: number;
+  monthlyUsed: number;
+  resetTimezone: string;
+  healthStatus: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'COOLDOWN';
+  lastTestedAt?: string;
+  testStatus?: 'SUCCESS' | 'FAILED' | 'UNTESTED';
+  lastError?: string;
+  cooldownUntil?: number;
+  timeoutSeconds: number;
+  costPerRequest: number;
+}
+
+export interface MSMEClassificationRecord {
+  financialYear: string;
+  enterpriseType: 'MICRO' | 'SMALL' | 'MEDIUM';
+  classificationDate: string;
+}
+
+export interface MSMEUnitLocation {
+  id: string;
+  unitName: string;
+  doorBuildingNo?: string;
+  building?: string;
+  villageTown?: string;
+  block?: string;
+  road?: string;
+  city: string;
+  state: string;
+  district?: string;
+  postalCode: string;
+}
+
+export interface MSMENicActivity {
+  nic2Digit: string;
+  nic2DigitDesc: string;
+  nic4Digit: string;
+  nic4DigitDesc: string;
+  nic5Digit: string;
+  nic5DigitDesc: string;
+  activityCategory: 'MANUFACTURING' | 'SERVICES' | 'TRADING';
+  effectiveDate?: string;
+}
+
+export interface MSMEVerificationDetails {
+  udyamRegistrationNo: string;
+  requestedUdyamNo?: string;
+  correlationId?: string;
+  enterpriseName: string;
+  organisationType: string;
+  majorActivity: 'MANUFACTURING' | 'SERVICES' | 'TRADING';
+  socialCategory?: string;
+  gender?: string;
+  dateOfIncorporation?: string;
+  dateOfCommencement?: string;
+  udyamRegistrationDate: string;
+  dicDetails?: string;
+  msmeDiDfoDetails?: string;
+  classificationHistory: MSMEClassificationRecord[];
+  units: MSMEUnitLocation[];
+  officialAddress: GSTOfficeAddress;
+  nicActivities: MSMENicActivity[];
+  verificationTimestamp: string;
+  verificationSource: string;
+  verificationOutcome: 'VERIFIED' | 'FAILED' | 'MISMATCH' | 'MANUAL_REVIEW' | 'PENDING';
+  verifiedBy?: string;
+  providerUsed?: string;
+  rawResponseSummary?: string;
+}
+
+export * from './buyerAssignment';
+export * from './buyer';
 export * from './communication';
 export * from './moduleRegistry';
 export * from './approvalWorkflow';
+export * from './rfqSourcing';
+
+export interface CertificateConfig {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  isMandatory: boolean;
+  validityRequired: boolean;
+  validFrom?: string;
+  validTo?: string;
+  issuingAuthority: string;
+  applicableScope: 'Company' | 'Branch' | 'Category' | 'Item';
+  status: 'ACTIVE' | 'INACTIVE';
+}
 

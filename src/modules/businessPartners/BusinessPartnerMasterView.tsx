@@ -11,6 +11,7 @@ import {
   BPGovernanceLog,
   Branch,
   MSMEInfo,
+  MSMEVerificationDetails,
   GSTVerificationDetails,
   GSTVerificationMode,
   GSTVerificationSession,
@@ -34,6 +35,9 @@ import {
 } from '../../services/gstService';
 import { GSTVerificationReviewModal } from '../../components/GSTVerificationReviewModal';
 import { GSTDetailsInspector } from '../../components/GSTDetailsInspector';
+import { MSMEVerificationReviewModal } from '../../components/MSMEVerificationReviewModal';
+import { MSMEDetailsInspector } from '../../components/MSMEDetailsInspector';
+import { verifyUdyamRegistration } from '../../services/msmeService';
 import {
   Users2,
   Search,
@@ -71,7 +75,11 @@ import {
   ChevronDown,
   Printer,
   X,
+  Minimize2,
+  Maximize2,
+  Minimize,
 } from 'lucide-react';
+import { EnterpriseModal } from '../../components/EnterpriseModal';
 
 import { OperatingContext, filterBusinessPartnersByContext } from '../../services/operatingContextService';
 import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
@@ -158,6 +166,10 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
 
   // Modal / Active Inspection
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const handleToggleMaximize = () => setIsMaximized(!isMaximized);
+  const handleToggleMinimize = () => setIsMinimized(!isMinimized);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [inspectedBp, setInspectedBp] = useState<BusinessPartner | null>(null);
   const [editingBp, setEditingBp] = useState<BusinessPartner | null>(null);
@@ -191,11 +203,11 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
   const [isTradeDetailsModalOpen, setIsTradeDetailsModalOpen] = useState(false);
   const [tradeDetailsTab, setTradeDetailsTab] = useState<'PLACES' | 'ACTIVITIES' | 'GOODS_SERVICES' | 'FILING_HISTORY'>('PLACES');
   const [selectedFilingFy, setSelectedFilingFy] = useState<string>(() => {
-    const fyi = getPreviousIndianFinancialYears(8);
-    return fyi[0] || '2026-2027';
+    const fyi = getPreviousIndianFinancialYears(2);
+    return fyi[2] || '2024-2025';
   });
   const [isFilingLoading, setIsFilingLoading] = useState<boolean>(false);
-  const [inspectorTab, setInspectorTab] = useState<'GENERAL' | 'CONTACTS' | 'SHIPPING' | 'BANKING' | 'GST_DETAILS' | 'AUDIT'>('GENERAL');
+  const [inspectorTab, setInspectorTab] = useState<'GENERAL' | 'CONTACTS' | 'SHIPPING' | 'BANKING' | 'GST_DETAILS' | 'MSME_DETAILS' | 'AUDIT'>('GENERAL');
 
   // Return Filing History Mock Data
   const [gstFilingHistory, setGstFilingHistory] = useState<
@@ -223,6 +235,9 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     lastRevalidatedAt: new Date().toISOString(),
   });
   const [isVerifyingMsme, setIsVerifyingMsme] = useState(false);
+  const [isMsmeReviewModalOpen, setIsMsmeReviewModalOpen] = useState(false);
+  const [stagedMsmeDetails, setStagedMsmeDetails] = useState<MSMEVerificationDetails | null>(null);
+  const [msmeVerificationDetails, setMsmeVerificationDetails] = useState<MSMEVerificationDetails | undefined>(undefined);
 
   // Mandatory Billing Address (in General Tab)
   const [billToCountry, setBillToCountry] = useState('India');
@@ -706,26 +721,86 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     setTimeout(() => setSuccessMsg(''), 4500);
   };
 
-  const handleVerifyMsme = () => {
+  const handleVerifyMsme = async () => {
     if (!msmeInfo.udyamRegistrationNo?.trim()) {
-      alert('Please enter a valid Udyam Registration Number.');
+      alert('Please enter a valid Udyam Registration Number (e.g. UDYAM-TN-02-0048921 or UDYAM-MH-26-0012398).');
       return;
     }
 
     setIsVerifyingMsme(true);
-    setTimeout(() => {
+    try {
+      const details = await verifyUdyamRegistration(msmeInfo.udyamRegistrationNo.trim(), currentUser.fullName);
       setIsVerifyingMsme(false);
-      setMsmeInfo((prev) => ({
-        ...prev,
-        enterpriseName: bpName || 'KOSH PRECISION PLASTICS PRIVATE LIMITED',
-        enterpriseType: 'Private Limited',
-        activityType: 'MANUFACTURING',
-        msmeClassification: 'SMALL',
-        registrationPeriodStatus: 'Active & Valid (Post-July 2020 Revalidated)',
-        lastRevalidatedAt: new Date().toISOString(),
-      }));
-      alert('MSME Udyam Registration verified successfully from MSME Portal API.');
-    }, 900);
+
+      if (!details || !details.udyamRegistrationNo) {
+        alert('Failed to retrieve Udyam verification data.');
+        return;
+      }
+
+      setStagedMsmeDetails(details);
+      setIsMsmeReviewModalOpen(true);
+    } catch (err: any) {
+      setIsVerifyingMsme(false);
+      alert(err.message || 'MSME verification error.');
+    }
+  };
+
+  const handleConfirmMsmeReview = (confirmed: MSMEVerificationDetails) => {
+    setMsmeVerificationDetails(confirmed);
+    const actType: 'MANUFACTURING' | 'SERVICES' | 'BOTH' = confirmed.majorActivity === 'MANUFACTURING'
+      ? 'MANUFACTURING'
+      : confirmed.majorActivity === 'SERVICES'
+      ? 'SERVICES'
+      : 'BOTH';
+
+    const latestClassification = (confirmed.classificationHistory[0]?.enterpriseType?.toUpperCase() as 'MICRO' | 'SMALL' | 'MEDIUM') || 'SMALL';
+
+    setMsmeInfo({
+      isMSME: true,
+      udyamRegistrationNo: confirmed.udyamRegistrationNo,
+      msmeClassification: latestClassification,
+      enterpriseType: confirmed.organisationType,
+      enterpriseName: confirmed.enterpriseName,
+      activityType: actType,
+      registrationPeriodStatus: 'Active & Valid (Post-July 2020 Revalidated)',
+      dateOfIncorporation: confirmed.dateOfIncorporation,
+      dateOfCommencement: confirmed.dateOfCommencement,
+      nicCodes: confirmed.nicActivities.map((a) => a.nic5Digit || a.nic4Digit),
+      majorActivity: confirmed.majorActivity,
+      state: confirmed.officialAddress?.state,
+      district: confirmed.officialAddress?.district,
+      lastRevalidatedAt: new Date().toISOString(),
+    });
+
+    // Populate BP name if empty or default
+    if (!bpName.trim()) {
+      setBpName(confirmed.enterpriseName);
+    }
+
+    // Populate billing address if empty
+    if (confirmed.officialAddress) {
+      if (!billToCity.trim() && confirmed.officialAddress.city) setBillToCity(confirmed.officialAddress.city);
+      if (!billToState.trim() && confirmed.officialAddress.state) setBillToState(confirmed.officialAddress.state);
+      if (!billToPostalCode.trim() && confirmed.officialAddress.postalCode) setBillToPostalCode(confirmed.officialAddress.postalCode);
+      if (!billToStreetAddress.trim() && confirmed.officialAddress.streetName) setBillToStreetAddress(confirmed.officialAddress.streetName);
+    }
+
+    // Audit Governance Log
+    setGovernanceLogs((prev) => [
+      {
+        id: `gov-${Date.now()}`,
+        action: 'MSME_VERIFICATION_APPLIED',
+        verifier: `${currentUser.fullName} (${currentUser.role})`,
+        timestamp: new Date().toISOString(),
+        details: `Official MSME Udyam details retrieved for "${confirmed.enterpriseName}" [${confirmed.udyamRegistrationNo}]. Classification: ${latestClassification}. Provider: ${confirmed.verificationSource}. Units: ${confirmed.units.length}. NIC Codes: ${confirmed.nicActivities.length}.`,
+        status: 'VERIFIED',
+      },
+      ...prev,
+    ]);
+
+    setIsMsmeReviewModalOpen(false);
+    setSuccessMsg(`Official MSME details for "${confirmed.enterpriseName}" retrieved & applied.`);
+    setTimeout(() => setSuccessMsg(''), 4500);
   };
 
   const handleSaveBp = (e: React.FormEvent) => {
@@ -1156,18 +1231,15 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       </div>
 
       {/* CREATE / EDIT BUSINESS PARTNER MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full flex flex-col overflow-hidden max-h-[92vh]">
-            <div className="p-4 bg-indigo-900 text-white flex items-center justify-between shrink-0">
-              <div className="font-bold text-sm flex items-center gap-2">
-                <Users2 className="w-4 h-4 text-indigo-300" />
-                <span>{editingBp ? `Edit Business Partner [${editingBp.bpCode}]` : 'Create Business Partner Master'}</span>
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-indigo-200 hover:text-white font-bold cursor-pointer">
-                ✕
-              </button>
-            </div>
+      <EnterpriseModal
+        title={editingBp ? `Edit Business Partner [${editingBp.bpCode}]` : 'Create Business Partner Master'}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        isMaximized={isMaximized}
+        onToggleMaximize={handleToggleMaximize}
+        isMinimized={isMinimized}
+        onToggleMinimize={handleToggleMinimize}
+      >
 
             {errorMsg && (
               <div className="mx-4 mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg font-bold flex items-center gap-2 shrink-0">
@@ -1926,9 +1998,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </EnterpriseModal>
 
       {/* BANK SUB-MODAL WITH CANCELLED CHEQUE UPLOAD */}
       {isBankSubModalOpen && (
@@ -2048,6 +2118,24 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         />
       )}
 
+      {/* PRE-SAVE MSME UDYAM VERIFICATION REVIEW & CONFIRMATION MODAL */}
+      {isMsmeReviewModalOpen && stagedMsmeDetails && (
+        <MSMEVerificationReviewModal
+          isOpen={isMsmeReviewModalOpen}
+          details={stagedMsmeDetails}
+          targetEntityName="Business Partner Master"
+          currentValues={{
+            name: bpName,
+            majorActivity: msmeInfo.activityType,
+            city: billToCity,
+            state: billToState,
+            address: billToStreetAddress,
+          }}
+          onConfirm={handleConfirmMsmeReview}
+          onCancel={() => setIsMsmeReviewModalOpen(false)}
+        />
+      )}
+
       {/* BUSINESS PARTNER VIEW DETAILS / INSPECTOR MODAL */}
       {isInspectorOpen && inspectedBp && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4">
@@ -2104,7 +2192,8 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                 { key: 'SHIPPING', label: `3. Shipping Addresses (${inspectedBp.addresses?.length || 0})`, icon: MapPin },
                 { key: 'BANKING', label: `4. Banking & Terms (${inspectedBp.accounting?.bankAccounts?.length || 0})`, icon: DollarSign },
                 { key: 'GST_DETAILS', label: '5. Official GST Details (Govt GSTN)', icon: ShieldCheck },
-                { key: 'AUDIT', label: `6. Verification Logs (${inspectedBp.governanceLogs?.length || 0})`, icon: ShieldAlert },
+                { key: 'MSME_DETAILS', label: '6. Official MSME Certificate', icon: Award },
+                { key: 'AUDIT', label: `7. Verification Logs (${inspectedBp.governanceLogs?.length || 0})`, icon: ShieldAlert },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = inspectorTab === tab.key;
@@ -2302,6 +2391,13 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                 </div>
               )}
 
+              {/* TAB 6: OFFICIAL MSME CERTIFICATE */}
+              {inspectorTab === 'MSME_DETAILS' && (
+                <div className="space-y-4">
+                  <MSMEDetailsInspector details={inspectedBp.msmeVerificationDetails} />
+                </div>
+              )}
+
               {/* TAB 6: AUDIT */}
               {inspectorTab === 'AUDIT' && (
                 <div className="space-y-3">
@@ -2373,8 +2469,8 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         const filteredFilings = (tradeDetails.filingHistory || []).filter(
           (f: any) => f.financialYear === selectedFilingFy
         );
-        const gstr3bList = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('3B'));
-        const gstr1List = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('1') || f.returnType.toUpperCase().includes('IFF'));
+        const gstr3bList = filteredFilings.filter((f: any) => (f.returnType || '').toUpperCase().includes('3B'));
+        const gstr1List = filteredFilings.filter((f: any) => (f.returnType || '').toUpperCase().includes('1') || (f.returnType || '').toUpperCase().includes('IFF'));
 
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
@@ -2563,8 +2659,8 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                   const filteredFilings = (tradeDetails.filingHistory || []).filter(
                     (f: any) => f.financialYear === selectedFilingFy
                   );
-                  const gstr3bList = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('3B'));
-                  const gstr1List = filteredFilings.filter((f: any) => f.returnType.toUpperCase().includes('1') || f.returnType.toUpperCase().includes('IFF'));
+                  const gstr3bList = filteredFilings.filter((f: any) => (f.returnType || '').toUpperCase().includes('3B'));
+                  const gstr1List = filteredFilings.filter((f: any) => (f.returnType || '').toUpperCase().includes('1') || (f.returnType || '').toUpperCase().includes('IFF'));
                   const hasAnnualReturnForFy = selectedFilingFy !== '2026-2027';
 
                   return (
@@ -2578,9 +2674,9 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                             onChange={(e) => setSelectedFilingFy(e.target.value)}
                             className="text-xs p-2 bg-white border border-slate-300 rounded-lg font-bold text-indigo-900"
                           >
-                            {getPreviousIndianFinancialYears(8).map((fy, idx) => (
+                            {getPreviousIndianFinancialYears(2).map((fy) => (
                               <option key={fy} value={fy}>
-                                {fy} {idx === 2 ? '(Current FY - 2 Default)' : ''}
+                                {fy}
                               </option>
                             ))}
                           </select>

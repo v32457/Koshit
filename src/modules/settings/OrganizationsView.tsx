@@ -3,12 +3,14 @@ import { INITIAL_ORGANIZATION, INITIAL_BRANCHES, INITIAL_COMPANIES } from '../..
 import {
   Branch,
   Warehouse,
+  Department,
   GSTRegistrationType,
   UnitDescriptionMaster,
   Company,
   SapCompanyFieldDiscoveryRecord,
   SapCompanySyncJobLog,
   MSMEInfo,
+  MSMEVerificationDetails,
   GSTVerificationDetails,
   GSTVerificationMode,
   GSTVerificationSession,
@@ -26,6 +28,8 @@ import {
 } from '../../services/gstService';
 import { GSTVerificationReviewModal } from '../../components/GSTVerificationReviewModal';
 import { GSTDetailsInspector } from '../../components/GSTDetailsInspector';
+import { MSMEVerificationReviewModal } from '../../components/MSMEVerificationReviewModal';
+import { verifyUdyamRegistration } from '../../services/msmeService';
 import {
   Building,
   MapPin,
@@ -59,7 +63,11 @@ import {
   ArrowRight,
   Server,
   Award,
+  Briefcase,
+  Users,
 } from 'lucide-react';
+
+import { PurchaseOrganizationView } from './PurchaseOrganizationView';
 
 const INITIAL_UNIT_MASTERS: UnitDescriptionMaster[] = [
   { id: 'u-1', code: 'INJ', description: 'Injection Moulding & Tooling Unit', approvalStatus: 'APPROVED', version: 1 },
@@ -85,7 +93,7 @@ export const SAP_COMMON_WAREHOUSES = [
 ];
 
 interface OrganizationsViewProps {
-  initialTab?: 'companies' | 'branches' | 'warehouse';
+  initialTab?: 'companies' | 'branches' | 'warehouse' | 'departments' | 'purchase_org';
   companies?: Company[];
   setCompanies?: React.Dispatch<React.SetStateAction<Company[]>>;
   branches?: Branch[];
@@ -99,13 +107,33 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
   branches: parentBranches,
   setBranches: setParentBranches,
 }) => {
-  const [activeTab, setActiveTab] = useState<'companies' | 'branches' | 'warehouse'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'companies' | 'branches' | 'warehouse' | 'departments' | 'purchase_org'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Filters for Tabs
   const [branchCompanyFilter, setBranchCompanyFilter] = useState<string>('ALL');
   const [whCompanyFilter, setWhCompanyFilter] = useState<string>('ALL');
   const [whBranchFilter, setWhBranchFilter] = useState<string>('ALL');
   const [whSearchTerm, setWhSearchTerm] = useState<string>('');
+
+  // Department Filters & Modal States
+  const [deptCompanyFilter, setDeptCompanyFilter] = useState<string>('ALL');
+  const [deptBranchFilter, setDeptBranchFilter] = useState<string>('ALL');
+  const [deptSearchTerm, setDeptSearchTerm] = useState<string>('');
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
+  const [deptTargetBranchId, setDeptTargetBranchId] = useState<string>('br-pond-01');
+  const [deptCode, setDeptCode] = useState('');
+  const [deptName, setDeptName] = useState('');
+  const [deptDescription, setDeptDescription] = useState('');
+  const [deptHeadName, setDeptHeadName] = useState('');
+  const [deptHeadEmail, setDeptHeadEmail] = useState('');
+  const [deptStatus, setDeptStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
   // Interactive Company Card Modals & States
   const [testingCoId, setTestingCoId] = useState<string | null>(null);
@@ -566,6 +594,9 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
     activityType: 'MANUFACTURING',
   });
   const [isVerifyingCoMsme, setIsVerifyingCoMsme] = useState(false);
+  const [isMsmeReviewModalOpen, setIsMsmeReviewModalOpen] = useState(false);
+  const [stagedMsmeDetails, setStagedMsmeDetails] = useState<MSMEVerificationDetails | null>(null);
+  const [coMsmeVerificationDetails, setCoMsmeVerificationDetails] = useState<MSMEVerificationDetails | undefined>(undefined);
 
   // Branch Form State
   const [portalBranchCode, setPortalBranchCode] = useState('');
@@ -795,24 +826,75 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
     setTimeout(() => setSuccessMsg(''), 5000);
   };
 
-  const handleVerifyCoMsme = () => {
+  const handleVerifyCoMsme = async () => {
     if (!coMsmeInfo.udyamRegistrationNo?.trim()) {
-      setErrorMsg('Please enter a valid Udyam Registration Number to verify.');
+      setErrorMsg('Please enter a valid Udyam Registration Number (e.g. UDYAM-TN-02-0048921) to verify.');
       return;
     }
+
     setIsVerifyingCoMsme(true);
-    setTimeout(() => {
+    setErrorMsg('');
+    try {
+      const details = await verifyUdyamRegistration(coMsmeInfo.udyamRegistrationNo.trim(), 'Platform Administrator');
       setIsVerifyingCoMsme(false);
-      setCoMsmeInfo({
-        ...coMsmeInfo,
-        msmeClassification: 'SMALL',
-        activityType: 'MANUFACTURING',
-        investmentCategory: '₹1 Cr - ₹10 Cr',
-        turnoverCategory: '₹5 Cr - ₹50 Cr',
-      });
-      setSuccessMsg(`Udyam Registration "${coMsmeInfo.udyamRegistrationNo}" verified with Ministry of MSME.`);
-      setTimeout(() => setSuccessMsg(''), 4000);
-    }, 700);
+
+      if (!details || !details.udyamRegistrationNo) {
+        setErrorMsg('Failed to retrieve Udyam verification data.');
+        return;
+      }
+
+      setStagedMsmeDetails(details);
+      setIsMsmeReviewModalOpen(true);
+    } catch (err: any) {
+      setIsVerifyingCoMsme(false);
+      setErrorMsg(err.message || 'MSME Udyam verification encountered an error.');
+    }
+  };
+
+  const handleConfirmCoMsmeReview = (confirmed: MSMEVerificationDetails) => {
+    setCoMsmeVerificationDetails(confirmed);
+    const actType: 'MANUFACTURING' | 'SERVICES' | 'BOTH' = confirmed.majorActivity === 'MANUFACTURING'
+      ? 'MANUFACTURING'
+      : confirmed.majorActivity === 'SERVICES'
+      ? 'SERVICES'
+      : 'BOTH';
+
+    const latestClassification = (confirmed.classificationHistory[0]?.enterpriseType?.toUpperCase() as 'MICRO' | 'SMALL' | 'MEDIUM') || 'SMALL';
+
+    setCoMsmeInfo({
+      isMSME: true,
+      udyamRegistrationNo: confirmed.udyamRegistrationNo,
+      msmeClassification: latestClassification,
+      enterpriseType: confirmed.organisationType,
+      enterpriseName: confirmed.enterpriseName,
+      activityType: actType,
+      dateOfIncorporation: confirmed.dateOfIncorporation,
+      dateOfCommencement: confirmed.dateOfCommencement,
+      nicCodes: confirmed.nicActivities.map((a) => a.nic5Digit || a.nic4Digit),
+      majorActivity: confirmed.majorActivity,
+      state: confirmed.officialAddress?.state,
+      district: confirmed.officialAddress?.district,
+    });
+
+    // Populate company legal & trade name if default or empty
+    if (!coLegalName.trim() || coLegalName === 'KOSH INNOVATIONS PRIVATE LIMITED') {
+      setCoLegalName(confirmed.enterpriseName);
+    }
+    if (!coTradeName.trim()) {
+      setCoTradeName(confirmed.enterpriseName);
+    }
+
+    // Populate official enterprise address if returned
+    if (confirmed.officialAddress) {
+      if (confirmed.officialAddress.city) setCoCity(confirmed.officialAddress.city);
+      if (confirmed.officialAddress.state) setCoState(confirmed.officialAddress.state);
+      if (confirmed.officialAddress.postalCode) setCoPostalCode(confirmed.officialAddress.postalCode);
+      if (confirmed.officialAddress.streetName) setCoStreetAddress(confirmed.officialAddress.streetName);
+    }
+
+    setIsMsmeReviewModalOpen(false);
+    setSuccessMsg(`Official MSME Udyam certificate data for "${confirmed.enterpriseName}" retrieved & applied.`);
+    setTimeout(() => setSuccessMsg(''), 5000);
   };
 
   // BRANCH MODAL HANDLERS
@@ -1266,6 +1348,24 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
               <Plus className="w-4 h-4" /> Add Warehouse
             </button>
           )}
+          {activeTab === 'departments' && (
+            <button
+              onClick={() => {
+                setEditingDeptId(null);
+                setDeptTargetBranchId(branches[0]?.id || 'br-pond-01');
+                setDeptCode('');
+                setDeptName('');
+                setDeptDescription('');
+                setDeptHeadName('');
+                setDeptHeadEmail('');
+                setDeptStatus('ACTIVE');
+                setIsDeptModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-xs cursor-pointer transition"
+            >
+              <Plus className="w-4 h-4" /> Add Department
+            </button>
+          )}
         </div>
       </div>
 
@@ -1291,7 +1391,7 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
         </div>
       )}
 
-      {/* Sub-Tabs: Exactly 3 Primary Tabs in Order: Company | Branch | Warehouse */}
+      {/* Sub-Tabs: Company | Branch | Warehouse | Department */}
       <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-medium border border-slate-200">
         <button
           onClick={() => setActiveTab('companies')}
@@ -1319,6 +1419,24 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
         >
           <WarehouseIcon className="w-4 h-4" />
           Warehouse ({branches.flatMap((b) => b.warehouses || []).length})
+        </button>
+        <button
+          onClick={() => setActiveTab('departments')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer flex items-center gap-2 ${
+            activeTab === 'departments' ? 'bg-white text-indigo-700 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Briefcase className="w-4 h-4" />
+          Department ({branches.flatMap((b) => b.departments || []).length})
+        </button>
+        <button
+          onClick={() => setActiveTab('purchase_org')}
+          className={`px-4 py-2 rounded-lg transition cursor-pointer flex items-center gap-2 ${
+            activeTab === 'purchase_org' ? 'bg-white text-indigo-700 font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Purchase Organization
         </button>
       </div>
 
@@ -1737,6 +1855,44 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                         ))}
                       </div>
                     </div>
+
+                    {/* Departments list */}
+                    <div className="border-t border-slate-100 pt-2 space-y-1">
+                      <div className="font-bold text-slate-700 text-[11px] flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
+                          Branch Departments ({(br.departments || []).length}):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('departments');
+                            setDeptBranchFilter(br.id);
+                          }}
+                          className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                        >
+                          Manage →
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {(br.departments || []).map((d) => (
+                          <span
+                            key={d.id}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                              d.status === 'ACTIVE'
+                                ? 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 line-through'
+                            }`}
+                            title={d.headName ? `Head: ${d.headName}` : d.departmentName}
+                          >
+                            {d.departmentCode} ({d.departmentName})
+                          </span>
+                        ))}
+                        {(br.departments || []).length === 0 && (
+                          <span className="text-[10px] text-slate-400 italic">No departments assigned</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -2020,6 +2176,466 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
               })}
           </div>
         </div>
+      )}
+
+      {/* TAB 4: DEPARTMENT */}
+      {activeTab === 'departments' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900 text-white p-4 rounded-xl shadow-xs border border-slate-800 flex items-center justify-between">
+            <div>
+              <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">
+                Enterprise Branch-Wise Department Governance & Cost Centre Structure
+              </div>
+              <div className="text-lg font-black text-white mt-1 flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-indigo-400" />
+                Branch Departments
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-right text-slate-400 font-semibold text-xs">
+                Total Departments:{' '}
+                <strong className="text-emerald-400 font-mono text-sm">
+                  {branches.flatMap((b) => b.departments || []).length}
+                </strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDeptId(null);
+                  setDeptTargetBranchId(branches[0]?.id || 'br-pond-01');
+                  setDeptCode('');
+                  setDeptName('');
+                  setDeptDescription('');
+                  setDeptHeadName('');
+                  setDeptHeadEmail('');
+                  setDeptStatus('ACTIVE');
+                  setIsDeptModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Department
+              </button>
+            </div>
+          </div>
+
+          {/* Filters: Company, Branch, Search */}
+          <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-700">Company:</span>
+                <select
+                  value={deptCompanyFilter}
+                  onChange={(e) => {
+                    setDeptCompanyFilter(e.target.value);
+                    setDeptBranchFilter('ALL');
+                  }}
+                  className="p-1.5 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 text-xs focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="ALL">All Companies</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.code}] {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-700">Branch:</span>
+                <select
+                  value={deptBranchFilter}
+                  onChange={(e) => setDeptBranchFilter(e.target.value)}
+                  className="p-1.5 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 text-xs focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="ALL">All Branches</option>
+                  {branches
+                    .filter((b) => deptCompanyFilter === 'ALL' || getBranchCompanyId(b) === deptCompanyFilter)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        [{b.portalBranchCode}] {b.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search Department Code, Name or Head..."
+                  value={deptSearchTerm}
+                  onChange={(e) => setDeptSearchTerm(e.target.value)}
+                  className="pl-3 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded text-xs w-64 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setDeptCompanyFilter('ALL');
+                setDeptBranchFilter('ALL');
+                setDeptSearchTerm('');
+              }}
+              className="text-indigo-600 hover:text-indigo-800 font-bold text-xs cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          </div>
+
+          {/* Department Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {branches
+              .filter((b) => deptCompanyFilter === 'ALL' || getBranchCompanyId(b) === deptCompanyFilter)
+              .filter((b) => deptBranchFilter === 'ALL' || b.id === deptBranchFilter)
+              .flatMap((b) => {
+                const coId = getBranchCompanyId(b);
+                const co = companies.find((c) => c.id === coId) || companies[0];
+                return (b.departments || []).map((dept) => ({
+                  ...dept,
+                  parentBranch: b,
+                  parentCompany: co,
+                }));
+              })
+              .filter((item) => {
+                if (!deptSearchTerm) return true;
+                const q = deptSearchTerm.toLowerCase();
+                return (
+                  item.departmentCode.toLowerCase().includes(q) ||
+                  item.departmentName.toLowerCase().includes(q) ||
+                  (item.description || '').toLowerCase().includes(q) ||
+                  (item.headName || '').toLowerCase().includes(q) ||
+                  item.parentBranch.name.toLowerCase().includes(q) ||
+                  (item.parentCompany?.name || '').toLowerCase().includes(q)
+                );
+              })
+              .map((dept) => {
+                const isInactive = dept.status === 'INACTIVE';
+                return (
+                  <div
+                    key={dept.id}
+                    className={`bg-white p-4 rounded-xl border shadow-xs space-y-3 transition ${
+                      isInactive ? 'border-rose-200 bg-slate-50/50 opacity-80' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 font-bold text-sm text-slate-900">
+                          <Briefcase className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span>{dept.departmentName}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 font-medium line-clamp-1">
+                          {dept.description || 'Branch operational department'}
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="font-mono text-xs font-black bg-indigo-600 text-white px-2 py-0.5 rounded shadow-xs">
+                          {dept.departmentCode}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Company and Branch Association */}
+                    <div className="p-2 bg-indigo-50/60 rounded border border-indigo-100 text-[11px] font-mono space-y-1">
+                      <div className="text-slate-500 text-[10px] uppercase font-bold">Parent Company:</div>
+                      <div className="font-bold text-indigo-900">
+                        [{dept.parentCompany?.code || 'KOSH-HQ'}] • {dept.parentCompany?.name || 'Kosh Innovations Pvt Ltd'}
+                      </div>
+                      <div className="text-[10px] text-slate-600">
+                        Operating Branch: <strong className="text-slate-900 font-bold">[{dept.parentBranch.portalBranchCode}] {dept.parentBranch.name}</strong>
+                      </div>
+                    </div>
+
+                    {/* Department Head Details */}
+                    <div className="p-2 bg-slate-50 rounded border border-slate-200 text-[11px] flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <div>
+                          <div className="font-bold text-slate-800">{dept.headName || 'Unassigned Head'}</div>
+                          {dept.headEmail && <div className="text-[10px] text-slate-500">{dept.headEmail}</div>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status & Action Bar */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                            isInactive
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          }`}
+                        >
+                          {isInactive ? 'INACTIVE' : 'ACTIVE'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updatedBranches = branches.map((b) => {
+                              if (b.id === dept.parentBranch.id) {
+                                const updatedDepts = (b.departments || []).map((d) =>
+                                  d.id === dept.id ? { ...d, status: (d.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE') as any } : d
+                                );
+                                return { ...b, departments: updatedDepts };
+                              }
+                              return b;
+                            });
+                            setBranches(updatedBranches);
+                            setSuccessMsg(`Department ${dept.departmentCode} status toggled.`);
+                            setTimeout(() => setSuccessMsg(''), 4000);
+                          }}
+                          className={`p-1 rounded transition cursor-pointer border ${
+                            isInactive
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                          }`}
+                          title={isInactive ? 'Activate Department' : 'Deactivate Department'}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingDeptId(dept.id);
+                          setDeptTargetBranchId(dept.parentBranch.id);
+                          setDeptCode(dept.departmentCode);
+                          setDeptName(dept.departmentName);
+                          setDeptDescription(dept.description || '');
+                          setDeptHeadName(dept.headName || '');
+                          setDeptHeadEmail(dept.headEmail || '');
+                          setDeptStatus(dept.status);
+                          setIsDeptModalOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-lg text-[11px] font-bold border border-slate-200 transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" /> Modify
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD / MODIFY DEPARTMENT */}
+      {isDeptModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden flex flex-col">
+            <div className="bg-[#0B192C] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-sm">
+                  {editingDeptId ? 'Modify Branch Department' : 'Add New Branch Department'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsDeptModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!deptCode.trim() || !deptName.trim()) {
+                  alert('Department Code and Department Name are required.');
+                  return;
+                }
+
+                const targetBranch = branches.find((b) => b.id === deptTargetBranchId);
+                if (!targetBranch) return;
+
+                const coId = getBranchCompanyId(targetBranch);
+
+                if (editingDeptId) {
+                  const updatedBranches = branches.map((b) => {
+                    const updatedDepts = (b.departments || []).map((d) => {
+                      if (d.id === editingDeptId) {
+                        return {
+                          ...d,
+                          companyId: coId,
+                          branchId: deptTargetBranchId,
+                          departmentCode: deptCode.trim().toUpperCase(),
+                          departmentName: deptName.trim(),
+                          description: deptDescription.trim(),
+                          headName: deptHeadName.trim(),
+                          headEmail: deptHeadEmail.trim(),
+                          status: deptStatus,
+                          updatedAt: new Date().toISOString(),
+                        };
+                      }
+                      return d;
+                    });
+
+                    if (b.id === deptTargetBranchId && !updatedDepts.some((d) => d.id === editingDeptId)) {
+                      // Moved to this branch
+                      const movedDept: Department = {
+                        id: editingDeptId,
+                        companyId: coId,
+                        branchId: deptTargetBranchId,
+                        departmentCode: deptCode.trim().toUpperCase(),
+                        departmentName: deptName.trim(),
+                        description: deptDescription.trim(),
+                        headName: deptHeadName.trim(),
+                        headEmail: deptHeadEmail.trim(),
+                        status: deptStatus,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      return { ...b, departments: [...(b.departments || []), movedDept] };
+                    }
+                    return { ...b, departments: updatedDepts };
+                  });
+
+                  setBranches(updatedBranches);
+                  setSuccessMsg(`Department [${deptCode.trim().toUpperCase()}] "${deptName.trim()}" updated successfully.`);
+                } else {
+                  const newDept: Department = {
+                    id: `dept-${Date.now()}`,
+                    companyId: coId,
+                    branchId: deptTargetBranchId,
+                    departmentCode: deptCode.trim().toUpperCase(),
+                    departmentName: deptName.trim(),
+                    description: deptDescription.trim(),
+                    headName: deptHeadName.trim(),
+                    headEmail: deptHeadEmail.trim(),
+                    status: deptStatus,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  };
+
+                  const updatedBranches = branches.map((b) => {
+                    if (b.id === deptTargetBranchId) {
+                      return { ...b, departments: [...(b.departments || []), newDept] };
+                    }
+                    return b;
+                  });
+
+                  setBranches(updatedBranches);
+                  setSuccessMsg(`Department [${newDept.departmentCode}] "${newDept.departmentName}" created for ${targetBranch.name}.`);
+                }
+
+                setIsDeptModalOpen(false);
+                setTimeout(() => setSuccessMsg(''), 5000);
+              }}
+              className="p-5 space-y-4 text-xs"
+            >
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Target Operating Branch *</label>
+                <select
+                  value={deptTargetBranchId}
+                  onChange={(e) => setDeptTargetBranchId(e.target.value)}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      [{b.portalBranchCode}] {b.name} ({b.city}, {b.state})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Department Code *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. PDY-PROD"
+                    value={deptCode}
+                    onChange={(e) => setDeptCode(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-mono font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Department Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Production & Operations"
+                    value={deptName}
+                    onChange={(e) => setDeptName(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Description</label>
+                <textarea
+                  placeholder="Department scope and business operational details..."
+                  value={deptDescription}
+                  onChange={(e) => setDeptDescription(e.target.value)}
+                  rows={2}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Department Head Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. K. Sundaram"
+                    value={deptHeadName}
+                    onChange={(e) => setDeptHeadName(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Department Head Email</label>
+                  <input
+                    type="email"
+                    placeholder="e.g. sundaram.k@kosh.com"
+                    value={deptHeadEmail}
+                    onChange={(e) => setDeptHeadEmail(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Status</label>
+                <select
+                  value={deptStatus}
+                  onChange={(e) => setDeptStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsDeptModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-xs transition cursor-pointer"
+                >
+                  {editingDeptId ? 'Save Changes' : 'Create Department'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: PURCHASE ORGANIZATION */}
+      {activeTab === 'purchase_org' && (
+        <PurchaseOrganizationView companies={companies} branches={branches} />
       )}
 
       {/* MODAL: VIEW / EDIT MAPPINGS (ENTIRE FUNCTIONALITY FROM SAP INTEGRATION MANAGEMENT) */}
@@ -3898,6 +4514,24 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
           }}
           onConfirm={handleConfirmCoGstReview}
           onCancel={() => setIsCoReviewModalOpen(false)}
+        />
+      )}
+
+      {/* PRE-SAVE COMPANY MSME/UDYAM VERIFICATION REVIEW & CONFIRMATION MODAL */}
+      {isMsmeReviewModalOpen && stagedMsmeDetails && (
+        <MSMEVerificationReviewModal
+          isOpen={isMsmeReviewModalOpen}
+          details={stagedMsmeDetails}
+          targetEntityName="Company Registration"
+          currentValues={{
+            name: coLegalName || coName,
+            majorActivity: coMsmeInfo.activityType,
+            city: coCity,
+            state: coState,
+            address: coStreetAddress,
+          }}
+          onConfirm={handleConfirmCoMsmeReview}
+          onCancel={() => setIsMsmeReviewModalOpen(false)}
         />
       )}
 

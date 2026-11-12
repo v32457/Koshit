@@ -2,20 +2,28 @@ import React, { useState } from 'react';
 import { GlobalItem, Branch, Warehouse, BranchItemClassification } from '../../types';
 import { Layers, MapPin, Save, ShieldCheck, Warehouse as WarehouseIcon } from 'lucide-react';
 import { INITIAL_BRANCH_ITEM_CLASSIFICATIONS } from '../../data/seedData';
+import { isItemAvailableInBranch } from '../../utils/branchItemHelper';
 
 interface BranchAvailabilityViewProps {
   items: GlobalItem[];
   allBranches: Branch[];
+  onUpdateItems?: (updatedItems: GlobalItem[]) => void;
 }
 
 export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
   items: initialItems,
   allBranches,
+  onUpdateItems,
 }) => {
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(allBranches[0].id);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(allBranches[0]?.id || 'br-pond-01');
   const [items, setItems] = useState<GlobalItem[]>(initialItems);
   const [assignedWarehouses, setAssignedWarehouses] = useState<Record<string, string>>({});
   const [isSaved, setIsSaved] = useState(false);
+
+  // Synchronize state when initialItems updates
+  React.useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
 
   // Authoritative Branch Item Classifications
   const [branchClassifications, setBranchClassifications] = useState<BranchItemClassification[]>(() => {
@@ -27,15 +35,15 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
   });
 
   const selectedBranch = allBranches.find((b) => b.id === selectedBranchId) || allBranches[0];
-  const branchWarehouses: Warehouse[] = selectedBranch.warehouses || [];
+  const branchWarehouses: Warehouse[] = selectedBranch?.warehouses || [];
 
   const handleUpdateBranchCategory = (itemId: string, newCategoryCode: string) => {
     const existing = branchClassifications.find(
-      (bc) => bc.branchId === selectedBranchId && bc.globalItemId === itemId
+      (bc) => (bc.branchId === selectedBranch.id || bc.branchCode === selectedBranch.portalBranchCode) && bc.globalItemId === itemId
     );
 
     const updated = branchClassifications.filter(
-      (bc) => !(bc.branchId === selectedBranchId && bc.globalItemId === itemId)
+      (bc) => !((bc.branchId === selectedBranch.id || bc.branchCode === selectedBranch.portalBranchCode) && bc.globalItemId === itemId)
     );
 
     const categoryNames: Record<string, string> = {
@@ -67,12 +75,12 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
           updatedAt: new Date().toISOString(),
         }
       : {
-          id: `bic-${itemId}-${selectedBranchId}`,
+          id: `bic-${itemId}-${selectedBranch.id}`,
           globalItemId: itemId,
           companyId: selectedBranch.companyId || 'co-kosh-01',
           companyCode: 'KOSH-HQ',
           companyName: 'Kosh Innovations Pvt Ltd',
-          branchId: selectedBranchId,
+          branchId: selectedBranch.id,
           branchCode: selectedBranch.portalBranchCode,
           branchName: selectedBranch.name,
           categoryCode: newCategoryCode,
@@ -99,17 +107,18 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
     setItems((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
-          const existingAvail = item.branchAvailability.find(
-            (b) => b.branchId === selectedBranchId
-          );
-          let newAvail = item.branchAvailability.filter(
-            (b) => b.branchId !== selectedBranchId
-          );
+          const isMatch = (b: any) =>
+            b.branchId === selectedBranch.id ||
+            b.branchId === selectedBranch.code ||
+            b.branchId === selectedBranch.portalBranchCode;
+
+          const existingAvail = item.branchAvailability.find(isMatch);
+          let newAvail = item.branchAvailability.filter((b) => !isMatch(b));
 
           const updatedSetting = existingAvail
             ? { ...existingAvail, [field]: !existingAvail[field] }
             : {
-                branchId: selectedBranchId,
+                branchId: selectedBranch.id,
                 isStocked: field === 'isStocked',
                 isPurchased: field === 'isPurchased',
                 isManufactured: field === 'isManufactured',
@@ -131,6 +140,14 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
   };
 
   const handleSaveMatrix = () => {
+    try {
+      localStorage.setItem('kosh_global_items', JSON.stringify(items));
+    } catch (e) {
+      console.error('Failed to save items to localStorage:', e);
+    }
+    if (onUpdateItems) {
+      onUpdateItems(items);
+    }
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -219,11 +236,18 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item) => {
-                const avail = item.branchAvailability.find((b) => b.branchId === selectedBranchId);
-                const isPermitted = avail?.isActive ?? false;
+                const isPermitted = isItemAvailableInBranch(item, selectedBranch);
+                const avail = item.branchAvailability.find(
+                  (b) =>
+                    b.branchId === selectedBranch.id ||
+                    b.branchId === selectedBranch.code ||
+                    b.branchId === selectedBranch.portalBranchCode
+                );
 
                 const bic = branchClassifications.find(
-                  (b) => b.branchId === selectedBranchId && b.globalItemId === item.id
+                  (b) =>
+                    (b.branchId === selectedBranch.id || b.branchCode === selectedBranch.portalBranchCode) &&
+                    b.globalItemId === item.id
                 ) || {
                   categoryCode: selectedBranch.portalBranchCode === '001' ? 'FG' : selectedBranch.portalBranchCode === '002' ? 'RM' : 'SF',
                 };
