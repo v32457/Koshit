@@ -17,6 +17,7 @@ import { NavigationSidebar } from './components/NavigationSidebar';
 import { PageAcceptanceBar } from './components/PageAcceptanceBar';
 import { Stage0ReviewModal } from './components/Stage0ReviewModal';
 import { PageAcceptanceRegisterModal } from './components/PageAcceptanceRegisterModal';
+import { ZeroTrustWorkspaceRuntime } from './components/security/ZeroTrustWorkspaceRuntime';
 
 import {
   INITIAL_ORGANIZATION,
@@ -36,7 +37,10 @@ import { CustomSpecificationsView } from './modules/items/CustomSpecificationsVi
 import { BranchAvailabilityView } from './modules/items/BranchAvailabilityView';
 import { BranchCreatedItemsView } from './modules/items/BranchCreatedItemsView';
 import { ModuleManagementView } from './modules/settings/ModuleManagementView';
+import { UserRoleAdministrationView } from './modules/settings/UserRoleAdministrationView';
+import { MyContactConsentView } from './modules/settings/userRoleAdmin/MyContactConsentView';
 import { WorkflowManagementView } from './modules/settings/WorkflowManagementView';
+import { userRoleAdminService } from './services/userRoleAdminService';
 import { BusinessPartnerMasterView } from './modules/businessPartners/BusinessPartnerMasterView';
 import { ApprovalInboxView } from './modules/approvals/ApprovalInboxView';
 import { MyRequestsView } from './modules/requests/MyRequestsView';
@@ -54,7 +58,9 @@ import { ClassificationsView } from './modules/settings/ClassificationsView';
 import { OrganizationsView } from './modules/settings/OrganizationsView';
 import { WarehouseSetupView } from './modules/settings/WarehouseSetupView';
 import { FieldConfigurationsView } from './modules/settings/FieldConfigurationsView';
+import { PrTypeMasterPanel } from './modules/settings/PrTypeMasterPanel';
 import { FinanceBudgetView } from './modules/finance/FinanceBudgetView';
+import { WorkdayCalendarSuiteView } from './modules/calendar/WorkdayCalendarSuiteView';
 import { AssetEquipmentView } from './modules/assets/AssetEquipmentView';
 import { BuyerManagementView } from './modules/procurement/BuyerManagementView';
 import { ProcurementDashboardView } from './modules/procurement/ProcurementDashboardView';
@@ -67,6 +73,7 @@ import { VendorPriceRegisterView } from './modules/procurement/VendorPriceRegist
 import { PurchasePriceBookView } from './modules/procurement/PurchasePriceBookView';
 import { PurchaseOrderManagementView } from './modules/procurement/PurchaseOrderManagementView';
 import { GoodsReceiptView } from './modules/procurement/GoodsReceiptView';
+import { ChargeManagementView } from './modules/procurement/ChargeManagementView';
 import { ProcurementReportsView } from './modules/procurement/ProcurementReportsView';
 import { LocalLlmManagementView } from './modules/llm/LocalLlmManagementView';
 import { AuditLogsView } from './modules/settings/AuditLogsView';
@@ -93,12 +100,15 @@ import { NotFoundView } from './modules/public/NotFoundView';
 
 export default function App() {
   // Authentication & Branch Context
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]); // Platform Admin by default
+  const [users, setUsers] = useState<User[]>(() => userRoleAdminService.getUsers());
+  const [currentUser, setCurrentUser] = useState<User>(() => userRoleAdminService.getUsers()[0] || INITIAL_USERS[0]);
+  const [activeSessionTokenId, setActiveSessionTokenId] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true); // Logged in by default
   const [redirectRoute, setRedirectRoute] = useState<string>('');
 
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = (user: User, sessionTokenId?: string) => {
     setCurrentUser(user);
+    setActiveSessionTokenId(sessionTokenId);
     setIsAuthenticated(true);
     const target = redirectRoute && redirectRoute !== '/login' ? redirectRoute : '/dashboard';
     setCurrentRoute(target);
@@ -106,6 +116,18 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (activeSessionTokenId) {
+      try {
+        userRoleAdminService.forceLogoutSession(
+          activeSessionTokenId,
+          'User signed out',
+          { id: currentUser.id, name: currentUser.fullName }
+        );
+      } catch (err) {
+        console.error('Session revocation on logout:', err);
+      }
+    }
+    setActiveSessionTokenId(undefined);
     setIsAuthenticated(false);
     setCurrentRoute('/');
     setRedirectRoute('');
@@ -261,9 +283,45 @@ export default function App() {
   const isBpMasterEnabled = moduleRegistry.find((m) => m.moduleKey === 'BUSINESS_PARTNER_MASTER')?.isEnabled ?? true;
   const isPrModuleEnabled = moduleRegistry.find((m) => m.moduleKey === 'PURCHASE_REQUISITION')?.isEnabled ?? true;
 
-  // Navigation State
-  const [currentRoute, setCurrentRoute] = useState<string>('/');
+  // Navigation State (Initializes from URL pathname if a deep route is opened, otherwise defaults to '/purchasing/requisitions' or '/')
+  const [currentRoute, setCurrentRoute] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const queryRoute = params.get('route');
+      if (queryRoute) return queryRoute;
+      const path = window.location.pathname;
+      if (path && path !== '/' && path !== '/index.html') return path;
+    }
+    return '/purchasing/requisitions';
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768 && window.innerWidth < 1024;
+    }
+    return false;
+  });
+
+  // Automatically adapt sidebar collapse when rotating between tablet portrait, tablet landscape, and desktop
+  React.useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      if (w >= 768) {
+        setMobileSidebarOpen(false);
+      }
+      if (w >= 768 && w < 960) {
+        setSidebarCollapsed(true);
+      } else if (w >= 1280) {
+        setSidebarCollapsed(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
 
   // Page Acceptance Register State
   const [acceptanceRecords, setAcceptanceRecords] = useState<PageAcceptanceRecord[]>(INITIAL_PAGE_ACCEPTANCE_RECORDS);
@@ -273,7 +331,43 @@ export default function App() {
   const [isStage0ModalOpen, setIsStage0ModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
-  const [notifications, setNotifications] = useState<InPortalNotification[]>(INITIAL_IN_PORTAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<InPortalNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem('kosh_in_portal_notifications_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fall through
+    }
+    return INITIAL_IN_PORTAL_NOTIFICATIONS;
+  });
+
+  React.useEffect(() => {
+    const syncUsers = () => {
+      const latest = userRoleAdminService.getUsers();
+      setUsers(latest);
+      setCurrentUser((prev) => latest.find((u) => u.id === prev.id) || prev);
+    };
+    const syncNotifs = () => {
+      try {
+        const raw = localStorage.getItem('kosh_in_portal_notifications_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setNotifications(parsed);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('cip:users-updated', syncUsers);
+    window.addEventListener('cip:notifications-updated', syncNotifs);
+    return () => {
+      window.removeEventListener('cip:users-updated', syncUsers);
+      window.removeEventListener('cip:notifications-updated', syncNotifs);
+    };
+  }, []);
   const [activePrSessions, setActivePrSessions] = useState<string[]>([]);
   const [selectedPrDetails, setSelectedPrDetails] = useState<PurchaseRequisitionHeader | null>(null);
 
@@ -311,7 +405,7 @@ export default function App() {
 
   // Switch User (for multi-role testing)
   const handleSwitchUser = (userId: string) => {
-    const found = INITIAL_USERS.find((u) => u.id === userId);
+    const found = users.find((u) => u.id === userId) || userRoleAdminService.getUserById(userId);
     if (found) {
       setCurrentUser(found);
       const updatedCtx = restoreOperatingContext(found, companies, branches);
@@ -601,12 +695,13 @@ export default function App() {
     currentRoute === '/assets-equipment' ||
     currentRoute === '/approvals' ||
     currentRoute.startsWith('/settings') ||
+    currentRoute.startsWith('/calendar') ||
     currentRoute.startsWith('/communication') ||
     currentRoute.startsWith('/integration');
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex flex-col font-sans antialiased">
-      {/* Corporate Header with Logout capability */}
+    <div className="min-h-screen w-full max-w-full bg-[#F8FAFC] text-slate-800 flex flex-col font-sans antialiased overflow-x-hidden">
+      {/* Corporate Header with Logout & Responsive Navigation Controls */}
       <AppHeader
         currentUser={currentUser}
         activeOrg={activeOrg}
@@ -614,42 +709,61 @@ export default function App() {
         allCompanies={companies}
         activeBranch={activeBranch}
         allBranches={branches}
-        allUsers={INITIAL_USERS}
+        allUsers={users}
         onSwitchCompany={handleSwitchCompany}
         onSwitchBranch={handleSwitchBranch}
         onSwitchUser={handleSwitchUser}
+        onNavigate={handleNavigate}
         onLogout={handleLogout}
         onToggleMobileSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+        isSidebarCollapsed={sidebarCollapsed}
+        onToggleSidebarCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         notificationCount={notifications.filter((n) => !n.isRead).length}
         onOpenNotifications={() => setIsNotifDrawerOpen(true)}
       />
 
-      {/* Main Portal Shell Layout */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Mobile Sidebar Overlay */}
+      {/* Main Portal Shell Layout — Full-Width Enterprise Workspace */}
+      <div className="app-layout flex-1 flex overflow-hidden relative w-full max-w-full">
+        {/* Mobile Sidebar Drawer Backdrop (< 768px) */}
         {mobileSidebarOpen && (
           <div
-            className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+            className="fixed inset-0 z-40 bg-black/60 md:hidden"
             onClick={() => setMobileSidebarOpen(false)}
           />
         )}
 
-        {/* Navigation Sidebar */}
-        <div className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-200 lg:relative lg:translate-x-0 ${
-          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}>
+        {/* Navigation Sidebar: Mobile Drawer (< 768px) | Collapsible Sidebar on Tablet & Desktop (>= 768px) */}
+        <div
+          className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-200 md:relative md:translate-x-0 ${
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          }`}
+        >
           <NavigationSidebar
             currentRoute={currentRoute}
             onNavigate={handleNavigate}
             userRole={currentUser.role}
             moduleRegistry={moduleRegistry}
+            isCollapsed={!mobileSidebarOpen && sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onCloseMobile={mobileSidebarOpen ? () => setMobileSidebarOpen(false) : undefined}
           />
         </div>
 
-        {/* Dynamic Workspace Container */}
-        <div className="flex-1 flex flex-col overflow-y-auto w-full">
-          {/* Main View Area */}
-          <main className="p-4 md:p-6 max-w-7xl w-full mx-auto flex-1">
+        {/* Dynamic Full-Width Workspace Container wrapped by Zero-Trust Visual & Session Runtime */}
+        <ZeroTrustWorkspaceRuntime
+          currentUser={currentUser}
+          activeCompany={activeCompany}
+          activeBranch={activeBranch}
+          users={users}
+          companies={companies}
+          branches={branches}
+          moduleRegistry={moduleRegistry}
+          currentRoute={currentRoute}
+          onLogout={handleLogout}
+        >
+        <div className="main-workspace flex-1 flex flex-col overflow-y-auto overflow-x-hidden w-full min-w-0 max-w-none">
+          {/* Main View Area — 100% Full Width with Consistent 12-20px Gutter */}
+          <main className="page-container p-3 sm:p-4 lg:p-5 w-full max-w-none min-w-0 m-0 flex-1">
             {!isKnownRoute ? (
               <NotFoundView
                 onNavigateHome={() => setCurrentRoute('/')}
@@ -662,6 +776,7 @@ export default function App() {
                   <DashboardView
                     items={items}
                     activeBranch={activeBranch}
+                    currentUser={currentUser}
                     onNavigate={(route) => setCurrentRoute(route)}
                     onOpenStage0Modal={() => setIsStage0ModalOpen(true)}
                   />
@@ -675,6 +790,29 @@ export default function App() {
                     onToggleModule={handleToggleModule}
                     onAddModule={handleAddModule}
                     onNavigate={(route) => setCurrentRoute(route)}
+                  />
+                )}
+
+                {/* Centralized User & Role Administration */}
+                {currentRoute === '/settings/users-roles' && (
+                  <UserRoleAdministrationView
+                    currentUser={currentUser}
+                    activeCompany={activeCompany}
+                    activeBranch={activeBranch}
+                    companies={companies}
+                    branches={branches}
+                    onNavigate={handleNavigate}
+                  />
+                )}
+
+                {currentRoute === '/settings/my-contact-consent' && (
+                  <MyContactConsentView
+                    currentUser={currentUser}
+                    onUserUpdated={() => {
+                      const latest = userRoleAdminService.getUsers();
+                      setUsers(latest);
+                      setCurrentUser((prev) => latest.find((u) => u.id === prev.id) || prev);
+                    }}
                   />
                 )}
 
@@ -711,8 +849,11 @@ export default function App() {
                       <ItemMasterListView
                         items={items}
                         allBranches={branches}
+                        currentUser={currentUser}
                         onNavigateNew={() => setCurrentRoute('/items/new')}
                         onNavigateCustomSpecs={() => setCurrentRoute('/items/custom-specifications')}
+                        onNavigate={(route) => setCurrentRoute(route)}
+                        onUpdateItems={setItems}
                         onImportItems={(newItems) => setItems((prev) => [...newItems, ...prev])}
                       />
                     )}
@@ -739,6 +880,7 @@ export default function App() {
                       <BranchAvailabilityView
                         items={items}
                         allBranches={branches}
+                        currentUser={currentUser}
                         onUpdateItems={setItems}
                       />
                     )}
@@ -747,6 +889,8 @@ export default function App() {
                       <BranchCreatedItemsView
                         items={items}
                         allBranches={branches}
+                        currentUser={currentUser}
+                        onNavigate={(route) => setCurrentRoute(route)}
                       />
                     )}
                   </>
@@ -804,7 +948,7 @@ export default function App() {
                   ) : (currentRoute === '/procurement/rfq' || currentRoute === '/procurement/rfqs') ? (
                     <RfqManagementView currentUser={currentUser} companies={companies} branches={branches} onNavigate={(r) => setCurrentRoute(r)} />
                   ) : currentRoute === '/procurement/quotations' ? (
-                    <SupplierQuotationsView />
+                    <SupplierQuotationsView currentUser={currentUser} />
                   ) : currentRoute === '/procurement/comparative-statement' ? (
                     <ComparativeStatementView currentUser={currentUser} onNavigate={(r) => setCurrentRoute(r)} />
                   ) : currentRoute === '/procurement/price-register' ? (
@@ -815,8 +959,10 @@ export default function App() {
                     <PurchaseOrderManagementView currentUser={currentUser} companies={companies} branches={branches} />
                   ) : currentRoute === '/procurement/goods-receipt' ? (
                     <GoodsReceiptView currentUser={currentUser} companies={companies} branches={branches} />
+                  ) : currentRoute === '/procurement/charges' ? (
+                    <ChargeManagementView currentUser={currentUser} onNavigate={handleNavigate} />
                   ) : (
-                    <ProcurementReportsView />
+                    <ProcurementReportsView currentUser={currentUser} />
                   )
                 )}
 
@@ -829,36 +975,58 @@ export default function App() {
                 )}
 
                 {currentRoute === '/settings/general' && (
-                  <GeneralSettingsView onNavigate={handleNavigate} />
+                  <GeneralSettingsView onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
 
                 {currentRoute === '/settings/general/pr' && (
-                  <GeneralSettingsView initialTab="pr-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="pr-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {currentRoute === '/settings/general/pr-type-master' && (
+                  <GeneralSettingsView initialTab="pr-type-master" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {currentRoute === '/settings/pr-type-master' && (
+                  <PrTypeMasterPanel currentUser={currentUser} companies={companies} branches={branches} />
                 )}
                 {currentRoute === '/settings/general/items' && (
-                  <GeneralSettingsView initialTab="item-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="item-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/aging' && (
-                  <GeneralSettingsView initialTab="aging-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="aging-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/budget' && (
-                  <GeneralSettingsView initialTab="finance-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="finance-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {currentRoute === '/settings/general/financial-year' && (
+                  <GeneralSettingsView initialTab="fy-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
 
-                {currentRoute === '/settings/general/security' && (
-                  <GeneralSettingsView initialTab="security-module" view="full" onNavigate={handleNavigate} />
+                {(currentRoute === '/settings/general/security' || currentRoute.startsWith('/settings/security')) && (
+                  <GeneralSettingsView initialTab="security-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/supplier' && (
-                  <GeneralSettingsView initialTab="supplier-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="supplier-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/customer' && (
-                  <GeneralSettingsView initialTab="customer-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="customer-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/warehouse' && (
-                  <GeneralSettingsView initialTab="warehouse-module" view="full" onNavigate={handleNavigate} />
+                  <GeneralSettingsView initialTab="warehouse-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
                 )}
                 {currentRoute === '/settings/general/rfq' && (
                   <GeneralSettingsView initialTab="rfq-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {(currentRoute === '/settings/general/charge-master' || currentRoute === '/settings/charge-master') && (
+                  <GeneralSettingsView initialTab="charge-master-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {(currentRoute === '/settings/general/pr-charge-mapping' || currentRoute === '/settings/pr-charge-mapping') && (
+                  <GeneralSettingsView initialTab="pr-charge-mapping-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+                {currentRoute === '/settings/general/holiday-calendar' && (
+                  <GeneralSettingsView initialTab="holiday-module" view="full" onNavigate={handleNavigate} currentUser={currentUser} />
+                )}
+
+                {currentRoute.startsWith('/calendar') && (
+                  <WorkdayCalendarSuiteView currentUser={currentUser} />
                 )}
 
 
@@ -919,12 +1087,13 @@ export default function App() {
 
                 {currentRoute === '/settings/field-configurations' && <FieldConfigurationsView />}
 
-                {currentRoute === '/settings/audit-logs' && <AuditLogsView />}
+                {currentRoute === '/settings/audit-logs' && <AuditLogsView currentUser={currentUser} />}
 
                 {currentRoute === '/settings/dashboard-config' && (
                   <DashboardView
                     items={items}
                     activeBranch={activeBranch}
+                    currentUser={currentUser}
                     onNavigate={(route) => setCurrentRoute(route)}
                     onOpenStage0Modal={() => setIsStage0ModalOpen(true)}
                   />
@@ -962,7 +1131,7 @@ export default function App() {
                 )}
 
                 {currentRoute === '/communication/whatsapp-config' && (
-                  <WhatsAppConfigView />
+                  <WhatsAppConfigView currentUser={currentUser} />
                 )}
 
                 {currentRoute === '/communication/whatsapp-templates' && (
@@ -970,11 +1139,11 @@ export default function App() {
                 )}
 
                 {currentRoute === '/communication/broadcasts' && (
-                  <BroadcastCampaignsView />
+                  <BroadcastCampaignsView currentUser={currentUser} />
                 )}
 
                 {currentRoute === '/communication/rules' && (
-                  <NotificationRulesView />
+                  <NotificationRulesView currentUser={currentUser} />
                 )}
 
                 {currentRoute === '/communication/queue' && (
@@ -986,7 +1155,7 @@ export default function App() {
                 )}
 
                 {currentRoute === '/communication/consent' && (
-                  <ConsentGovernanceView />
+                  <ConsentGovernanceView currentUser={currentUser} />
                 )}
 
                 {currentRoute === '/communication/reports' && (
@@ -1026,6 +1195,7 @@ export default function App() {
             )}
           </main>
         </div>
+        </ZeroTrustWorkspaceRuntime>
       </div>
 
       {/* Interactive In-Portal Notification Drawer */}

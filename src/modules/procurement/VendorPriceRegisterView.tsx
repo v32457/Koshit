@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Award, Search, Filter, Calendar, CheckCircle2, Building, ShieldCheck } from 'lucide-react';
 import { vendorPriceRegisterService } from '../../services/vendorPriceRegisterService';
 import { VendorItemPriceAgreement } from '../../types/rfqSourcing';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export const VendorPriceRegisterView: React.FC = () => {
   const [agreements] = useState<VendorItemPriceAgreement[]>(() => vendorPriceRegisterService.getAgreements());
@@ -13,6 +15,15 @@ export const VendorPriceRegisterView: React.FC = () => {
     a.itemCode.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const grid = useStandardDataGrid({
+    gridId: 'vendor-price-register',
+    data: filtered,
+    defaultSortField: 'approvedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'agreementNumber',
+    filterSignature: searchQuery,
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -20,7 +31,7 @@ export const VendorPriceRegisterView: React.FC = () => {
         <div>
           <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Award className="w-5 h-5 text-indigo-600" />
-            <span>Approved Vendor Item Price Register (RFQ Sourcing)</span>
+            <span>Vendor Item Price</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Active approved price agreements resulting from competitive RFQ awards for RFQ-enabled companies and branches.
@@ -64,7 +75,13 @@ export const VendorPriceRegisterView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filtered.map((agr) => (
+              {grid.pagedData.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-slate-400">
+                    No approved vendor price agreements match your search.
+                  </td>
+                </tr>
+              ) : grid.pagedData.map((agr) => (
                 <tr key={agr.id} className="hover:bg-slate-50 transition">
                   <td className="p-3">
                     <div className="font-bold text-indigo-600">{agr.agreementNumber}</div>
@@ -109,6 +126,17 @@ export const VendorPriceRegisterView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={grid.currentPage}
+        totalPages={grid.totalPages}
+        pageSize={grid.pageSize}
+        totalRecords={grid.totalRecords}
+        onPageChange={grid.setCurrentPage}
+        onPageSizeChange={grid.setPageSize}
+        pageSizeOptions={grid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (Approved Date DESC)"
+      />
     </div>
   );
 };

@@ -78,11 +78,16 @@ import {
   Minimize2,
   Maximize2,
   Minimize,
+  Paperclip,
 } from 'lucide-react';
+import { complianceGovernanceService } from '../../services/complianceGovernanceService';
+import { ComplianceGovernanceSettings, ComplianceDocumentAttachment } from '../../types';
 import { EnterpriseModal } from '../../components/EnterpriseModal';
 
 import { OperatingContext, filterBusinessPartnersByContext } from '../../services/operatingContextService';
 import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface BusinessPartnerMasterViewProps {
   currentUser: User;
@@ -238,6 +243,23 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
   const [isMsmeReviewModalOpen, setIsMsmeReviewModalOpen] = useState(false);
   const [stagedMsmeDetails, setStagedMsmeDetails] = useState<MSMEVerificationDetails | null>(null);
   const [msmeVerificationDetails, setMsmeVerificationDetails] = useState<MSMEVerificationDetails | undefined>(undefined);
+
+  // Statutory Compliance Governance & Manual Verification State
+  const [complianceSettings, setComplianceSettings] = useState<ComplianceGovernanceSettings>(() =>
+    complianceGovernanceService.getComplianceSettings()
+  );
+  const [bpGstCertFile, setBpGstCertFile] = useState<ComplianceDocumentAttachment | null>(null);
+  const [bpGstManualStatus, setBpGstManualStatus] = useState<'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED' | 'REJECTED'>('PENDING_MANUAL_VALIDATION');
+  const [bpMsmeCertFile, setBpMsmeCertFile] = useState<ComplianceDocumentAttachment | null>(null);
+  const [bpMsmeManualStatus, setBpMsmeManualStatus] = useState<'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED' | 'REJECTED'>('PENDING_MANUAL_VALIDATION');
+
+  useEffect(() => {
+    const handleComplianceSync = (e: any) => {
+      setComplianceSettings(e.detail || complianceGovernanceService.getComplianceSettings());
+    };
+    window.addEventListener('cip-compliance-settings-updated', handleComplianceSync);
+    return () => window.removeEventListener('cip-compliance-settings-updated', handleComplianceSync);
+  }, []);
 
   // Mandatory Billing Address (in General Tab)
   const [billToCountry, setBillToCountry] = useState('India');
@@ -481,6 +503,10 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         bp.gstVerificationDetails ||
         (bp.gstinPan ? getOrCreateGstDetailsForEntity(bp.gstinPan, bp.bpName, bp.gstTradeName) || null : null)
       );
+      setBpGstCertFile(bp.gstCertificateDocument || null);
+      setBpGstManualStatus(bp.gstManualValidation?.status || complianceSettings.gstDefaultStatusOnUpload);
+      setBpMsmeCertFile(bp.msmeCertificateDocument || null);
+      setBpMsmeManualStatus(bp.msmeManualValidation?.status || complianceSettings.msmeDefaultStatusOnUpload);
       if (currentMode === 'MANUAL_CAPTCHA' && bp.gstinPan) {
         setCaptchaSession(generateCaptchaChallenge(bp.gstinPan));
       } else {
@@ -510,6 +536,10 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       setCaptchaInput('');
       setSavedGstDetails(null);
       setStagedGstDetails(null);
+      setBpGstCertFile(null);
+      setBpGstManualStatus(complianceSettings.gstDefaultStatusOnUpload);
+      setBpMsmeCertFile(null);
+      setBpMsmeManualStatus(complianceSettings.msmeDefaultStatusOnUpload);
       if (currentMode === 'MANUAL_CAPTCHA') {
         setCaptchaSession(generateCaptchaChallenge('34AAACK4603M1ZP'));
       } else {
@@ -831,10 +861,22 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       return;
     }
 
-    // Rule 5: Transaction blocking if GST Status is not ACTIVE
-    if (gstinPan.trim() && gstStatus !== 'ACTIVE' && gstStatus !== 'VERIFIED') {
-      setErrorMsg(`SAVE BLOCKED: GSTIN status is "${gstStatus}". Only ACTIVE GST registrations are eligible for saving & transactions.`);
-      return;
+    // Rule 5: Statutory Compliance Verification Gate
+    if (complianceSettings.gstValidationEnabled) {
+      if (gstinPan.trim() && gstStatus !== 'ACTIVE' && gstStatus !== 'VERIFIED') {
+        setErrorMsg(`SAVE BLOCKED: GSTIN status is "${gstStatus}". Only ACTIVE GST registrations are eligible for saving & transactions.`);
+        return;
+      }
+    } else {
+      // Manual GST Mode: check required document upload
+      if (complianceSettings.gstRequireDocumentUpload && gstinPan.trim() && !bpGstCertFile) {
+        setErrorMsg('SAVE BLOCKED: GST Registration Certificate document upload is required for manual validation when online verification is disabled in General Settings.');
+        return;
+      }
+      if (msmeInfo.isMSME && complianceSettings.msmeRequireDocumentUpload && msmeInfo.udyamRegistrationNo && !bpMsmeCertFile) {
+        setErrorMsg('SAVE BLOCKED: Udyam Registration Certificate document upload is required for manual validation when online verification is disabled in General Settings.');
+        return;
+      }
     }
 
     const billToAddr: BPAddress = {
@@ -862,6 +904,33 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       });
     }
 
+    // Attach uploaded compliance certificates to attachments list if present
+    let finalAttachments = [...attachments];
+    if (bpGstCertFile && !finalAttachments.some((a) => a.fileName === bpGstCertFile.fileName)) {
+      finalAttachments.push({
+        id: bpGstCertFile.id,
+        docType: 'GST Certificate',
+        fileName: bpGstCertFile.fileName,
+        fileSizeBytes: bpGstCertFile.fileSizeBytes,
+        uploadedAt: bpGstCertFile.uploadedAt,
+        uploadedBy: bpGstCertFile.uploadedBy,
+      });
+    }
+    if (bpMsmeCertFile && !finalAttachments.some((a) => a.fileName === bpMsmeCertFile.fileName)) {
+      finalAttachments.push({
+        id: bpMsmeCertFile.id,
+        docType: 'MSME Certificate',
+        fileName: bpMsmeCertFile.fileName,
+        fileSizeBytes: bpMsmeCertFile.fileSizeBytes,
+        uploadedAt: bpMsmeCertFile.uploadedAt,
+        uploadedBy: bpMsmeCertFile.uploadedBy,
+      });
+    }
+
+    const effectiveGstStatus: BusinessPartner['gstStatus'] = !complianceSettings.gstValidationEnabled
+      ? (bpGstManualStatus === 'MANUALLY_VERIFIED' ? 'VERIFIED' : 'PENDING')
+      : (gstStatus as any);
+
     if (editingBp) {
       // Check if locked
       if (editingBp.isLocked && currentUser.role !== 'PLATFORM_ADMIN') {
@@ -883,14 +952,32 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
             currency,
             gstinPan: gstinPan.trim().toUpperCase(),
             panNumber: panNumber.trim().toUpperCase(),
-            gstLegalName,
-            gstTradeName,
+            gstLegalName: gstLegalName || bpName.trim(),
+            gstTradeName: gstTradeName || bpName.trim(),
             gstTaxpayerType: gstRegistrationType,
-            gstStatus,
+            gstStatus: effectiveGstStatus,
             gstRegisteredEmail,
             gstRegisteredMobile,
             gstFilingHistory,
+            gstVerificationMode: (complianceSettings.gstValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT') as any,
+            gstCertificateDocument: bpGstCertFile || b.gstCertificateDocument || undefined,
+            gstManualValidation: !complianceSettings.gstValidationEnabled
+              ? {
+                  status: bpGstManualStatus,
+                  validatedBy: bpGstManualStatus === 'MANUALLY_VERIFIED' ? currentUser.fullName : undefined,
+                  validatedAt: bpGstManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+                }
+              : b.gstManualValidation,
             msmeInfo,
+            msmeVerificationMode: (complianceSettings.msmeValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT') as any,
+            msmeCertificateDocument: bpMsmeCertFile || b.msmeCertificateDocument || undefined,
+            msmeManualValidation: !complianceSettings.msmeValidationEnabled && msmeInfo.isMSME
+              ? {
+                  status: bpMsmeManualStatus,
+                  validatedBy: bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? currentUser.fullName : undefined,
+                  validatedAt: bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+                }
+              : b.msmeManualValidation,
             city: billToCity.trim(),
             district: billToDistrict.trim(),
             state: billToState.trim(),
@@ -906,7 +993,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
             },
             properties,
             remarks,
-            attachments,
+            attachments: finalAttachments,
             governanceLogs,
             gstVerificationDetails: savedGstDetails || b.gstVerificationDetails || (gstinPan ? getOrCreateGstDetailsForEntity(gstinPan, bpName, gstTradeName) : undefined),
             updatedAt: new Date().toISOString(),
@@ -936,12 +1023,30 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         gstLegalName: gstLegalName || bpName.trim(),
         gstTradeName: gstTradeName || bpName.trim(),
         gstTaxpayerType: gstRegistrationType,
-        gstStatus,
+        gstStatus: effectiveGstStatus,
         gstRegisteredEmail,
         gstRegisteredMobile,
         gstFilingHistory,
+        gstVerificationMode: complianceSettings.gstValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT',
+        gstCertificateDocument: bpGstCertFile || undefined,
+        gstManualValidation: !complianceSettings.gstValidationEnabled
+          ? {
+              status: bpGstManualStatus,
+              validatedBy: bpGstManualStatus === 'MANUALLY_VERIFIED' ? currentUser.fullName : undefined,
+              validatedAt: bpGstManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+            }
+          : undefined,
         gstVerificationDetails: savedGstDetails || (gstinPan ? getOrCreateGstDetailsForEntity(gstinPan, bpName, gstTradeName) : undefined),
         msmeInfo,
+        msmeVerificationMode: complianceSettings.msmeValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT',
+        msmeCertificateDocument: bpMsmeCertFile || undefined,
+        msmeManualValidation: !complianceSettings.msmeValidationEnabled && msmeInfo.isMSME
+          ? {
+              status: bpMsmeManualStatus,
+              validatedBy: bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? currentUser.fullName : undefined,
+              validatedAt: bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+            }
+          : undefined,
         phone: contacts[0]?.mobile || '+91 98000 00000',
         email: contacts[0]?.email || 'contact@partner.com',
         city: billToCity.trim(),
@@ -962,7 +1067,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
         },
         properties,
         remarks,
-        attachments,
+        attachments: finalAttachments,
         governanceLogs: [
           {
             id: `gov-${Date.now()}`,
@@ -999,6 +1104,38 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
     setIsInspectorOpen(true);
   };
 
+  const handleToggleBpManualValidation = (bpId: string, type: 'GST' | 'MSME') => {
+    const updated = bpList.map((bp) => {
+      if (bp.id !== bpId) return bp;
+      if (type === 'GST') {
+        const current = bp.gstManualValidation?.status || 'PENDING_MANUAL_VALIDATION';
+        const nextStatus = current === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED';
+        const updatedVal = complianceGovernanceService.createManualValidationRecord(
+          nextStatus,
+          currentUser.fullName || 'Compliance Admin',
+          nextStatus === 'MANUALLY_VERIFIED' ? 'Manually validated and verified against uploaded Form REG-06' : 'Pending manual audit'
+        );
+        return { ...bp, gstManualValidation: updatedVal };
+      } else {
+        const current = bp.msmeManualValidation?.status || 'PENDING_MANUAL_VALIDATION';
+        const nextStatus = current === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED';
+        const updatedVal = complianceGovernanceService.createManualValidationRecord(
+          nextStatus,
+          currentUser.fullName || 'Compliance Admin',
+          nextStatus === 'MANUALLY_VERIFIED' ? 'Manually validated and verified against uploaded Udyam Registration Certificate' : 'Pending manual audit'
+        );
+        return { ...bp, msmeManualValidation: updatedVal };
+      }
+    });
+
+    setBpList(updated);
+    localStorage.setItem('kosh_business_partners', JSON.stringify(updated));
+    if (inspectedBp && inspectedBp.id === bpId) {
+      const refreshed = updated.find((b) => b.id === bpId);
+      if (refreshed) setInspectedBp(refreshed);
+    }
+  };
+
   const filteredBps = bpList.filter((b) => {
     // Screen-level Company Filter
     if (companyFilter !== 'ALL') {
@@ -1021,6 +1158,15 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
       (b.gstinPan && b.gstinPan.toLowerCase().includes(searchTerm.toLowerCase())) ||
       b.city.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesType && matchesGst && matchesSearch;
+  });
+
+  const bpGrid = useStandardDataGrid({
+    data: filteredBps,
+    gridId: 'business-partner-master',
+    userId: currentUser?.id || 'usr-default',
+    primarySortField: 'updatedAt',
+    tieBreakerField: 'bpCode',
+    filterSignature: `${companyFilter}|${branchFilter}|${typeFilter}|${gstFilter}|${searchTerm}`,
   });
 
   return (
@@ -1143,14 +1289,14 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredBps.length === 0 ? (
+              {bpGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
                     No business partners found matching filters.
                   </td>
                 </tr>
               ) : (
-                filteredBps.map((bp) => {
+                bpGrid.pagedData.map((bp) => {
                   const isGstActive = bp.gstStatus === 'ACTIVE' || bp.gstStatus === 'VERIFIED';
                   return (
                     <tr key={bp.id} className="hover:bg-slate-50/80 transition">
@@ -1228,6 +1374,16 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          totalRecords={bpGrid.totalRecords}
+          currentPage={bpGrid.currentPage}
+          pageSize={bpGrid.pageSize}
+          totalPages={bpGrid.totalPages}
+          onPageChange={bpGrid.onPageChange}
+          onPageSizeChange={bpGrid.onPageSizeChange}
+          entityLabel="business partners"
+          sortNotice="Sorted newest updated & CardCode first"
+        />
       </div>
 
       {/* CREATE / EDIT BUSINESS PARTNER MODAL */}
@@ -1348,161 +1504,298 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                   </div>
 
                   {/* GSTIN & PAN Section — Positioned Directly Below CardCode Block */}
-                  <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                        <span className="font-bold text-indigo-950 text-xs">GSTIN Taxpayer Verification</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                          activeGstMode === 'PAID_API'
-                            ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
-                            : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                        }`}>
-                          {activeGstMode === 'PAID_API' ? 'Paid B2B API Gateway' : 'Manual CAPTCHA Mode (Official Portal)'}
+                  {complianceSettings.gstValidationEnabled ? (
+                    <div className="p-3.5 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                          <span className="font-bold text-indigo-950 text-xs">GSTIN Taxpayer Verification</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                            activeGstMode === 'PAID_API'
+                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                              : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          }`}>
+                            {activeGstMode === 'PAID_API' ? 'Paid B2B API Gateway' : 'Manual CAPTCHA Mode (Official Portal)'}
+                          </span>
+                        </div>
+
+                        {activeGstMode === 'PAID_API' && (
+                          <button
+                            type="button"
+                            onClick={handleVerifyGstInModal}
+                            disabled={isVerifyingGst}
+                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                          >
+                            {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                            <span>Verify with Paid API</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">GSTIN ID *</label>
+                          <input
+                            type="text"
+                            maxLength={15}
+                            placeholder="e.g. 34AAACK4603M1ZP"
+                            value={gstinPan}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              setGstinPan(val);
+                              if (val.length === 15 && activeGstMode === 'MANUAL_CAPTCHA') {
+                                handleRequestNewCaptcha(val);
+                              }
+                            }}
+                            className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Auto-Extracted PAN</label>
+                          <input
+                            type="text"
+                            readOnly
+                            disabled
+                            value={panNumber || (gstinPan.length >= 12 ? gstinPan.slice(2, 12) : '')}
+                            className="w-full text-xs p-2 bg-slate-200 border border-slate-300 rounded-lg font-mono font-bold text-indigo-900 cursor-not-allowed"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">GST Registration Status</label>
+                          <div className="p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold flex items-center justify-between">
+                            <span className={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? 'text-emerald-700' : 'text-slate-600'}>
+                              {gstStatus}
+                            </span>
+                            {gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <XCircle className="w-4 h-4 text-slate-400" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Inline CAPTCHA Challenge Container (Manual CAPTCHA Mode) */}
+                      {activeGstMode === 'MANUAL_CAPTCHA' && (
+                        <div className="p-3 bg-white rounded-lg border border-indigo-200/80 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Govt GSTN Portal CAPTCHA Challenge</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">Session Expiry: 120s</span>
+                          </div>
+
+                          {captchaSession ? (
+                            <div className="flex flex-wrap items-center gap-3">
+                              {/* Inline CAPTCHA SVG Image */}
+                              <div className="flex items-center gap-2">
+                                <img
+                                  src={captchaSession.captchaDataUrl}
+                                  alt="Official Portal CAPTCHA Challenge"
+                                  className="h-10 rounded border border-slate-300 shadow-2xs bg-slate-50"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleRequestNewCaptcha()}
+                                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                                  title="Refresh CAPTCHA Challenge"
+                                >
+                                  <RefreshCw className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {/* CAPTCHA Text Input */}
+                              <div className="flex-1 min-w-[140px]">
+                                <input
+                                  type="text"
+                                  maxLength={6}
+                                  placeholder="ENTER 6 CHARS"
+                                  value={captchaInput}
+                                  onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
+                                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-black uppercase tracking-widest text-indigo-950 bg-slate-50 focus:bg-white"
+                                />
+                              </div>
+
+                              {/* Verify Action */}
+                              <button
+                                type="button"
+                                onClick={handleVerifyGstInModal}
+                                disabled={isVerifyingGst}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                              >
+                                {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                                <span>Verify GSTIN</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-slate-500">Ready to initiate official taxpayer search workflow.</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRequestNewCaptcha()}
+                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition cursor-pointer"
+                              >
+                                Load CAPTCHA Challenge
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Inline Error Message */}
+                      {gstErrorMessage && (
+                        <div className="p-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg font-bold flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>{gstErrorMessage}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* General Setting: GST Validation Disabled -> Direct type GST + Certificate File Upload + Manual Verification */
+                    <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-amber-700" />
+                          <span className="font-bold text-amber-950 text-xs">GST Validation Disabled via General Settings</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            Manual Document Upload & Review Mode
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-800">
+                          Live API verification bypassed. Upload official GST Certificate for manual verification.
                         </span>
                       </div>
 
-                      {activeGstMode === 'PAID_API' && (
-                        <button
-                          type="button"
-                          onClick={handleVerifyGstInModal}
-                          disabled={isVerifyingGst}
-                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-                        >
-                          {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                          <span>Verify with Paid API</span>
-                        </button>
-                      )}
-                    </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">GSTIN ID</label>
+                          <input
+                            type="text"
+                            maxLength={15}
+                            placeholder="e.g. 34AAACK4603M1ZP"
+                            value={gstinPan}
+                            onChange={(e) => {
+                              const val = e.target.value.toUpperCase();
+                              setGstinPan(val);
+                              if (val.length >= 12 && !panNumber) {
+                                setPanNumber(val.slice(2, 12));
+                              }
+                            }}
+                            className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white"
+                          />
+                        </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">GSTIN ID *</label>
-                        <input
-                          type="text"
-                          maxLength={15}
-                          placeholder="e.g. 34AAACK4603M1ZP"
-                          value={gstinPan}
-                          onChange={(e) => {
-                            const val = e.target.value.toUpperCase();
-                            setGstinPan(val);
-                            if (val.length === 15 && activeGstMode === 'MANUAL_CAPTCHA') {
-                              handleRequestNewCaptcha(val);
-                            }
-                          }}
-                          className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white"
-                        />
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">PAN Number</label>
+                          <input
+                            type="text"
+                            maxLength={10}
+                            placeholder="e.g. AAACK4603M"
+                            value={panNumber || (gstinPan.length >= 12 ? gstinPan.slice(2, 12) : '')}
+                            onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                            className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white text-slate-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Manual Validation Status</label>
+                          <div className="p-1.5 bg-white border border-slate-300 rounded-lg flex items-center justify-between gap-2">
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded font-mono ${
+                              bpGstManualStatus === 'MANUALLY_VERIFIED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {bpGstManualStatus === 'MANUALLY_VERIFIED' ? 'MANUALLY VERIFIED' : 'PENDING MANUAL REVIEW'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setBpGstManualStatus(bpGstManualStatus === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED')}
+                              className="text-[10px] font-bold px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-300 transition cursor-pointer"
+                            >
+                              {bpGstManualStatus === 'MANUALLY_VERIFIED' ? 'Set Pending' : 'Mark Verified'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Auto-Extracted PAN</label>
-                        <input
-                          type="text"
-                          readOnly
-                          disabled
-                          value={panNumber || (gstinPan.length >= 12 ? gstinPan.slice(2, 12) : '')}
-                          className="w-full text-xs p-2 bg-slate-200 border border-slate-300 rounded-lg font-mono font-bold text-indigo-900 cursor-not-allowed"
-                        />
-                      </div>
+                      {/* File Upload for GST Certificate */}
+                      <div className="p-3 bg-white border border-amber-200 rounded-lg space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                            <Upload className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Upload GST Registration Certificate (Form REG-06) {complianceSettings.gstRequireDocumentUpload && '*'}</span>
+                          </label>
+                          <span className="text-[10px] text-slate-500 font-mono">Allowed: PDF, JPG, PNG (Max 10MB)</span>
+                        </div>
 
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">GST Registration Status</label>
-                        <div className="p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold flex items-center justify-between">
-                          <span className={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? 'text-emerald-700' : 'text-slate-600'}>
-                            {gstStatus}
-                          </span>
-                          {gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED' ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <div className="flex items-center gap-3">
+                          <label className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg cursor-pointer flex items-center gap-1.5 shadow-2xs transition">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Select Certificate Document</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  if (file.size > 10 * 1024 * 1024) {
+                                    alert('Certificate file exceeds 10MB limit.');
+                                    return;
+                                  }
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    setBpGstCertFile({
+                                      id: `doc-gst-${Date.now()}`,
+                                      fileName: file.name,
+                                      fileSizeBytes: file.size,
+                                      fileSize: file.size,
+                                      fileType: file.type || 'application/pdf',
+                                      uploadedAt: new Date().toISOString(),
+                                      uploadedBy: 'Compliance Admin',
+                                      documentType: 'GST_CERTIFICATE',
+                                      fileDataUrl: typeof reader.result === 'string' ? reader.result : undefined,
+                                    });
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                          </label>
+
+                          {bpGstCertFile ? (
+                            <div className="flex-1 flex items-center justify-between p-2 bg-amber-50/60 border border-amber-300 rounded-lg text-xs font-mono">
+                              <div className="flex items-center gap-2 truncate">
+                                <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span className="font-bold text-slate-900 truncate">{bpGstCertFile.fileName}</span>
+                                <span className="text-[10px] text-slate-500">({complianceGovernanceService.formatFileSize(bpGstCertFile.fileSizeBytes)})</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setBpGstCertFile(null)}
+                                className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                                title="Remove document"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           ) : (
-                            <XCircle className="w-4 h-4 text-slate-400" />
+                            <span className="text-xs text-slate-500 italic">No certificate uploaded yet.</span>
                           )}
                         </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* Inline CAPTCHA Challenge Container (Manual CAPTCHA Mode) */}
-                    {activeGstMode === 'MANUAL_CAPTCHA' && (
-                      <div className="p-3 bg-white rounded-lg border border-indigo-200/80 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Govt GSTN Portal CAPTCHA Challenge</span>
-                          </div>
-                          <span className="text-[10px] text-slate-500 font-mono">Session Expiry: 120s</span>
-                        </div>
-
-                        {captchaSession ? (
-                          <div className="flex flex-wrap items-center gap-3">
-                            {/* Inline CAPTCHA SVG Image */}
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={captchaSession.captchaDataUrl}
-                                alt="Official Portal CAPTCHA Challenge"
-                                className="h-10 rounded border border-slate-300 shadow-2xs bg-slate-50"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleRequestNewCaptcha()}
-                                className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                                title="Refresh CAPTCHA Challenge"
-                              >
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
-                            </div>
-
-                            {/* CAPTCHA Text Input */}
-                            <div className="flex-1 min-w-[140px]">
-                              <input
-                                type="text"
-                                maxLength={6}
-                                placeholder="ENTER 6 CHARS"
-                                value={captchaInput}
-                                onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
-                                className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-black uppercase tracking-widest text-indigo-950 bg-slate-50 focus:bg-white"
-                              />
-                            </div>
-
-                            {/* Verify Action */}
-                            <button
-                              type="button"
-                              onClick={handleVerifyGstInModal}
-                              disabled={isVerifyingGst}
-                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-                            >
-                              {isVerifyingGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                              <span>Verify GSTIN</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-slate-500">Ready to initiate official taxpayer search workflow.</span>
-                            <button
-                              type="button"
-                              onClick={() => handleRequestNewCaptcha()}
-                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition cursor-pointer"
-                            >
-                              Load CAPTCHA Challenge
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Inline Error Message */}
-                    {gstErrorMessage && (
-                      <div className="p-2 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-lg font-bold flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                        <span>{gstErrorMessage}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Partner Name (Official Legal Name) & Trade Name (Official Trade Name) — Cannot be edited once verified */}
+                  {/* Partner Name (Official Legal Name) & Trade Name (Official Trade Name) — Locked ONLY if live validation is enabled and verified */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-bold text-slate-900 mb-1 flex items-center justify-between">
                         <span>Business Partner Name (Official Legal Name) *</span>
-                        {(gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
+                        {complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
                           <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono font-bold flex items-center gap-1">
                             <Lock className="w-3 h-3 text-indigo-600" /> Locked from Verified GST
                           </span>
@@ -1513,9 +1806,9 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                         placeholder="e.g. Official Legal Entity Name"
                         value={bpName}
                         onChange={(e) => setBpName(e.target.value)}
-                        readOnly={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'}
+                        readOnly={complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED')}
                         className={`w-full text-xs p-2.5 border border-slate-300 rounded-lg font-bold text-slate-900 ${
-                          gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'
+                          complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED')
                             ? 'bg-slate-100 cursor-not-allowed text-indigo-950 font-black'
                             : 'bg-white'
                         }`}
@@ -1537,7 +1830,7 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                             <span>View Details</span>
                           </button>
                         </div>
-                        {(gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
+                        {complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED') && (
                           <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono font-bold flex items-center gap-1">
                             <Lock className="w-3 h-3 text-indigo-600" /> Locked from Verified GST
                           </span>
@@ -1548,9 +1841,9 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
                         placeholder="e.g. Registered Trade Name"
                         value={gstTradeName}
                         onChange={(e) => setGstTradeName(e.target.value)}
-                        readOnly={gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'}
+                        readOnly={complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED')}
                         className={`w-full text-xs p-2.5 border border-slate-300 rounded-lg font-bold text-slate-900 ${
-                          gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED'
+                          complianceSettings.gstValidationEnabled && (gstStatus === 'ACTIVE' || gstStatus === 'VERIFIED')
                             ? 'bg-slate-100 cursor-not-allowed text-indigo-950 font-black'
                             : 'bg-white'
                         }`}
@@ -1685,24 +1978,144 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
 
                     {msmeInfo.isMSME && (
                       <div className="space-y-3 pt-2 border-t border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            placeholder="Udyam Reg. No. e.g. UDYAM-TN-03-0012345"
-                            value={msmeInfo.udyamRegistrationNo || ''}
-                            onChange={(e) => setMsmeInfo({ ...msmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
-                            className="flex-1 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleVerifyMsme}
-                            disabled={isVerifyingMsme}
-                            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
-                          >
-                            {isVerifyingMsme ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                            Verify MSME
-                          </button>
-                        </div>
+                        {complianceSettings.msmeValidationEnabled ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              placeholder="Udyam Reg. No. e.g. UDYAM-TN-03-0012345"
+                              value={msmeInfo.udyamRegistrationNo || ''}
+                              onChange={(e) => setMsmeInfo({ ...msmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
+                              className="flex-1 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleVerifyMsme}
+                              disabled={isVerifyingMsme}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+                            >
+                              {isVerifyingMsme ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                              Verify MSME
+                            </button>
+                          </div>
+                        ) : (
+                          /* General Setting: MSME Validation Disabled -> Direct type + Certificate Upload + Manual Review */
+                          <div className="space-y-3">
+                            <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg flex items-center justify-between text-xs">
+                              <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                                <Award className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Online MSME Verification Disabled via General Settings (Manual Review Mode)</span>
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                                  bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'MANUALLY VERIFIED' : 'PENDING REVIEW'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setBpMsmeManualStatus(bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED')}
+                                  className="text-[10px] font-bold px-2 py-0.5 bg-white border border-slate-300 rounded hover:bg-slate-50 cursor-pointer"
+                                >
+                                  {bpMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'Set Pending' : 'Mark Verified'}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                              <div>
+                                <label className="block font-bold text-slate-700 text-[11px] mb-1">Udyam Registration Number *</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. UDYAM-TN-03-0012345"
+                                  value={msmeInfo.udyamRegistrationNo || ''}
+                                  onChange={(e) => setMsmeInfo({ ...msmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
+                                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block font-bold text-slate-700 text-[11px] mb-1">Enterprise Classification</label>
+                                <select
+                                  value={msmeInfo.msmeClassification || 'MICRO'}
+                                  onChange={(e) => setMsmeInfo({ ...msmeInfo, msmeClassification: e.target.value as any })}
+                                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold bg-white"
+                                >
+                                  <option value="MICRO">Micro Enterprise</option>
+                                  <option value="SMALL">Small Enterprise</option>
+                                  <option value="MEDIUM">Medium Enterprise</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block font-bold text-slate-700 text-[11px] mb-1">Major Activity Type</label>
+                                <select
+                                  value={msmeInfo.activityType || 'MANUFACTURING'}
+                                  onChange={(e) => setMsmeInfo({ ...msmeInfo, activityType: e.target.value as any })}
+                                  className="w-full text-xs p-2 border border-slate-300 rounded-lg font-bold bg-white"
+                                >
+                                  <option value="MANUFACTURING">Manufacturing</option>
+                                  <option value="SERVICES">Services</option>
+                                  <option value="TRADING">Trading</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Udyam Certificate Upload */}
+                            <div className="p-2.5 bg-white border border-amber-200 rounded-lg flex items-center gap-3">
+                              <label className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg cursor-pointer flex items-center gap-1.5 shadow-2xs transition">
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>Upload Udyam Certificate {complianceSettings.msmeRequireDocumentUpload && '*'}</span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.png,.jpg,.jpeg"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      if (file.size > 10 * 1024 * 1024) {
+                                        alert('Udyam Certificate file exceeds 10MB limit.');
+                                        return;
+                                      }
+                                      const reader = new FileReader();
+                                      reader.onload = () => {
+                                        setBpMsmeCertFile({
+                                          id: `doc-msme-${Date.now()}`,
+                                          fileName: file.name,
+                                          fileSizeBytes: file.size,
+                                          fileSize: file.size,
+                                          fileType: file.type || 'application/pdf',
+                                          uploadedAt: new Date().toISOString(),
+                                          uploadedBy: 'Compliance Admin',
+                                          documentType: 'MSME_CERTIFICATE',
+                                          fileDataUrl: typeof reader.result === 'string' ? reader.result : undefined,
+                                        });
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }}
+                                />
+                              </label>
+
+                              {bpMsmeCertFile ? (
+                                <div className="flex-1 flex items-center justify-between p-1.5 bg-amber-50/60 border border-amber-300 rounded-lg text-xs font-mono">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span className="font-bold text-slate-900 truncate">{bpMsmeCertFile.fileName}</span>
+                                    <span className="text-[10px] text-slate-500">({complianceGovernanceService.formatFileSize(bpMsmeCertFile.fileSizeBytes)})</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBpMsmeCertFile(null)}
+                                    className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                                    title="Remove document"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-500 italic">No Udyam certificate uploaded yet.</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border font-mono">
                           <div>
@@ -2380,6 +2793,65 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
               {/* TAB 5: OFFICIAL GST DETAILS (Full Rich Sections) */}
               {inspectorTab === 'GST_DETAILS' && (
                 <div className="space-y-4">
+                  {(inspectedBp.gstVerificationMode === 'MANUAL_DOCUMENT' || inspectedBp.gstCertificateDocument || inspectedBp.gstManualValidation) && (
+                    <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-amber-700" />
+                          <h4 className="font-bold text-amber-950 text-xs">Statutory Compliance: Manual GST Certificate & Verification</h4>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-bold ${
+                          inspectedBp.gstManualValidation?.status === 'MANUALLY_VERIFIED'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}>
+                          {inspectedBp.gstManualValidation?.status === 'MANUALLY_VERIFIED' ? 'MANUALLY VERIFIED' : 'PENDING MANUAL VALIDATION'}
+                        </span>
+                      </div>
+
+                      {inspectedBp.gstCertificateDocument ? (
+                        <div className="p-3 bg-white border border-amber-200 rounded-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <FileCheck className="w-5 h-5 text-emerald-600" />
+                            <div>
+                              <div className="font-bold text-xs text-slate-900">{inspectedBp.gstCertificateDocument.fileName}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                Size: {complianceGovernanceService.formatFileSize(inspectedBp.gstCertificateDocument.fileSizeBytes)} • Uploaded: {new Date(inspectedBp.gstCertificateDocument.uploadedAt).toLocaleDateString()} by {inspectedBp.gstCertificateDocument.uploadedBy}
+                              </div>
+                            </div>
+                          </div>
+                          {inspectedBp.gstCertificateDocument.fileDataUrl && (
+                            <a
+                              href={inspectedBp.gstCertificateDocument.fileDataUrl}
+                              download={inspectedBp.gstCertificateDocument.fileName}
+                              className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded font-bold text-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500 italic">No physical GST Certificate file was attached.</div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-200/60 text-xs">
+                        <span className="text-slate-600 text-[11px]">
+                          {inspectedBp.gstManualValidation?.validatedAt
+                            ? `Verified on ${new Date(inspectedBp.gstManualValidation.validatedAt).toLocaleDateString()} by ${inspectedBp.gstManualValidation.validatedBy || 'Auditor'}`
+                            : 'Awaiting compliance officer sign-off.'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleBpManualValidation(inspectedBp.id, 'GST')}
+                          className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded text-xs cursor-pointer shadow-2xs"
+                        >
+                          {inspectedBp.gstManualValidation?.status === 'MANUALLY_VERIFIED' ? 'Revert to Pending' : 'Approve & Mark Manually Verified'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <GSTDetailsInspector
                     details={
                       inspectedBp.gstVerificationDetails ||
@@ -2394,6 +2866,65 @@ export const BusinessPartnerMasterView: React.FC<BusinessPartnerMasterViewProps>
               {/* TAB 6: OFFICIAL MSME CERTIFICATE */}
               {inspectorTab === 'MSME_DETAILS' && (
                 <div className="space-y-4">
+                  {(inspectedBp.msmeVerificationMode === 'MANUAL_DOCUMENT' || inspectedBp.msmeCertificateDocument || inspectedBp.msmeManualValidation) && (
+                    <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Award className="w-4 h-4 text-amber-700" />
+                          <h4 className="font-bold text-amber-950 text-xs">Statutory Compliance: Manual Udyam Certificate & Verification</h4>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-bold ${
+                          inspectedBp.msmeManualValidation?.status === 'MANUALLY_VERIFIED'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-amber-100 text-amber-800 border border-amber-300'
+                        }`}>
+                          {inspectedBp.msmeManualValidation?.status === 'MANUALLY_VERIFIED' ? 'MANUALLY VERIFIED' : 'PENDING MANUAL VALIDATION'}
+                        </span>
+                      </div>
+
+                      {inspectedBp.msmeCertificateDocument ? (
+                        <div className="p-3 bg-white border border-amber-200 rounded-lg flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <FileCheck className="w-5 h-5 text-emerald-600" />
+                            <div>
+                              <div className="font-bold text-xs text-slate-900">{inspectedBp.msmeCertificateDocument.fileName}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                Size: {complianceGovernanceService.formatFileSize(inspectedBp.msmeCertificateDocument.fileSizeBytes)} • Uploaded: {new Date(inspectedBp.msmeCertificateDocument.uploadedAt).toLocaleDateString()} by {inspectedBp.msmeCertificateDocument.uploadedBy}
+                              </div>
+                            </div>
+                          </div>
+                          {inspectedBp.msmeCertificateDocument.fileDataUrl && (
+                            <a
+                              href={inspectedBp.msmeCertificateDocument.fileDataUrl}
+                              download={inspectedBp.msmeCertificateDocument.fileName}
+                              className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded font-bold text-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500 italic">No physical Udyam Certificate file was attached.</div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-amber-200/60 text-xs">
+                        <span className="text-slate-600 text-[11px]">
+                          {inspectedBp.msmeManualValidation?.validatedAt
+                            ? `Verified on ${new Date(inspectedBp.msmeManualValidation.validatedAt).toLocaleDateString()} by ${inspectedBp.msmeManualValidation.validatedBy || 'Auditor'}`
+                            : 'Awaiting compliance officer sign-off.'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleBpManualValidation(inspectedBp.id, 'MSME')}
+                          className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded text-xs cursor-pointer shadow-2xs"
+                        >
+                          {inspectedBp.msmeManualValidation?.status === 'MANUALLY_VERIFIED' ? 'Revert to Pending' : 'Approve & Mark Manually Verified'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <MSMEDetailsInspector details={inspectedBp.msmeVerificationDetails} />
                 </div>
               )}

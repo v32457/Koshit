@@ -1,0 +1,853 @@
+# CIPPLATFORM – ENHANCED INVENTORY AVAILABILITY VALIDATION
+## ENTERPRISE WAREHOUSE, BRANCH, COMPANY-WIDE STOCK VISIBILITY, CROSS-BRANCH GOVERNANCE & DUAL AGING MANAGEMENT
+
+**Module:** Procurement & Sourcing → Purchase Requisitions → Inventory Availability Validation (Part K)
+
+**Scope:** Application-wide reusable inventory validation and aging services.
+
+**Priority:** Mandatory enterprise integration.
+
+**Development rule:** Audit existing implementation first. Reuse existing architecture. Do not create duplicate inventory services, stock ledgers, warehouse masters or policy engines.
+
+---
+
+# 1. OBJECTIVE
+
+Enhance the existing Inventory Availability Validation displayed in Purchase Requisition Details.
+
+The solution must support:
+
+1. Warehouse-level stock availability.
+2. Branch-level stock availability.
+3. Company-wide stock visibility.
+4. Configurable cross-branch stock visibility.
+5. Company and Branch policy-based stock visibility.
+6. Warehouse selection and prioritization.
+7. Inventory stock aging.
+8. Purchase Requisition aging.
+9. Expiry and shelf-life information where applicable.
+10. Configurable stock availability calculations.
+11. Inventory reservation and allocation visibility.
+12. Stock transfer recommendations.
+13. Historical inventory validation snapshots.
+14. Centralized reporting and audit.
+15. Reusable integration with procurement, inventory, production and material-planning processes.
+
+The system must distinguish between stock that can be viewed, stock that is physically available, and stock that can actually be used to fulfil a transaction.
+
+# 2. INVENTORY VALIDATION POLICY CONFIGURATION
+
+Extend the existing Inventory Availability Validation policy.
+
+Use the existing governance hierarchy:
+
+**Company → Branch → Warehouse → Item / Item Category**
+
+Preserve existing policy inheritance rules and finalized company-level governance restrictions.
+
+More restrictive applicable policies must not be weakened by lower-level configuration.
+
+## 2.1 Configuration parameters
+
+| Parameter | Configuration |
+|---|---|
+| Inventory validation | Enabled / Disabled |
+| Validation mode | Information Only / Warning / Block / Exception Approval |
+| Stock visibility scope | Warehouse / Branch / Company |
+| Cross-branch visibility | Enabled / Disabled |
+| Cross-branch stock usability | Visibility Only / Transfer Required / Authorized Exception |
+| Warehouse selection | Single / Multiple / Configured Priority |
+| Include reserved stock | Configurable |
+| Include allocated stock | Configurable |
+| Include incoming stock | Configurable |
+| Include quality-inspection stock | Configurable |
+| Include blocked stock | Configurable |
+| Include rejected stock | Configurable |
+| Inventory aging validation | Enabled / Disabled |
+| PR aging validation | Enabled / Disabled |
+| Expiry validation | Enabled / Disabled |
+| Revalidation stage | Configurable |
+
+Every configuration must support:
+
+- Effective dates.
+- Configuration version.
+- Created by.
+- Approved by, where applicable.
+- Change reason.
+- Previous and new values.
+- Historical configuration snapshots.
+- Authorization.
+- Audit history.
+
+## 2.2 Finalized cross-branch policy decision
+
+**Default cross-branch stock policy: Visibility Only.**
+
+However, the effective behaviour must be determined by the configured Company and Branch policies.
+
+Do not hardcode the default as an unconditional company-wide permission.
+
+The Company policy establishes the governance boundary. Branch policies operate within that boundary.
+
+Supported policy modes:
+
+1. Disabled.
+2. Visibility Only.
+3. Transfer Required.
+4. Authorized Exception.
+
+The system must calculate the effective policy from applicable configuration and approved policy precedence.
+
+A Branch must not override a Company-level prohibition or weaken a mandatory restriction.
+
+If the Company policy is not configured, use the approved default of Visibility Only, subject to authorization and applicable organizational restrictions. Do not interpret a missing configuration as unrestricted access.
+
+## 2.3 Meaning of each policy
+
+**Disabled**
+
+Users cannot view other-branch inventory through this functionality. Only their authorized branch stock is visible.
+
+**Visibility Only**
+
+Users with the required permissions can view stock across permitted branches within the same company.
+
+Other-branch stock must not be treated as locally available or automatically fulfillable.
+
+**Transfer Required**
+
+Other-branch stock can be considered as a sourcing option only through the authorized inventory transfer process.
+
+**Authorized Exception**
+
+Cross-branch stock usage requires the configured exception approval or authorized transfer process.
+
+Policy changes must be versioned and historically reconstructable.
+
+# 3. WAREHOUSE-LEVEL CONFIGURATION
+
+Each branch may maintain multiple warehouses and storage locations.
+
+Reuse the existing Warehouse Master.
+
+Required information:
+
+- Warehouse ID.
+- Warehouse Code.
+- Warehouse Name.
+- Company.
+- Branch.
+- Warehouse Type.
+- Warehouse Status.
+- Storage Location / Bin.
+- Warehouse Priority.
+- Default Warehouse Indicator.
+- Inventory Availability Eligibility.
+- Cross-Branch Visibility Eligibility.
+- Cross-Branch Transfer Eligibility.
+
+Support:
+
+- Multiple warehouses per branch.
+- Multiple storage locations per warehouse.
+- Warehouse-specific inventory validation.
+- Item-specific warehouse restrictions.
+- Item-category warehouse restrictions.
+- Warehouse priority.
+- Warehouse activation and deactivation.
+
+Validate warehouse ownership against the selected Company and Branch.
+
+Do not create duplicate warehouse masters or stock balance structures.
+
+# 4. BRANCH-LEVEL INVENTORY VALIDATION
+
+When a PR is created for a branch, identify eligible stock in all warehouses belonging to that branch.
+
+Example:
+
+Company: Kosh Innovations Pvt Ltd.
+
+| Branch | Warehouse | Item | Available Qty |
+|---|---|---|---:|
+| Pondicherry Main Plant | MAIN-WH | ITEM-A | 100 |
+| Pondicherry Main Plant | RM-WH | ITEM-A | 50 |
+| Chennai Hub | CHN-WH | ITEM-A | 200 |
+| Hosur Plant | HOS-WH | ITEM-A | 75 |
+
+For a PR belonging to Pondicherry Main Plant:
+
+- Display MAIN-WH and RM-WH stock.
+- Display individual warehouse balances.
+- Calculate eligible branch stock.
+- Show reserved stock.
+- Show allocated stock.
+- Show incoming stock separately.
+- Show stock in transit separately.
+- Calculate local shortage.
+- Apply warehouse and item eligibility restrictions.
+
+Do not include Chennai or Hosur inventory in locally usable stock merely because the same company owns it.
+
+# 5. COMPANY-WIDE CROSS-BRANCH STOCK VISIBILITY
+
+This is a mandatory company-level and branch-level policy capability.
+
+## 5.1 Default policy
+
+**Visibility Only is the default policy mode.**
+
+The effective policy is determined by:
+
+- Company configuration.
+- Branch configuration.
+- Applicable policy hierarchy.
+- User authorization.
+- Warehouse eligibility.
+- Item and item-category restrictions.
+
+The default does not override an explicitly configured restrictive Company or Branch policy.
+
+## 5.2 Policy behaviour
+
+| Policy | Visibility | Usability |
+|---|---|---|
+| Disabled | Own authorized branch only | Own eligible stock only |
+| Visibility Only | Authorized company branches | Other-branch stock not locally usable |
+| Transfer Required | Authorized company branches | Through approved transfer process |
+| Authorized Exception | According to approved scope | Only after required authorization |
+
+## 5.3 Example calculation
+
+Company: Kosh Innovations Pvt Ltd.
+
+Requesting branch: Pondicherry Main Plant.
+
+PR requirement: 250 units.
+
+| Branch | Warehouse | Available Stock |
+|---|---|---:|
+| Pondicherry | MAIN-WH | 100 |
+| Chennai | CHN-WH | 200 |
+| Hosur | HOS-WH | 75 |
+
+Expected result under Visibility Only:
+
+- Local branch stock: 100.
+- Other-branch visible stock: 275.
+- Company-wide visible stock: 375.
+- Local shortage: 150.
+- Company-wide visible stock exceeds requirement by 125.
+
+The system must clearly distinguish:
+
+1. Local eligible available stock.
+2. Other-branch visible stock.
+3. Company-wide visible stock.
+4. Stock eligible for transfer.
+5. Stock not eligible for transfer.
+6. Actual fulfillment quantity.
+7. Local shortage.
+8. Potential company-wide sourcing shortage.
+
+**Critical:** Never show the company-wide visible quantity as locally available quantity.
+
+## 5.4 Security restrictions
+
+- Never expose stock from another company.
+- Require Company and Branch access authorization.
+- Enforce access through backend APIs and database queries.
+- Do not rely on frontend visibility alone.
+- Do not double-count warehouse balances.
+- Do not treat stock in transit as received stock.
+- Do not treat a proposed transfer as completed movement.
+
+# 6. INVENTORY AVAILABILITY CALCULATION
+
+Display:
+
+- Physical Stock.
+- Reserved Stock.
+- Allocated Stock.
+- Available Stock.
+- Incoming Stock.
+- Stock in Transit.
+- Quality Inspection Stock.
+- Blocked Stock.
+- Rejected Stock.
+- Expected Available Stock.
+- PR Required Quantity.
+- Shortage Quantity.
+
+Use the existing inventory service's approved calculation rules.
+
+Definitions:
+
+**Physical Stock:** Actual recorded stock on hand.
+
+**Reserved Stock:** Stock reserved for existing business requirements.
+
+**Allocated Stock:** Stock committed to an applicable transaction or process.
+
+**Available Stock:** Stock that satisfies the existing inventory availability rules.
+
+**Incoming Stock:** Expected receipts that have not yet been received.
+
+**Stock in Transit:** Stock dispatched but not yet received at the destination.
+
+**Expected Available Stock:** A forecast based on approved incoming supply and applicable reservations.
+
+Do not describe forecast quantities as physical stock.
+
+Do not double-count reserved, allocated or committed quantities.
+
+Display the calculation method and applicable policy version.
+
+# 7. WAREHOUSE PRIORITY AND STOCK SOURCING
+
+Provide configurable warehouse priority.
+
+Example:
+
+| Priority | Warehouse | Branch |
+|---|---|---|
+| 1 | MAIN-WH | Pondicherry |
+| 2 | RM-WH | Pondicherry |
+| 3 | CHN-WH | Chennai |
+| 4 | HOS-WH | Hosur |
+
+Support:
+
+- Preferred warehouse.
+- Alternate warehouse.
+- Restricted warehouse.
+- Emergency sourcing warehouse.
+- Cross-branch sourcing warehouse.
+
+Allow configuration by:
+
+- Company.
+- Branch.
+- Item Category.
+- Item.
+
+The system may recommend a warehouse but must not automatically transfer, reserve or issue stock without authorization.
+
+# 8. INVENTORY STOCK AGING – MANDATORY
+
+Inventory stock aging is mandatory.
+
+Use reliable inventory dates from existing records, such as receipt date, batch date or another approved inventory aging date.
+
+Do not invent historical receipt dates.
+
+## 8.1 Configurable aging buckets
+
+Example:
+
+| Aging Bucket | Days |
+|---|---|
+| Fresh Stock | 0–30 days |
+| Normal Stock | 31–90 days |
+| Aging Stock | 91–180 days |
+| Old Stock | 181–365 days |
+| Critical Aging | More than 365 days |
+
+These are sample values. Administrators must configure the actual thresholds.
+
+## 8.2 Configuration scope
+
+- Company.
+- Branch.
+- Warehouse.
+- Item.
+- Item Category.
+- Batch / Lot, where supported.
+
+## 8.3 Display information
+
+- Stock Quantity.
+- Aging Days.
+- Aging Bucket.
+- Receipt Date.
+- Batch / Lot.
+- Expiry Date, where applicable.
+- Shelf-Life Remaining.
+- Warehouse.
+- Branch.
+
+Aging indicators:
+
+- Normal.
+- Aging.
+- Old.
+- Critical.
+- Expired.
+
+Do not automatically classify old stock as unusable unless the applicable inventory policy requires it.
+
+Expired stock must not be treated as usable.
+
+FIFO/FEFO recommendations must follow existing inventory issue and batch allocation rules.
+
+# 9. EXPIRY AND SHELF-LIFE VALIDATION
+
+Where item and batch records support expiry dates, display:
+
+- Expiry Date.
+- Days to Expiry.
+- Remaining Shelf Life.
+- Expired Quantity.
+- Near-Expiry Quantity.
+
+Configurable warning thresholds:
+
+- 30 days.
+- 60 days.
+- 90 days.
+- Other administrator-defined periods.
+
+Allow different thresholds by item category.
+
+Do not apply expiry validation to non-expiring items.
+
+If batch or expiry information is unavailable, display Not Applicable or Data Unavailable.
+
+# 10. PURCHASE REQUISITION AGING – MANDATORY AND SEPARATE
+
+PR aging is also mandatory.
+
+It must be implemented independently from inventory stock aging.
+
+Do not combine their calculation logic, configuration, reports or historical snapshots.
+
+## 10.1 PR aging calculation
+
+Calculate PR aging from the configured business event.
+
+The default business reference should be the PR submission date for submitted transactions.
+
+Draft PRs must not be incorrectly classified as pending approval.
+
+Provide configurable alternative aging bases if the approved workflow requires them.
+
+## 10.2 Example PR aging buckets
+
+| PR Aging | Status |
+|---|---|
+| 0–3 days | Normal |
+| 4–7 days | Attention |
+| 8–15 days | Delayed |
+| More than 15 days | Critical |
+
+These thresholds must be configurable.
+
+## 10.3 Configuration scope
+
+- Company.
+- Branch.
+- Purchase Organization.
+- PR Type.
+- Approval Stage.
+- Priority.
+
+## 10.4 Display
+
+- PR Number.
+- PR Date.
+- Submission Date.
+- Current Status.
+- Current Approval Owner.
+- Days Pending.
+- Aging Category.
+- SLA Due Date, where configured.
+
+Provide separate aging analysis for:
+
+- Pending Manager Approval.
+- Pending Department Approval.
+- Pending Category Approval.
+- Approved – Pending Buyer Assignment.
+- Pending Buyer Action.
+- Pending RFQ Conversion.
+- Other configured PR workflow stages.
+
+Do not mix completed or cancelled transactions with active pending aging unless a report explicitly requests historical aging.
+
+# 11. ENHANCED PURCHASE REQUISITION INVENTORY VIEW
+
+Update Part K in the PR Details screen.
+
+## A. Validation Context
+
+Display:
+
+- Company.
+- Requesting Branch.
+- Purchase Organization.
+- Requested Item.
+- Requested Quantity.
+- Selected Warehouse Scope.
+- Effective Cross-Branch Visibility Policy.
+- Inventory Policy Version.
+- Validation Timestamp.
+
+## B. Warehouse-Level View
+
+| Branch | Warehouse | Physical | Reserved | Allocated | Available | Incoming | PR Qty | Shortage |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Pondicherry | MAIN-WH | 150 | 20 | 30 | 100 | 50 | 250 | 150 |
+| Pondicherry | RM-WH | 60 | 5 | 5 | 50 | 0 | 250 | 200 |
+| Chennai | CHN-WH | 250 | 30 | 20 | 200 | 0 | 250 | 50 |
+| Hosur | HOS-WH | 100 | 15 | 10 | 75 | 25 | 250 | 175 |
+
+Values above are illustrative. Always use actual stock data.
+
+## C. Inventory Aging View
+
+Display inventory quantities by aging bucket and applicable batch or lot.
+
+## D. Company-Wide View
+
+Display:
+
+- Requesting branch stock.
+- Other-branch visible stock.
+- Company-wide total visible stock.
+- Stock eligible for transfer.
+- Stock not eligible for transfer.
+- Local shortage.
+- Potential company-wide sourcing shortage.
+
+Keep Visibility Only quantities separate from quantities eligible for fulfillment.
+
+## E. PR Aging View
+
+Display:
+
+- PR submission date.
+- Current approval stage.
+- Current owner.
+- Days pending.
+- Aging category.
+- SLA due date.
+- Escalation status.
+
+Inventory aging and PR aging must remain separate sections.
+
+# 12. REVALIDATION AND STOCK CHANGES
+
+Revalidate inventory at configurable stages:
+
+- PR Submission.
+- PR Approval.
+- Buyer Assignment.
+- RFQ Creation.
+- RFQ Award.
+- PO Creation.
+- PO Release.
+
+Only apply stages enabled by the effective policy.
+
+When stock changes:
+
+- Recalculate current availability.
+- Display changed quantities.
+- Record previous and new validation results.
+- Preserve the original snapshot.
+- Record the reason for revalidation where applicable.
+- Never silently alter historical PR validation results.
+
+Stock validation must not automatically reserve or consume inventory unless the existing approved business process authorizes it.
+
+# 13. STOCK TRANSFER INTEGRATION
+
+Where Transfer Required or an approved exception applies:
+
+- Identify source branch.
+- Identify source warehouse.
+- Identify destination branch.
+- Identify destination warehouse.
+- Display proposed transfer quantity.
+- Verify source stock eligibility.
+- Apply source and destination authorization.
+- Require approval where configured.
+- Create the transfer through the existing Inventory Transfer process.
+- Track dispatch and receipt.
+- Update stock only through actual inventory transaction events.
+
+Never create virtual stock movement to make a PR appear fulfilled.
+
+Under Visibility Only, display potential transfer opportunities as recommendations only, without implying transfer approval or fulfillment.
+
+# 14. SECURITY AND PERMISSIONS
+
+Integrate with the centralized User & Role Administration module.
+
+Register or reuse permissions for:
+
+- View Own Branch Stock.
+- View Company-Wide Stock.
+- View Other-Branch Stock.
+- View Warehouse-Level Stock.
+- View Inventory Aging.
+- View Expiry Information.
+- View PR Aging.
+- Configure Cross-Branch Visibility.
+- Configure Warehouse Priority.
+- Approve Cross-Branch Transfer.
+- View Inventory Validation History.
+
+Both policy eligibility and user authorization must be satisfied.
+
+A Company-level visibility setting does not automatically grant cross-branch access to every user.
+
+New permissions must be registered centrally but must not automatically be granted to existing roles.
+
+# 15. HISTORICAL CONFIGURATION, IMMUTABILITY AND AUDIT
+
+Integrate with the mandatory CIPPlatform Historical Configuration Immutability architecture.
+
+For each inventory validation, preserve:
+
+- Company.
+- Requesting Branch.
+- Purchase Organization.
+- Warehouse selection.
+- Stock visibility scope.
+- Effective Company policy.
+- Effective Branch policy.
+- Effective cross-branch policy.
+- Stock calculation policy version.
+- Inventory aging configuration version.
+- PR aging configuration version.
+- Expiry configuration version.
+- Item and batch references.
+- Validation timestamp.
+- Physical and available quantities.
+- Incoming quantities.
+- Shortage quantity.
+- Validation outcome.
+- Exception and approval references.
+
+For PR aging, preserve:
+
+- Original submission date.
+- Aging calculation basis.
+- Aging policy version.
+- Approval stage.
+- Aging evaluation timestamp.
+- Calculated age.
+- SLA threshold.
+- Resulting aging category.
+
+For stock aging, preserve:
+
+- Original inventory date used.
+- Batch/lot reference.
+- Aging bucket version.
+- Evaluation timestamp.
+- Calculated aging days.
+- Expiry configuration version, where applicable.
+
+New configurations affect future evaluations according to effective dates.
+
+Do not silently recalculate historical validation or aging results using current configuration.
+
+Historical transactions must remain reconstructable.
+
+# 16. REPORTING
+
+Provide:
+
+1. Branch-Wise Stock Availability.
+2. Warehouse-Wise Stock Availability.
+3. Company-Wide Stock Visibility.
+4. Cross-Branch Stock Availability.
+5. Stock Aging Report.
+6. Expiry and Near-Expiry Report.
+7. Slow-Moving Inventory Report.
+8. PR Inventory Shortage Report.
+9. PR Aging Report.
+10. Inter-Branch Transfer Recommendation Report.
+11. Inventory Validation Exception Report.
+12. Pending PR Aging by Approval Stage.
+13. Approved PR Pending Buyer Assignment Aging.
+14. Company and Branch Cross-Branch Policy Compliance Report.
+
+Reports must respect company, branch, warehouse and user permissions.
+
+All reports must use the centralized pagination, filtering, sorting and export standards.
+
+Default record sorting must be descending by the relevant date.
+
+# 17. TECHNICAL AND DATABASE VALIDATION
+
+Before implementation inspect:
+
+- Warehouse Master.
+- Branch-Warehouse Relationships.
+- Inventory Ledger.
+- Stock Balance Services.
+- Batch and Lot Management.
+- Inventory Reservation.
+- Stock Allocation.
+- Goods Receipt.
+- Inventory Transfer.
+- WMS Integration.
+- PR Inventory Validation.
+- PR Workflow.
+- Policy Management.
+- Financial and organizational scopes where relevant.
+- Audit and Historical Snapshot Services.
+
+Reuse existing services and entities.
+
+Do not create duplicate:
+
+- Warehouse Masters.
+- Stock Balances.
+- Inventory Ledgers.
+- Inventory Transfer Workflows.
+- Policy Engines.
+- Aging Services.
+- Audit Services.
+
+Identify missing relationships and propose only minimum required changes.
+
+Enforce Company and Branch restrictions in backend queries.
+
+Use transaction-safe calculations and appropriate concurrency controls.
+
+Ensure stock calculations are reconciled against the authoritative inventory ledger or stock balance service.
+
+# 18. MANDATORY TEST SCENARIOS
+
+## Inventory and Warehouse
+
+1. Single warehouse within one branch.
+2. Multiple warehouses within one branch.
+3. Multiple branches within one company.
+4. Warehouse ownership validation.
+5. Item-specific warehouse restriction.
+6. Warehouse priority.
+7. Reserved and allocated stock calculations.
+8. Incoming stock not treated as physical stock.
+9. Stock in transit not treated as received stock.
+10. Multiple warehouse aggregation without double counting.
+
+## Cross-Branch Policy
+
+11. Cross-branch visibility disabled.
+12. Default Visibility Only behaviour.
+13. Visibility Only with multiple branches.
+14. Transfer Required behaviour.
+15. Authorized Exception behaviour.
+16. Company policy restriction.
+17. Branch policy restriction.
+18. Unauthorized cross-branch access.
+19. Cross-company stock isolation.
+20. User without cross-branch permission.
+21. Visibility-only stock not counted as locally fulfillable.
+22. Stock transfer approval and receipt.
+
+## Inventory Aging
+
+23. Configurable aging buckets.
+24. Boundary dates between aging buckets.
+25. Batch-level aging.
+26. Multiple warehouse aging.
+27. Different branch aging configurations.
+28. Expired inventory exclusion.
+29. Near-expiry warning.
+30. FIFO/FEFO compatibility.
+31. Missing receipt-date handling.
+
+## PR Aging
+
+32. PR submission date calculation.
+33. Draft PR exclusion from pending aging.
+34. Pending Manager Approval aging.
+35. Pending Department Approval aging.
+36. Approved – Pending Buyer Assignment aging.
+37. Pending Buyer Action aging.
+38. SLA threshold changes.
+39. Historical PR aging reconstruction.
+40. Different aging policies by PR type and organization.
+
+## Integration and Integrity
+
+41. Stock changes after PR creation.
+42. Revalidation at configured stages.
+43. Historical snapshot reconstruction.
+44. Concurrent stock changes.
+45. Duplicate calculation prevention.
+46. Permission enforcement.
+47. Audit history.
+48. Cross-module integration.
+49. Pagination and filtered reporting.
+50. Export and reconciliation.
+
+All tests must use controlled test data and compare results against the authoritative inventory records.
+
+# 19. FINAL DEVELOPMENT AND GOVERNANCE DIRECTIVE
+
+Before development:
+
+1. Read the permanent CIPPlatform Project Memory.
+2. Read the Module Register.
+3. Read the Feature Register.
+4. Read the Policy Register.
+5. Read the Business Decisions Register.
+6. Read the Cross-Module Dependency Matrix.
+7. Inspect the existing Inventory Availability Validation code.
+8. Inspect existing Warehouse and Inventory services.
+9. Inspect Company and Branch policy implementation.
+10. Inspect centralized User & Role Administration.
+11. Identify existing reusable services.
+12. Identify missing functionality and integration gaps.
+13. Prepare a source-code-based implementation gap report.
+
+If the existing policy hierarchy, stock calculation, aging basis, warehouse ownership or organizational scope is ambiguous or conflicts with approved business decisions, stop and ask the project owner before implementation.
+
+Do not:
+
+- Fabricate stock quantities.
+- Count other-branch stock as locally available under Visibility Only.
+- Expose unauthorized branch stock.
+- Bypass Company or Branch policies.
+- Create duplicate inventory architecture.
+- Automatically reserve or transfer stock.
+- Alter historical validation results.
+- Create unapproved database structures.
+- Claim implementation or testing is complete without evidence.
+
+After implementation:
+
+- Update Module Register.
+- Update Feature Register.
+- Update Policy Register.
+- Update Business Decisions Register.
+- Update Shared Services Register.
+- Update Cross-Module Dependency Matrix.
+- Update Permission Registry.
+- Update Audit and Historical Configuration Register.
+- Update Requirements Traceability Matrix.
+- Update Regression Test Register.
+- Update Change History.
+
+## FINAL NON-NEGOTIABLE BUSINESS DECISIONS
+
+1. Cross-branch stock visibility default = **Visibility Only**.
+2. Effective cross-branch behaviour = **Company and Branch policy-controlled**.
+3. Visibility does not mean stock is locally available or fulfillable.
+4. Cross-branch sourcing requires the applicable authorized transfer or exception process.
+5. Inventory stock aging = **Mandatory**.
+6. Purchase Requisition aging = **Mandatory**.
+7. Inventory aging and PR aging must remain separate.
+8. Historical configuration and validation snapshots are mandatory.
+9. Existing inventory architecture must be reused.
+10. All applicable modules must use the same centralized services and authorization rules.
+
+**Complete the application-wide audit first, identify all gaps, and then implement the approved changes without bypassing existing CIPPlatform governance.**

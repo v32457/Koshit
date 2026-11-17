@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Layers,
   FileText,
@@ -26,6 +26,8 @@ import { vendorPriceRegisterService } from '../../services/vendorPriceRegisterSe
 import { purchasePriceBookService } from '../../services/purchasePriceBookService';
 import { purchaseOrderService } from '../../services/purchaseOrderService';
 import { localLlmService } from '../../services/localLlmService';
+import { financialYearService } from '../../services/financialYearService';
+import { FinancialYearSelector } from '../../components/FinancialYearSelector';
 
 interface ProcurementDashboardViewProps {
   currentUser: User;
@@ -37,6 +39,9 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
   onNavigate,
 }) => {
   const [selectedCompany] = useState('co-kosh-01');
+  const [selectedFyId, setSelectedFyId] = useState<string>(
+    () => financialYearService.getDefaultFinancialYearForCompany('co-kosh-01')?.id || ''
+  );
   const rfqPolicy = rfqPolicyService.getEffectivePolicy(selectedCompany);
   const demandItems = futureRfqFloatingService.getDemandItems();
   const rfqs = rfqService.getRfqs();
@@ -45,9 +50,58 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
   const pos = purchaseOrderService.getPOs();
   const regModels = localLlmService.getRegisteredModels();
 
+  const rfqFyResult = useMemo(
+    () =>
+      financialYearService.filterTransactionsByFinancialYear({
+        records: rfqs,
+        selectedFyId,
+        companyId: selectedCompany,
+        currentUser,
+        entityType: 'RFQ',
+        getRecordId: (r) => r.id,
+        getDocumentNumber: (r) => r.rfqNumber,
+        getCompanyId: (r) => r.companyId,
+        getBranchId: (r) => r.branchId,
+        getPurchaseOrgId: (r) => r.purchaseOrgId,
+        getFinancialYearId: (r) => r.financialYearId,
+        getFinancialYearCode: (r) => r.financialYearCode,
+        getDocumentDate: (r) => r.rfqDate,
+      }),
+    [rfqs, selectedFyId, selectedCompany, currentUser]
+  );
+
+  const poFyResult = useMemo(
+    () =>
+      financialYearService.filterTransactionsByFinancialYear({
+        records: pos,
+        selectedFyId,
+        companyId: selectedCompany,
+        currentUser,
+        entityType: 'PURCHASE_ORDER',
+        getRecordId: (p) => p.id,
+        getDocumentNumber: (p) => p.poNumber,
+        getCompanyId: (p) => p.companyId,
+        getBranchId: (p) => p.branchId,
+        getPurchaseOrgId: (p) => p.purchaseOrgId,
+        getFinancialYearId: (p) => p.financialYearId,
+        getFinancialYearCode: (p) => p.financialYearCode,
+        getAccountingPostingDate: (p) => p.accountingPostingDate,
+        getDocumentDate: (p) => p.poDate,
+      }),
+    [pos, selectedFyId, selectedCompany, currentUser]
+  );
+
+  const combinedDataQualityGaps = useMemo(
+    () => [...rfqFyResult.dataQualityGaps, ...poFyResult.dataQualityGaps],
+    [rfqFyResult.dataQualityGaps, poFyResult.dataQualityGaps]
+  );
+
+  const fyRfqs = rfqFyResult.filteredRecords;
+  const fyPos = poFyResult.filteredRecords;
+
   const activeDemandCount = demandItems.filter(d => d.sourcingStatus === 'APPROVED_PR' || d.sourcingStatus === 'SCHEDULED').length;
-  const activeRfqCount = rfqs.filter(r => r.status === 'RELEASED' || r.status === 'QUOTATIONS_IN_PROGRESS' || r.status === 'UNDER_TECHNICAL_EVALUATION').length;
-  const pendingPoApprovalCount = pos.filter(p => p.status === 'PENDING_APPROVAL').length;
+  const activeRfqCount = fyRfqs.filter(r => r.status === 'RELEASED' || r.status === 'QUOTATIONS_IN_PROGRESS' || r.status === 'UNDER_TECHNICAL_EVALUATION').length;
+  const pendingPoApprovalCount = fyPos.filter(p => p.status === 'PENDING_APPROVAL').length;
   const activeLlmCount = regModels.filter(m => m.status === 'RUNNING').length;
 
   return (
@@ -98,6 +152,15 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
         </div>
       </div>
 
+      <FinancialYearSelector
+        companyId={selectedCompany}
+        selectedFyId={selectedFyId}
+        onSelectFy={setSelectedFyId}
+        currentUser={currentUser}
+        dataQualityGaps={combinedDataQualityGaps}
+        entityLabel="Procurement Control Tower"
+      />
+
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
@@ -120,14 +183,14 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
           className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-indigo-300 cursor-pointer transition"
         >
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-semibold uppercase tracking-wider">Active RFQs</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Active RFQs (FY)</span>
             <Layers className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800">{activeRfqCount}</span>
-            <span className="text-xs text-indigo-600 font-medium">{rfqs.length} Total RFQs</span>
+            <span className="text-xs text-indigo-600 font-medium">{fyRfqs.length} Total in FY</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Quotations & evaluation in progress</p>
+          <p className="text-[11px] text-slate-400 mt-1">Quotations & evaluation in selected FY</p>
         </div>
 
         <div
@@ -135,14 +198,14 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
           className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs hover:border-amber-300 cursor-pointer transition"
         >
           <div className="flex items-center justify-between text-slate-500">
-            <span className="text-xs font-semibold uppercase tracking-wider">Pending PO Approvals</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Pending PO Approvals (FY)</span>
             <ShoppingBag className="w-4 h-4 text-amber-500" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold text-slate-800">{pendingPoApprovalCount}</span>
-            <span className="text-xs text-amber-600 font-medium">Split Allocations</span>
+            <span className="text-xs text-amber-600 font-medium">{fyPos.length} POs in FY</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">PO approval queue with override audit</p>
+          <p className="text-[11px] text-slate-400 mt-1">PO approval queue in selected FY</p>
         </div>
 
         <div
@@ -177,20 +240,20 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
               <Clock className="w-4 h-4" />
             </span>
             <div>
-              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Future RFQ Floating</div>
+              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Future RFQ</div>
               <div className="text-[11px] text-slate-500">PR Demand Sourcing & Price Benchmark</div>
             </div>
           </button>
 
           <button
-            onClick={() => onNavigate('/procurement/rfqs')}
+            onClick={() => onNavigate('/procurement/rfq')}
             className="flex items-start gap-3 p-3 bg-slate-50 hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-200 rounded-xl transition text-left group"
           >
             <span className="p-2 bg-purple-100 text-purple-700 rounded-lg group-hover:scale-105 transition">
               <Layers className="w-4 h-4" />
             </span>
             <div>
-              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Create & Manage RFQs</div>
+              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Sourcing</div>
               <div className="text-[11px] text-slate-500">RFQs & Supplier Invitations</div>
             </div>
           </button>
@@ -229,7 +292,7 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
               <Award className="w-4 h-4" />
             </span>
             <div>
-              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Vendor Item Price Register</div>
+              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Vendor Item Price</div>
               <div className="text-[11px] text-slate-500">Approved RFQ Award Agreements</div>
             </div>
           </button>
@@ -268,7 +331,7 @@ export const ProcurementDashboardView: React.FC<ProcurementDashboardViewProps> =
               <PackageCheck className="w-4 h-4" />
             </span>
             <div>
-              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Goods Receipt & UOM</div>
+              <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">Goods Receipt</div>
               <div className="text-[11px] text-slate-500">Purch UOM to Inv UOM Posting</div>
             </div>
           </button>

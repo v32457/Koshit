@@ -3,16 +3,23 @@
  * Phase 1 PR Module: Handles creation across MRP, Manual, Repair, and Maintenance with inventory UOM lock, duplicate warning, and mandatory budget validation.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, Branch, Department, GlobalItem } from '../../types';
 import { INITIAL_BRANCHES, INITIAL_GLOBAL_ITEMS } from '../../data/seedData';
-import { PRType, PRPriority, PurchaseRequisitionHeader, PurchaseRequisitionLine } from '../../types/purchaseRequisition';
+import { PRType, PRPriority, PurchaseRequisitionHeader, PurchaseRequisitionLine, PRChargeItem, PRChargeApplicability, PRChargeType } from '../../types/purchaseRequisition';
+import { EffectiveMappedChargeOption } from '../../types/chargeManagement';
 import { PurchaseRequisitionService } from '../../services/purchaseRequisitionService';
 import { BuyerService } from '../../services/buyerService';
 import { BuyerAssignmentRecord } from '../../types/buyerAssignment';
 import { getBranchActiveItems } from '../../utils/branchItemHelper';
+import { isValidIsoDate } from '../../services/prGridConfigService';
+import { prGovernancePolicyService, normalizeCompanyId } from '../../services/prGovernancePolicyService';
+import { prTypeMasterService } from '../../services/prTypeMasterService';
+import { prChargeItemService, formatChargeAmount, getCurrencySymbol } from '../../services/prChargeItemService';
+import { PrMappedChargesSelector } from './PrMappedChargesSelector';
 import { EnterpriseModal } from '../../components/EnterpriseModal';
-import { X, Plus, Trash2, AlertTriangle, CheckCircle2, ShieldCheck, Box, Maximize2, Minimize2, Building2, MapPin, Warehouse, Paperclip, Eye, Download, Upload, FileText, Lock, Search } from 'lucide-react';
+import { useViewportAndOrientation } from '../../components/ResponsiveWorkspace';
+import { X, Plus, Trash2, AlertTriangle, CheckCircle2, ShieldCheck, Box, Maximize2, Minimize2, Building2, MapPin, Warehouse, Paperclip, Eye, Download, Upload, FileText, Lock, Search, Calendar, Coins } from 'lucide-react';
 
 interface PurchaseCreationModalProps {
   currentUser: User;
@@ -25,6 +32,7 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { isDesktop } = useViewportAndOrientation();
   // 1. Company selection state
   const companies = [
     { id: 'KOSH-HQ', code: 'KOSH_INNOVATIONS', name: 'Kosh Innovations Pvt Ltd (KOSH-HQ)' },
@@ -46,13 +54,49 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
     return INITIAL_BRANCHES;
   }, []);
 
+  const companyBranches: Branch[] = useMemo(() => {
+    const normComp = normalizeCompanyId(selectedCompany.id);
+    const filtered = availableBranches.filter(
+      (b) => b.companyId === normComp || b.companyId === selectedCompany.id
+    );
+    return filtered.length > 0 ? filtered : availableBranches;
+  }, [availableBranches, selectedCompany.id]);
+
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
     currentUser.allowedBranchIds?.[0] || availableBranches[0]?.id || 'br-pond-01'
   );
 
+  useEffect(() => {
+    const isCurrentBranchValid = companyBranches.some(
+      (b) => b.id === selectedBranchId || b.portalBranchCode === selectedBranchId
+    );
+    if (!isCurrentBranchValid && companyBranches[0]) {
+      setSelectedBranchId(companyBranches[0].id);
+    }
+  }, [companyBranches, selectedBranchId]);
+
   const targetBranch = useMemo(() => {
-    return availableBranches.find((b) => b.id === selectedBranchId || b.portalBranchCode === selectedBranchId) || availableBranches[0];
-  }, [availableBranches, selectedBranchId]);
+    return (
+      companyBranches.find(
+        (b) => b.id === selectedBranchId || b.portalBranchCode === selectedBranchId
+      ) ||
+      availableBranches.find(
+        (b) => b.id === selectedBranchId || b.portalBranchCode === selectedBranchId
+      ) ||
+      availableBranches[0]
+    );
+  }, [availableBranches, companyBranches, selectedBranchId]);
+
+  // Real-time Governance Policy Synchronization
+  const [governanceTick, setGovernanceTick] = useState(0);
+
+  useEffect(() => {
+    const handlePolicyUpdate = () => {
+      setGovernanceTick((t) => t + 1);
+    };
+    window.addEventListener('cip-pr-governance-updated', handlePolicyUpdate);
+    return () => window.removeEventListener('cip-pr-governance-updated', handlePolicyUpdate);
+  }, []);
 
   // Load all items & filter active items for selected branch
   const allGlobalItems: GlobalItem[] = useMemo(() => {
@@ -100,35 +144,86 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
   const [openSearchIdx, setOpenSearchIdx] = useState<number | null>(null);
   const [searchTermMap, setSearchTermMap] = useState<{ [key: number]: string }>({});
 
-  // 3. PR Type based on User RBAC
+  // Resolve effective Company & Branch PR Governance Policy
+  const effectiveGovernancePolicy = useMemo(
+    () => prGovernancePolicyService.getEffectivePolicy(selectedCompany.id, targetBranch?.id),
+    [selectedCompany.id, targetBranch?.id, governanceTick]
+  );
+
+  const isDeliveryDateEnabled =
+    effectiveGovernancePolicy.activation?.expectedDeliveryDateEnabled !== false;
+  const isDeliveryDateMandatory =
+    isDeliveryDateEnabled &&
+    Boolean(effectiveGovernancePolicy.activation?.expectedDeliveryDateMandatory);
+
+  // 3. PR Type based on genuine PR Type Master, User RBAC, Eligibility Mapping, and Governance Policy
   const allowedPrTypes: Array<{ value: PRType; label: string }> = useMemo(() => {
     const role = currentUser.role || 'REQUESTER';
-    if (['PLATFORM_ADMIN', 'ORG_ADMIN', 'BRANCH_ADMIN', 'PROCUREMENT_MANAGER'].includes(role)) {
-      return [
-        { value: 'MANUAL', label: 'Manual Requisition' },
-        { value: 'MRP', label: 'MRP Generated' },
-        { value: 'REPAIR', label: 'Repair Requisition' },
-        { value: 'MAINTENANCE', label: 'Maintenance Requisition' },
-      ];
-    } else if (['DEPARTMENT_HEAD', 'PLANT_ENGINEER', 'MAINTENANCE_SUPERVISOR'].includes(role)) {
-      return [
-        { value: 'MANUAL', label: 'Manual Requisition' },
-        { value: 'REPAIR', label: 'Repair Requisition' },
-        { value: 'MAINTENANCE', label: 'Maintenance Requisition' },
-      ];
-    } else {
-      return [
-        { value: 'MANUAL', label: 'Manual Requisition' },
-        { value: 'REPAIR', label: 'Repair Requisition' },
-      ];
-    }
-  }, [currentUser.role]);
+    const act = effectiveGovernancePolicy.activation;
+    if (!act.prModuleEnabled) return [];
+
+    const legacyRoleAllowMap: Record<string, string[]> = {
+      MANUAL: [],
+      MRP: ['PLATFORM_ADMIN', 'ORG_ADMIN', 'BRANCH_ADMIN', 'PROCUREMENT_MANAGER'],
+      REPAIR: [],
+      MAINTENANCE: [
+        'PLATFORM_ADMIN',
+        'ORG_ADMIN',
+        'BRANCH_ADMIN',
+        'PROCUREMENT_MANAGER',
+        'DEPARTMENT_HEAD',
+        'PLANT_ENGINEER',
+        'MAINTENANCE_SUPERVISOR',
+      ],
+      CAPEX_ASSET: [],
+    };
+
+    return prTypeMasterService
+      .getPrTypes()
+      .filter((prt) => {
+        if (prt.status !== 'ACTIVE' || prt.approvalStatus !== 'APPROVED') return false;
+        const code = prt.code as PRType;
+        // Governance activation toggle check
+        if (code === 'MANUAL' && !act.manualPrCreationEnabled) return false;
+        if (code === 'MRP' && !act.mrpPrCreationEnabled) return false;
+        if (code === 'REPAIR' && !act.repairPrEnabled) return false;
+        if (code === 'MAINTENANCE' && !act.maintenancePrEnabled) return false;
+        if (code === 'CAPEX_ASSET' && !act.capexAssetPrEnabled) return false;
+
+        // Role check (PR Type Master explicit roles or legacy defaults)
+        const roleGate =
+          prt.allowedRoles && prt.allowedRoles.length > 0
+            ? prt.allowedRoles
+            : legacyRoleAllowMap[code] || [];
+        if (roleGate.length > 0 && !roleGate.includes(role)) return false;
+
+        // Company / Branch / Category eligibility check (at context level: itemCategoryCode='ALL')
+        const evalRes = prTypeMasterService.evaluatePrTypeEligibility({
+          companyId: selectedCompany.id,
+          branchId: targetBranch?.id || 'ALL',
+          itemCategoryCode: 'ALL',
+          prTypeCode: code,
+          userRole: role,
+        });
+        return evalRes.eligible;
+      })
+      .map((prt) => ({ value: prt.code as PRType, label: prt.name }));
+  }, [currentUser.role, effectiveGovernancePolicy, selectedCompany.id, targetBranch?.id]);
 
   const [prType, setPrType] = useState<PRType>(() => allowedPrTypes[0]?.value || 'MANUAL');
   const [priority, setPriority] = useState<PRPriority>('NORMAL');
+  const [currency, setCurrency] = useState<string>('INR');
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<string>('');
   const [deliveryLocation, setDeliveryLocation] = useState('Hosur Plant Store - Bay 2');
   const [costCentre, setCostCentre] = useState('CC-PROD-101');
   const [equipmentId, setEquipmentId] = useState('');
+
+  // Clear delivery date when policy disables it
+  useEffect(() => {
+    if (!isDeliveryDateEnabled) {
+      setExpectedDeliveryDate('');
+    }
+  }, [isDeliveryDateEnabled]);
 
   // Expanded Text Pop-up Editor state for Double-Click
   const [expandedEditor, setExpandedEditor] = useState<{
@@ -224,8 +319,178 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
   const [budgetStatus, setBudgetStatus] = useState<'NOT_VALIDATED' | 'SUFFICIENT' | 'INSUFFICIENT'>('NOT_VALIDATED');
   const [duplicates, setDuplicates] = useState<any[]>([]);
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+  const [duplicateOverrideJustification, setDuplicateOverrideJustification] = useState('');
 
   const totalEstimatedValue = lines.reduce((acc, l) => acc + (l.requestedQuantity * l.approximateUnitPrice), 0);
+
+  // Dedicated Tab for Item Lines vs Charge Items (Loading, Unloading, Customs Duty, Freight, etc.)
+  const [activeTab, setActiveTab] = useState<'LINES' | 'CHARGES'>('LINES');
+
+  // Effective Mapped Charges for active Company & Branch scope
+  const effectiveMappedCharges = useMemo(
+    () => prChargeItemService.getEffectiveMappedChargesForPR(selectedCompany.id, targetBranch.id),
+    [selectedCompany.id, targetBranch.id, governanceTick]
+  );
+
+  const [chargeSelectorError, setChargeSelectorError] = useState<string | null>(null);
+
+  // Charge Items State: auto-populated strictly from Company/Branch Mandatory mapped charges
+  const [chargeItems, setChargeItems] = useState<PRChargeItem[]>(() => {
+    const initialMapped = prChargeItemService.getEffectiveMappedChargesForPR(
+      selectedCompany.id,
+      targetBranch.id
+    );
+    return initialMapped
+      .filter((opt: EffectiveMappedChargeOption) => opt.applicability === 'MANDATORY')
+      .map((opt: EffectiveMappedChargeOption) =>
+        prChargeItemService.createPrChargeFromMappedOption(opt, 30000, 'INR')
+      );
+  });
+
+  // Synchronize charge items when Company or Branch changes: retain valid mapped items and enforce mandatory charges
+  useEffect(() => {
+    const mappedByCode = new Map(
+      effectiveMappedCharges.map((opt: EffectiveMappedChargeOption) => [opt.chargeCode.toUpperCase(), opt])
+    );
+    setChargeItems((prev) => {
+      const retained = prev.filter((item) => mappedByCode.has(item.chargeCode.toUpperCase()));
+      let next = retained;
+      for (const opt of effectiveMappedCharges) {
+        if (
+          opt.applicability === 'MANDATORY' &&
+          !next.some((item) => item.chargeCode.toUpperCase() === opt.chargeCode.toUpperCase())
+        ) {
+          next = [
+            ...next,
+            prChargeItemService.createPrChargeFromMappedOption(opt, totalEstimatedValue, currency),
+          ];
+        }
+      }
+      return prChargeItemService.recalculateSelectedChargesOnly(next, totalEstimatedValue, currency);
+    });
+  }, [effectiveMappedCharges]);
+
+  // Recalculate selected charge items cleanly when line total or currency changes
+  useEffect(() => {
+    setChargeItems((prev) =>
+      prChargeItemService.recalculateSelectedChargesOnly(prev, totalEstimatedValue, currency)
+    );
+  }, [totalEstimatedValue, currency]);
+
+  const chargesSummary = useMemo(() => {
+    return prChargeItemService.calculateRequisitionChargesSummary(chargeItems, totalEstimatedValue);
+  }, [chargeItems, totalEstimatedValue]);
+
+  const handleUpdateChargeApplicability = (chargeId: string, applicability: PRChargeApplicability) => {
+    setChargeItems((prev) =>
+      prev.map((item) => {
+        if (item.id === chargeId) {
+          const updated = { ...item, applicability };
+          return prChargeItemService.calculateChargeItem(updated, totalEstimatedValue);
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleUpdateChargeType = (chargeId: string, chargeType: PRChargeType) => {
+    setChargeItems((prev) =>
+      prev.map((item) => {
+        if (item.id === chargeId) {
+          const updated = { ...item, chargeType };
+          return prChargeItemService.calculateChargeItem(updated, totalEstimatedValue);
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleUpdateChargeRate = (chargeId: string, rateOrPercentage: number) => {
+    setChargeItems((prev) =>
+      prev.map((item) => {
+        if (item.id === chargeId) {
+          const updated = { ...item, rateOrPercentage };
+          return prChargeItemService.calculateChargeItem(updated, totalEstimatedValue);
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleUpdateChargeGst = (chargeId: string, gstRatePercent: number) => {
+    setChargeItems((prev) =>
+      prev.map((item) => {
+        if (item.id === chargeId) {
+          const updated = { ...item, gstRatePercent };
+          return prChargeItemService.calculateChargeItem(updated, totalEstimatedValue);
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleUpdateChargePayee = (chargeId: string, payeeType: any) => {
+    setChargeItems((prev) =>
+      prev.map((item) => (item.id === chargeId ? { ...item, payeeType } : item))
+    );
+  };
+
+  const handleUpdateChargeRemarks = (chargeId: string, remarks: string) => {
+    setChargeItems((prev) =>
+      prev.map((item) => (item.id === chargeId ? { ...item, remarks } : item))
+    );
+  };
+
+  const handleResetChargeToFixedTariff = (chargeId: string) => {
+    setChargeItems((prev) =>
+      prev.map((item) => {
+        if (item.id === chargeId) {
+          return prChargeItemService.resetToFixedTariff(item, totalEstimatedValue);
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleSyncMappedTariffs = () => {
+    setChargeSelectorError(null);
+    const mandatoryOnly = effectiveMappedCharges
+      .filter((opt: EffectiveMappedChargeOption) => opt.applicability === 'MANDATORY')
+      .map((opt: EffectiveMappedChargeOption) =>
+        prChargeItemService.createPrChargeFromMappedOption(opt, totalEstimatedValue, currency)
+      );
+    setChargeItems(mandatoryOnly);
+  };
+
+  const handleAddMappedCharge = (option: EffectiveMappedChargeOption) => {
+    setChargeSelectorError(null);
+    try {
+      setChargeItems((prev) =>
+        prChargeItemService.addMappedChargeToPrList(prev, option, totalEstimatedValue, currency)
+      );
+    } catch (err: any) {
+      setChargeSelectorError(err?.message || 'Unable to add selected charge.');
+    }
+  };
+
+  const handleAddMultipleMappedCharges = (options: EffectiveMappedChargeOption[]) => {
+    setChargeSelectorError(null);
+    setChargeItems((prev) => {
+      let next = prev;
+      for (const opt of options) {
+        try {
+          next = prChargeItemService.addMappedChargeToPrList(next, opt, totalEstimatedValue, currency);
+        } catch (err: any) {
+          setChargeSelectorError(err?.message || 'Duplicate charge skipped.');
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveCharge = (chargeId: string) => {
+    setChargeItems((prev) => prev.filter((item) => item.id !== chargeId));
+  };
 
   // Revalidate buyers when context changes
   React.useEffect(() => {
@@ -332,6 +597,29 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
   };
 
   const handleSubmit = (isDraft: boolean) => {
+    if (!effectiveGovernancePolicy.activation.prModuleEnabled) {
+      alert(
+        `Purchase Requisition module is disabled for ${effectiveGovernancePolicy.companyCode} / ${effectiveGovernancePolicy.branchName}.`
+      );
+      return;
+    }
+    if (!isDraft && !effectiveGovernancePolicy.activation.prSubmissionEnabled) {
+      alert('PR Submission is currently disabled under the active governance policy.');
+      return;
+    }
+
+    // Validate Expected Delivery Date based on policy
+    if (isDeliveryDateEnabled) {
+      if (isDeliveryDateMandatory && !isDraft && (!expectedDeliveryDate || !expectedDeliveryDate.trim())) {
+        alert('Expected Delivery Date is mandatory under active company policy.');
+        return;
+      }
+      if (expectedDeliveryDate && expectedDeliveryDate.trim() && !isValidIsoDate(expectedDeliveryDate)) {
+        alert('Please enter a valid Expected Delivery Date in YYYY-MM-DD format.');
+        return;
+      }
+    }
+
     // Validate line-level purchase purpose
     const missingLinePurposeIdx = lines.findIndex((l) => !l.purchasePurpose || !l.purchasePurpose.trim());
     if (missingLinePurposeIdx !== -1) {
@@ -339,7 +627,12 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
       return;
     }
 
-    if (!isDraft && budgetStatus !== 'SUFFICIENT') {
+    if (
+      !isDraft &&
+      effectiveGovernancePolicy.activation.budgetValidationEnabled &&
+      effectiveGovernancePolicy.budget.mandatoryBudgetCheck &&
+      budgetStatus !== 'SUFFICIENT'
+    ) {
       alert('Mandatory budget validation must be completed and sufficient before submission.');
       return;
     }
@@ -353,7 +646,7 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
       inventoryUom: l.inventoryUom, // Enforced authoritative UOM
       requestedQuantity: l.requestedQuantity,
       approximateUnitPrice: l.approximateUnitPrice,
-      currency: 'INR',
+      currency,
       estimatedTotalValue: l.requestedQuantity * l.approximateUnitPrice,
       specifications: l.specifications,
       purchasePurpose: l.purchasePurpose,
@@ -361,7 +654,7 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
       deliverySchedules: l.deliverySchedules.map((sch) => ({
         id: sch.id,
         lineId: `line-${Date.now()}-${i}`,
-        deliveryDate: sch.deliveryDate,
+        deliveryDate: sch.deliveryDate || (isDeliveryDateEnabled && expectedDeliveryDate ? expectedDeliveryDate : ''),
         quantity: sch.quantity
       })),
       lineAttachments: l.lineAttachments,
@@ -383,18 +676,25 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
       requesterName: currentUser.fullName,
       creatorId: currentUser.id,
       creatorName: currentUser.fullName,
+      modifiedBy: currentUser.fullName,
       priority,
       status: isDraft ? 'DRAFT' : 'PENDING_MANAGER_APPROVAL',
       purchasePurpose: lines[0]?.purchasePurpose || 'General Procurement',
       businessJustification: lines[0]?.businessJustification || '',
       deliveryLocation,
       estimatedTotalValue: totalEstimatedValue,
-      currency: 'INR',
+      chargeItems,
+      chargesTotalValue: chargesSummary.applicableChargesBaseTotal,
+      grandTotalWithCharges: chargesSummary.grandTotalWithCharges,
+      currency,
+      expectedDeliveryDate: isDeliveryDateEnabled && expectedDeliveryDate ? expectedDeliveryDate : undefined,
+      requiredBy: isDeliveryDateEnabled && expectedDeliveryDate ? expectedDeliveryDate : undefined,
       budgetValidationStatus: budgetStatus === 'SUFFICIENT' ? 'SUFFICIENT' : 'NOT_VALIDATED',
       budgetSourceRef: 'BUDGET-FY26-Q3-ALLOCATION',
       erpStockStatus: 'FRESH',
       erpStockTimestamp: new Date().toISOString(),
       equipmentId: (prType === 'REPAIR' || prType === 'MAINTENANCE') ? equipmentId : undefined,
+      duplicateOverrideJustification: duplicateOverrideJustification.trim() || undefined,
       lines: formattedLines,
       changeHistory: [],
       attachments: []
@@ -424,8 +724,13 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
           prType,
           branchName: targetBranch.name,
           requesterName: currentUser.fullName,
+          currency,
+          expectedDeliveryDate: isDeliveryDateEnabled && expectedDeliveryDate ? expectedDeliveryDate : undefined,
           status: 'DRAFT',
-          lines: lines
+          lines: lines,
+          chargeItems,
+          chargesTotalValue: chargesSummary.applicableChargesBaseTotal,
+          grandTotalWithCharges: chargesSummary.grandTotalWithCharges
       };
       PurchaseRequisitionService.saveDraft(draft);
       alert("Draft saved successfully.");
@@ -442,20 +747,20 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
   }
 
   return (
-    <div className={`${isMaximized ? 'fixed inset-0 z-50 w-full h-full' : 'fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto'}`}>
-      <div className={`bg-white rounded-2xl border border-slate-200 shadow-2xl ${isMaximized ? 'w-full h-full rounded-none' : 'max-w-7xl w-full max-h-[94vh]'} flex flex-col overflow-hidden`}>
+    <div className={`${isMaximized ? 'fixed inset-0 z-50 w-full h-full' : 'fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-0 sm:p-4 overflow-y-auto'}`}>
+      <div className={`bg-white sm:rounded-2xl border border-slate-200 shadow-2xl ${isMaximized ? 'w-full h-full rounded-none' : 'w-full h-full sm:h-auto sm:max-w-7xl sm:max-h-[94vh]'} flex flex-col overflow-hidden min-w-0`}>
         {/* Header */}
-        <div className="p-4 bg-[#0B192C] text-white flex items-center justify-between border-b border-slate-800 shrink-0">
-          <div>
-            <h3 className="text-sm font-bold flex items-center gap-2">
-              <Box className="w-4 h-4 text-indigo-400" />
-              Create Purchase Requisition (Phase 1)
+        <div className="p-3.5 sm:p-4 bg-[#0B192C] text-white flex items-center justify-between border-b border-slate-800 shrink-0 min-w-0">
+          <div className="min-w-0 flex-1 pr-2">
+            <h3 className="text-xs sm:text-sm font-bold flex items-center gap-2 truncate">
+              <Box className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="truncate">Purchase Requisition</span>
             </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Enterprise PR: Select Company & Branch, item-code based default warehouses, and double-click purpose inputs for expanded editor.
+            <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+              Enterprise PR: Select Company & Branch, Currency{isDeliveryDateEnabled ? ', Expected Delivery Date' : ''}, item-code based default warehouses, and double-click purpose inputs.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 shrink-0">
             <button onClick={() => setIsMinimized(true)} className="text-slate-400 hover:text-white p-1 rounded-lg">
               <div className="w-3 h-0.5 bg-slate-400" />
             </button>
@@ -469,9 +774,9 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
-          {/* Top Control Panel: Company, Branch, PR Type, Priority, Department */}
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+        <div className="p-3.5 sm:p-5 space-y-4 overflow-y-auto flex-1 text-xs min-w-0">
+          {/* Top Control Panel: Company, Branch, PR Type, Priority, Department, Currency, Expected Delivery Date */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${isDeliveryDateEnabled ? 'lg:grid-cols-7' : 'lg:grid-cols-6'} gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200`}>
             {/* 1. Company Master Selection */}
             <div>
               <label className="font-bold text-slate-700 flex items-center gap-1 mb-1">
@@ -499,8 +804,6 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
                 value={selectedBranchId}
                 onChange={(e) => {
                   setSelectedBranchId(e.target.value);
-                  // Update lines default warehouse when branch changes
-                  const newBranch = availableBranches.find((b) => b.id === e.target.value || b.portalBranchCode === e.target.value) || availableBranches[0];
                   const updatedLines = lines.map((l) => ({
                     ...l,
                     defaultWarehouse: getDefaultWarehouse(l.itemCode, l.itemCategory)
@@ -579,30 +882,138 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
                 />
               )}
             </div>
+
+            {/* 6. Transaction Currency */}
+            <div>
+              <label htmlFor="pr-create-currency" className="font-bold text-slate-700 flex items-center gap-1 mb-1">
+                <Coins className="w-3.5 h-3.5 text-indigo-600" /> Currency *
+              </label>
+              <select
+                id="pr-create-currency"
+                aria-label="Currency"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="INR">INR</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+
+            {/* 7. Expected Delivery Date (Governed by effective Company & Branch Policy) */}
+            {isDeliveryDateEnabled && (
+              <div>
+                <label htmlFor="pr-create-expected-delivery-date" className="font-bold text-slate-700 flex items-center gap-1 mb-1">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" /> Expected Delivery Date {isDeliveryDateMandatory && <span className="text-rose-500">*</span>}
+                </label>
+                <input
+                  id="pr-create-expected-delivery-date"
+                  aria-label="Expected Delivery Date"
+                  type="date"
+                  required={isDeliveryDateMandatory}
+                  value={expectedDeliveryDate}
+                  onChange={(e) => {
+                    const nextDate = e.target.value;
+                    setExpectedDeliveryDate(nextDate);
+                    if (nextDate && lines.length > 0 && lines[0].deliverySchedules.length === 1) {
+                      const updated = [...lines];
+                      updated[0].deliverySchedules[0].deliveryDate = nextDate;
+                      setLines(updated);
+                    }
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-800 text-xs focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Duplicate PR warning banner if checked */}
+          {/* Duplicate PR warning banner if checked (Requirement G) */}
           {duplicates.length > 0 && !duplicateAcknowledged && (
-            <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center justify-between text-amber-900 text-xs">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <div>
-                  <span className="font-bold">Duplicate Warning:</span> Found {duplicates.length} open PR(s) with identical item code in {targetBranch.name}.
+            <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl space-y-2 text-amber-900 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Duplicate PR Governance Warning:</span> Found {duplicates.length} open PR(s) with identical item code in {targetBranch.name}.
+                  </div>
                 </div>
+                <button
+                  onClick={() => {
+                    if (!duplicateOverrideJustification.trim()) {
+                      alert('Please enter a Duplicate Override Justification before acknowledging.');
+                      return;
+                    }
+                    setDuplicateAcknowledged(true);
+                  }}
+                  className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded hover:bg-amber-500 text-xs cursor-pointer"
+                >
+                  Acknowledge & Record Justification
+                </button>
               </div>
-              <button
-                onClick={() => setDuplicateAcknowledged(true)}
-                className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded hover:bg-amber-500 text-xs"
-              >
-                Acknowledge & Proceed
-              </button>
+              <div>
+                <label className="block text-[11px] font-bold text-amber-800 mb-1">
+                  Mandatory Duplicate Override Justification *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter business reason for creating a new PR despite existing open PR..."
+                  value={duplicateOverrideJustification}
+                  onChange={(e) => setDuplicateOverrideJustification(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-slate-800"
+                />
+              </div>
             </div>
           )}
 
-          {/* Item Lines Section Header */}
-          <div className="flex items-center justify-between bg-slate-100 p-3 rounded-xl border border-slate-200">
-            <div>
-              <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+          {/* TABS: PR Item Lines vs Charge Items */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pt-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('LINES')}
+              className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === 'LINES'
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span>PR Item Lines & Deliverables</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700">
+                {lines.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('CHARGES')}
+              className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === 'CHARGES'
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Charge Items (Loading, Customs, Freight & Landed Costs)</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                  chargesSummary.applicableChargesCount > 0
+                    ? 'bg-indigo-100 text-indigo-800'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {chargesSummary.applicableChargesCount} Applicable
+              </span>
+            </button>
+          </div>
+
+          {activeTab === 'LINES' && (
+            <>
+              {/* Item Lines Section Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-3 rounded-xl border border-slate-200 min-w-0">
+            <div className="min-w-0 flex-1">
+              <h4 className="font-bold text-slate-800 text-xs flex flex-wrap items-center gap-2">
                 <span>PR Item Lines & Default Warehouses</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
                   {lines.length} Line(s) Total
@@ -614,13 +1025,158 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
             </div>
             <button
               onClick={handleAddLine}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1 shadow-xs transition text-xs"
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1 shadow-xs transition text-xs shrink-0 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" /> Add Item Line
             </button>
           </div>
 
-          {/* SINGLE VIEW HIGH-DENSITY ITEM LINES TABLE WITH FIXED LAYOUT & PRECISE ALIGNMENT */}
+          {/* RESPONSIVE ITEM LINES: Cards on Mobile/Tablet (< 1024px), Full-Width High-Density Table on Desktop (>= 1024px) */}
+          {!isDesktop ? (
+            <div className="space-y-3 min-w-0">
+              {lines.map((line, idx) => {
+                const defaultWh = getDefaultWarehouse(line.itemCode, line.itemCategory);
+                const attCount = (line.lineAttachments || []).length;
+                const eligibleBuyers = BuyerService.getEligibleBuyers(selectedCompany.id, targetBranch.id, line.itemCategory);
+                return (
+                  <div
+                    key={idx}
+                    className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs min-w-0"
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="px-2 py-0.5 bg-slate-200 rounded font-mono font-bold text-slate-800 text-xs">
+                          Line #{idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedItemEditorIdx(idx);
+                            setItemSearchQuery(line.itemCode);
+                          }}
+                          className="font-mono font-bold text-indigo-700 hover:underline text-xs truncate cursor-pointer"
+                        >
+                          {line.itemCode}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-bold text-[11px]">
+                          UOM: {line.inventoryUom}
+                        </span>
+                        {lines.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLine(idx)}
+                            className="p-1 bg-rose-50 text-rose-600 rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-xs font-semibold text-slate-800">{line.description}</div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Req Qty
+                        </label>
+                        <input
+                          type="number"
+                          value={line.requestedQuantity}
+                          onChange={(e) => {
+                            const newQty = parseFloat(e.target.value) || 0;
+                            const updated = [...lines];
+                            updated[idx].requestedQuantity = newQty;
+                            if (updated[idx].deliverySchedules.length === 1) {
+                              updated[idx].deliverySchedules[0].quantity = newQty;
+                            }
+                            setLines(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Unit Price ({currency})
+                        </label>
+                        <input
+                          type="number"
+                          value={line.approximateUnitPrice}
+                          onChange={(e) => {
+                            const updated = [...lines];
+                            updated[idx].approximateUnitPrice = parseFloat(e.target.value) || 0;
+                            setLines(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                        />
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">
+                          Line Subtotal
+                        </label>
+                        <div className="px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg font-mono font-bold text-indigo-800 text-xs">
+                          {currency} {(line.requestedQuantity * line.approximateUnitPrice).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                          Purchase Purpose *
+                        </label>
+                        <input
+                          type="text"
+                          value={line.purchasePurpose}
+                          onChange={(e) => {
+                            const updated = [...lines];
+                            updated[idx].purchasePurpose = e.target.value;
+                            setLines(updated);
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-600">
+                        <span className="truncate">
+                          WH: <strong>{defaultWh.split(' (')[0]}</strong>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setActiveAttachmentLineIdx(idx)}
+                            className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 font-bold text-[11px]"
+                          >
+                            {attCount} File(s)
+                          </button>
+                          <select
+                            value={line.assignedBuyer?.id || ''}
+                            onChange={(e) => {
+                              const buyer = eligibleBuyers.find((b) => b.id === e.target.value) || null;
+                              const updated = [...lines];
+                              updated[idx].assignedBuyer = buyer;
+                              setLines(updated);
+                            }}
+                            className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-bold"
+                          >
+                            <option value="">
+                              {line.assignedBuyer ? line.assignedBuyer.buyerName : 'Select Buyer'}
+                            </option>
+                            {eligibleBuyers.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.buyerName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
           <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs bg-white">
             <div className="overflow-x-auto max-h-[44vh]">
               <table className="w-full text-left text-xs border-collapse table-fixed min-w-[1584px]">
@@ -645,8 +1201,8 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
                     <th className="p-2.5 border-r border-slate-800">Description (Item Master)</th>
                     <th className="p-2.5 text-center border-r border-slate-800">UOM</th>
                     <th className="p-2.5 text-right border-r border-slate-800">Req Qty</th>
-                    <th className="p-2.5 text-right border-r border-slate-800">Unit Price (₹)</th>
-                    <th className="p-2.5 text-right border-r border-slate-800">Subtotal (₹)</th>
+                    <th className="p-2.5 text-right border-r border-slate-800">Unit Price ({getCurrencySymbol(currency).trim()})</th>
+                    <th className="p-2.5 text-right border-r border-slate-800">Subtotal ({getCurrencySymbol(currency).trim()})</th>
                     <th className="p-2.5 border-r border-slate-800">Delivery Schedule Splits</th>
                     <th className="p-2.5 border-r border-slate-800">Default Warehouse (Item-Based)</th>
                     <th className="p-2.5 border-r border-slate-800">
@@ -782,7 +1338,7 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
 
                           {/* 7. Line Subtotal */}
                           <td className="p-2 text-right border-r border-slate-200 font-mono font-bold text-indigo-700 bg-indigo-50/20 text-xs w-28">
-                            ₹{(line.requestedQuantity * line.approximateUnitPrice).toLocaleString('en-IN')}
+                            {formatChargeAmount(line.requestedQuantity * line.approximateUnitPrice, currency)}
                           </td>
 
                           {/* 8. Delivery Schedule Splits */}
@@ -1023,27 +1579,410 @@ export const PurchaseCreationModal: React.FC<PurchaseCreationModalProps> = ({
                 </tbody>
               </table>
             </div>
-
-            {/* Table Footer Summary Row */}
-            <div className="p-3 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs font-bold text-slate-800">
-              <div className="flex items-center gap-4">
-                <span>Company: <span className="text-slate-900 font-medium">{selectedCompany.name}</span></span>
-                <span>Branch: <span className="text-slate-900 font-medium">{targetBranch.name}</span></span>
-                <span>Total Items: <span className="text-indigo-700 font-mono text-sm">{lines.length}</span></span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <span>Grand Estimated Value:</span>
-                <span className="text-indigo-800 font-mono font-extrabold text-base">₹{totalEstimatedValue.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
           </div>
+          )}
+          </>
+          )}
+
+          {/* CHARGE ITEMS TAB (Loading, Unloading, Customs Duty, Freight, etc.) */}
+          {activeTab === 'CHARGES' && (
+            <div className="space-y-4 min-w-0">
+              {/* Header and Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 p-3 rounded-xl border border-slate-200 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-indigo-600" />
+                    <span>Charge Items (Loading, Unloading, Customs Duty, Freight, etc.)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                      {chargesSummary.applicableChargesCount} Applicable
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Specify whether each non-inventory charge is Applicable (custom rate/percentage), As Per Fixed Charges tariff, or Exempt.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSyncMappedTariffs}
+                    className="px-2.5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold rounded-lg text-xs cursor-pointer"
+                  >
+                    Reset to Mandatory Policy Charges
+                  </button>
+                </div>
+              </div>
+
+              {/* Searchable Company/Branch Effective Mapped Charges Selector */}
+              <PrMappedChargesSelector
+                effectiveOptions={effectiveMappedCharges}
+                selectedChargeItems={chargeItems}
+                companyName={selectedCompany.name}
+                branchName={targetBranch.name}
+                onAddChargeOption={handleAddMappedCharge}
+                onAddMultipleOptions={handleAddMultipleMappedCharges}
+                errorNotice={chargeSelectorError}
+                onDismissError={() => setChargeSelectorError(null)}
+              />
+
+              {/* Summary Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="text-[11px] font-medium text-slate-500">Items Net Subtotal</div>
+                  <div className="text-sm font-extrabold text-slate-800 font-mono mt-0.5">
+                    {formatChargeAmount(chargesSummary.itemsSubtotal, currency)}
+                  </div>
+                </div>
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="text-[11px] font-medium text-slate-500">Applicable Charges</div>
+                  <div className="text-sm font-extrabold text-indigo-700 font-mono mt-0.5">
+                    {formatChargeAmount(chargesSummary.applicableChargesBaseTotal, currency)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">{chargesSummary.applicableChargesCount} items active</div>
+                </div>
+                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <div className="text-[11px] font-medium text-slate-500">Est. Tax on Charges</div>
+                  <div className="text-sm font-extrabold text-slate-700 font-mono mt-0.5">
+                    {formatChargeAmount(chargesSummary.applicableChargesTaxTotal, currency)}
+                  </div>
+                </div>
+                <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200 shadow-2xs">
+                  <div className="text-[11px] font-bold text-indigo-800">Total Landed PR Value</div>
+                  <div className="text-base font-extrabold text-indigo-900 font-mono mt-0.5">
+                    {formatChargeAmount(chargesSummary.grandTotalWithCharges, currency)}
+                  </div>
+                  <div className="text-[10px] text-indigo-600 font-medium">Items + Applicable Charges</div>
+                </div>
+              </div>
+
+              {/* Table / Cards for Selected Charge Items */}
+              {chargeItems.length === 0 ? (
+                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
+                  No charge items attached to this requisition yet. Select active mapped charges from the catalog above.
+                </div>
+              ) : !isDesktop ? (
+                <div className="space-y-3 min-w-0">
+                  {chargeItems.map((ci) => {
+                    const isNotApp = ci.applicability === 'NOT_APPLICABLE';
+                    const isFixed = ci.applicability === 'AS_PER_FIXED_CHARGES';
+                    const isApp = ci.applicability === 'APPLICABLE';
+                    return (
+                      <div
+                        key={ci.id}
+                        className={`bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs ${
+                          isNotApp ? 'opacity-60 bg-slate-50/40' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-xs text-slate-900">{ci.chargeName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                              {ci.chargeCode} · {ci.category}
+                              {ci.chargeMasterVersion ? ` · Master v${ci.chargeMasterVersion}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-mono font-extrabold text-indigo-900">
+                              {isNotApp ? 'Exempt' : formatChargeAmount(ci.totalWithTax || 0, currency)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Applicability segmented button */}
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateChargeApplicability(ci.id, 'APPLICABLE')}
+                            className={`flex-1 py-1 text-[11px] font-bold rounded ${
+                              isApp ? 'bg-indigo-600 text-white shadow-2xs' : 'text-slate-600'
+                            }`}
+                          >
+                            Applicable
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateChargeApplicability(ci.id, 'AS_PER_FIXED_CHARGES')}
+                            className={`flex-1 py-1 text-[11px] font-bold rounded ${
+                              isFixed ? 'bg-amber-600 text-white shadow-2xs' : 'text-slate-600'
+                            }`}
+                          >
+                            Fixed Charges
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateChargeApplicability(ci.id, 'NOT_APPLICABLE')}
+                            className={`flex-1 py-1 text-[11px] font-bold rounded ${
+                              isNotApp ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600'
+                            }`}
+                          >
+                            Exempt / N/A
+                          </button>
+                        </div>
+
+                        {isApp && (
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-600 block mb-1">Pricing Type</label>
+                              <select
+                                value={ci.chargeType}
+                                onChange={(e) => handleUpdateChargeType(ci.id, e.target.value as PRChargeType)}
+                                className="w-full p-1.5 border border-slate-300 rounded text-xs"
+                              >
+                                <option value="FIXED">Fixed ({getCurrencySymbol(currency).trim()})</option>
+                                <option value="PERCENTAGE">% of Items</option>
+                                <option value="AT_ACTUALS">At Actuals</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-600 block mb-1">Rate / Amount</label>
+                              <input
+                                type="number"
+                                value={ci.rateOrPercentage}
+                                onChange={(e) => handleUpdateChargeRate(ci.id, Number(e.target.value) || 0)}
+                                className="w-full p-1.5 border border-slate-300 rounded text-xs font-mono text-right"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {isFixed && (
+                          <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-900">
+                            <span className="font-bold">Tariff Rate: </span>
+                            {ci.chargeType === 'PERCENTAGE'
+                              ? `${ci.rateOrPercentage}% (${ci.fixedChargeDescription || 'Standard'})`
+                              : formatChargeAmount(ci.fixedChargeRate || ci.rateOrPercentage, currency)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs bg-white">
+                  <div className="overflow-x-auto max-h-[46vh]">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1100px]">
+                      <thead>
+                        <tr className="bg-[#0B192C] text-white font-bold sticky top-0 z-10 border-b border-slate-800 text-[11px]">
+                          <th className="p-2.5 text-center border-r border-slate-800 w-12">#</th>
+                          <th className="p-2.5 border-r border-slate-800 w-64">Charge Item & Category</th>
+                          <th className="p-2.5 border-r border-slate-800 w-64">Applicability</th>
+                          <th className="p-2.5 border-r border-slate-800 w-56">Rate / Tariff Basis</th>
+                          <th className="p-2.5 text-right border-r border-slate-800 w-28">Base Amount</th>
+                          <th className="p-2.5 text-center border-r border-slate-800 w-24">GST %</th>
+                          <th className="p-2.5 text-right border-r border-slate-800 w-32">Total with Tax</th>
+                          <th className="p-2.5 border-r border-slate-800 w-44">Payee / Entity</th>
+                          <th className="p-2.5 border-r border-slate-800">Remarks</th>
+                          <th className="p-2.5 text-center w-16">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {chargeItems.map((ci, idx) => {
+                          const isNotApp = ci.applicability === 'NOT_APPLICABLE';
+                          const isFixed = ci.applicability === 'AS_PER_FIXED_CHARGES';
+                          const isApp = ci.applicability === 'APPLICABLE';
+
+                          return (
+                            <tr
+                              key={ci.id}
+                              className={`hover:bg-slate-50/80 transition-colors ${
+                                isNotApp ? 'opacity-60 bg-slate-50/30' : ''
+                              }`}
+                            >
+                              <td className="p-2.5 text-center font-mono text-slate-500 border-r border-slate-200">
+                                {idx + 1}
+                              </td>
+                              <td className="p-2.5 border-r border-slate-200">
+                                <div className="font-bold text-slate-900">{ci.chargeName}</div>
+                                <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                                  <span className="font-mono text-slate-600">{ci.chargeCode}</span>
+                                  <span>·</span>
+                                  <span className="text-indigo-600 font-semibold">{ci.category}</span>
+                                  {ci.chargeMasterVersion && (
+                                    <span className="font-mono text-slate-500">
+                                      · Master v{ci.chargeMasterVersion}
+                                      {ci.mappingVersion ? `/Map v${ci.mappingVersion}` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2.5 border-r border-slate-200">
+                                <div className="inline-flex rounded-lg p-0.5 bg-slate-100 border border-slate-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateChargeApplicability(ci.id, 'APPLICABLE')}
+                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                                      isApp
+                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    Applicable
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateChargeApplicability(ci.id, 'AS_PER_FIXED_CHARGES')}
+                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                                      isFixed
+                                        ? 'bg-amber-600 text-white shadow-2xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    Fixed Charges
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateChargeApplicability(ci.id, 'NOT_APPLICABLE')}
+                                    className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                                      isNotApp
+                                        ? 'bg-slate-700 text-white shadow-2xs'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    Exempt / N/A
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-2.5 border-r border-slate-200">
+                                {isFixed ? (
+                                  <div>
+                                    <span className="px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 font-mono font-bold text-[11px]">
+                                      {ci.chargeType === 'PERCENTAGE'
+                                        ? `${ci.rateOrPercentage}% (${ci.fixedChargeDescription || 'Tariff'})`
+                                        : formatChargeAmount(ci.fixedChargeRate || ci.rateOrPercentage, currency)}
+                                    </span>
+                                    <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[200px]" title={ci.fixedChargeDescription}>
+                                      {ci.fixedChargeDescription}
+                                    </div>
+                                  </div>
+                                ) : isApp ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      aria-label="Charge Type"
+                                      value={ci.chargeType}
+                                      onChange={(e) => handleUpdateChargeType(ci.id, e.target.value as PRChargeType)}
+                                      className="p-1 text-[11px] border border-slate-300 rounded bg-white text-slate-800"
+                                    >
+                                      <option value="FIXED">Fixed ({getCurrencySymbol(currency).trim()})</option>
+                                      <option value="PERCENTAGE">% of Items</option>
+                                      <option value="AT_ACTUALS">At Actuals</option>
+                                    </select>
+                                    <input
+                                      type="number"
+                                      aria-label="Charge Rate or Percentage"
+                                      value={ci.rateOrPercentage}
+                                      onChange={(e) => handleUpdateChargeRate(ci.id, Number(e.target.value) || 0)}
+                                      className="w-20 p-1 text-[11px] font-mono border border-slate-300 rounded bg-white text-right text-slate-900"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic text-[11px]">Not applicable for this PR</span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                {isNotApp ? '—' : formatChargeAmount(ci.estimatedAmount || 0, currency)}
+                              </td>
+                              <td className="p-2.5 text-center border-r border-slate-200">
+                                {isNotApp ? (
+                                  '—'
+                                ) : (
+                                  <select
+                                    aria-label="GST Rate"
+                                    value={ci.gstRatePercent ?? 18}
+                                    onChange={(e) => handleUpdateChargeGst(ci.id, Number(e.target.value))}
+                                    className="p-1 text-[11px] border border-slate-300 rounded bg-white font-mono text-slate-800"
+                                  >
+                                    <option value={0}>0%</option>
+                                    <option value={5}>5%</option>
+                                    <option value={12}>12%</option>
+                                    <option value={18}>18%</option>
+                                    <option value={28}>28%</option>
+                                  </select>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-extrabold text-indigo-900 border-r border-slate-200">
+                                {isNotApp ? '—' : formatChargeAmount(ci.totalWithTax || 0, currency)}
+                              </td>
+                              <td className="p-2.5 border-r border-slate-200">
+                                <select
+                                  aria-label="Payee Type"
+                                  disabled={isNotApp}
+                                  value={ci.payeeType || 'SUPPLIER'}
+                                  onChange={(e) => handleUpdateChargePayee(ci.id, e.target.value)}
+                                  className="w-full p-1 text-[11px] border border-slate-300 rounded bg-white text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
+                                >
+                                  <option value="SUPPLIER">Supplier (Inclusive/Bill)</option>
+                                  <option value="THIRD_PARTY_LOGISTICS">3PL Transporter</option>
+                                  <option value="CUSTOMS_AUTHORITY">Customs & Port Authority</option>
+                                  <option value="DIRECT_LABOR">Direct Labor</option>
+                                  <option value="SERVICE_PROVIDER">Service Agency</option>
+                                </select>
+                              </td>
+                              <td className="p-2.5 border-r border-slate-200">
+                                <input
+                                  type="text"
+                                  aria-label="Charge Remarks"
+                                  disabled={isNotApp}
+                                  value={ci.remarks || ''}
+                                  onChange={(e) => handleUpdateChargeRemarks(ci.id, e.target.value)}
+                                  placeholder="Optional notes / scope..."
+                                  className="w-full p-1 text-[11px] border border-slate-300 rounded bg-white text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
+                                />
+                              </td>
+                              <td className="p-2.5 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetChargeToFixedTariff(ci.id)}
+                                    className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                                    title="Reset to approved tariff"
+                                  >
+                                    Reset
+                                  </button>
+                                  {ci.mandateStatus !== 'MANDATORY' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveCharge(ci.id)}
+                                      className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                                      title="Remove optional charge"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Charge Items Table Footer */}
+                  <div className="p-3 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-4">
+                      <span>Items Subtotal: <span className="font-mono text-slate-900">{formatChargeAmount(chargesSummary.itemsSubtotal, currency)}</span></span>
+                      <span>Applicable Charges: <span className="font-mono text-indigo-700">{formatChargeAmount(chargesSummary.applicableChargesBaseTotal, currency)}</span></span>
+                      <span>Tax on Charges: <span className="font-mono text-slate-600">{formatChargeAmount(chargesSummary.applicableChargesTaxTotal, currency)}</span></span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span>Total Landed PR Value:</span>
+                      <span className="text-indigo-800 font-mono font-extrabold text-base">{formatChargeAmount(chargesSummary.grandTotalWithCharges, currency)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
 
           {/* Budget Validation Gate */}
           <div className="p-3.5 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between">
             <div>
               <div className="font-bold text-slate-800 text-xs">Mandatory Budget Validation Gate</div>
-              <div className="text-[11px] text-slate-600">Total PR Value: ₹{totalEstimatedValue.toLocaleString('en-IN')}</div>
+              <div className="text-[11px] text-slate-600">
+                Items: {formatChargeAmount(totalEstimatedValue, currency)}
+                {chargesSummary.applicableChargesCount > 0 && ` + Charges: ${formatChargeAmount(chargesSummary.applicableChargesBaseTotal, currency)} (Total: ${formatChargeAmount(chargesSummary.grandTotalWithCharges, currency)})`}
+              </div>
               <div className="text-[11px] font-bold mt-0.5">
                 Status:{' '}
                 <span className={budgetStatus === 'SUFFICIENT' ? 'text-emerald-600' : 'text-amber-600'}>

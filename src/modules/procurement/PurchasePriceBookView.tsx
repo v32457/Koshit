@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { BookOpen, Search, Plus, Layers, ShieldCheck, Tag } from 'lucide-react';
 import { purchasePriceBookService } from '../../services/purchasePriceBookService';
 import { PurchasePriceBook } from '../../types/rfqSourcing';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export const PurchasePriceBookView: React.FC = () => {
   const [books] = useState<PurchasePriceBook[]>(() => purchasePriceBookService.getPriceBooks());
@@ -11,6 +13,15 @@ export const PurchasePriceBookView: React.FC = () => {
     b.priceBookNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
     b.vendorName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const grid = useStandardDataGrid({
+    gridId: 'purchase-price-book',
+    data: filtered,
+    defaultSortField: 'effectiveFrom',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'priceBookNumber',
+    filterSignature: searchQuery,
+  });
 
   return (
     <div className="space-y-6">
@@ -47,7 +58,11 @@ export const PurchasePriceBookView: React.FC = () => {
       </div>
 
       {/* Price Books Cards / Tables */}
-      {filtered.map((book) => (
+      {grid.pagedData.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-400">
+          No purchase price books match your search.
+        </div>
+      ) : grid.pagedData.map((book) => (
         <div key={book.id} className="bg-white border border-slate-200 rounded-xl shadow-xs p-5 space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div>
@@ -99,6 +114,17 @@ export const PurchasePriceBookView: React.FC = () => {
           ))}
         </div>
       ))}
+
+      <DataGridFooter
+        currentPage={grid.currentPage}
+        totalPages={grid.totalPages}
+        pageSize={grid.pageSize}
+        totalRecords={grid.totalRecords}
+        onPageChange={grid.setCurrentPage}
+        onPageSizeChange={grid.setPageSize}
+        pageSizeOptions={grid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (Effective From DESC)"
+      />
     </div>
   );
 };

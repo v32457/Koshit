@@ -42,7 +42,11 @@ import { rfqExaminerService } from '../../services/rfqExaminerService';
 import { rfqEvaluationService } from '../../services/rfqEvaluationService';
 import { marketBenchmarkService } from '../../services/marketBenchmarkService';
 import { prRfqConversionService, PrLineConversionSummary } from '../../services/prRfqConversionService';
+import { financialYearService } from '../../services/financialYearService';
+import { FinancialYearSelector } from '../../components/FinancialYearSelector';
 import { INITIAL_BUSINESS_PARTNERS } from '../../data/seedData';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   RfqHeader,
   RfqLineItem,
@@ -81,6 +85,9 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
   const [evaluationFilter, setEvaluationFilter] = useState<string>('ALL');
   const [buyerFilter, setBuyerFilter] = useState<string>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [selectedFyId, setSelectedFyId] = useState<string>(
+    () => financialYearService.getDefaultFinancialYearForCompany('co-kosh-01')?.id || ''
+  );
 
   // Expanded rows state (array of rfq IDs)
   const [expandedRfqIds, setExpandedRfqIds] = useState<string[]>([]);
@@ -159,27 +166,50 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
     return quotations.filter((q) => q.rfqId === rfqId || q.rfqNumber === rfqId);
   };
 
-  // 13 KPI Metrics Dashboard Cards Calculation
+  // Centralized Financial Year & RBAC Filtering
+  const fyFilterResult = useMemo(() => {
+    return financialYearService.filterTransactionsByFinancialYear({
+      records: rfqs,
+      selectedFyId,
+      companyId: companyFilter,
+      branchId: branchFilter,
+      currentUser,
+      entityType: 'RFQ',
+      getRecordId: (r) => r.id,
+      getDocumentNumber: (r) => r.rfqNumber,
+      getCompanyId: (r) => r.companyId,
+      getBranchId: (r) => r.branchId,
+      getPurchaseOrgId: (r) => r.purchaseOrgId,
+      getFinancialYearId: (r) => r.financialYearId,
+      getFinancialYearCode: (r) => r.financialYearCode,
+      getDocumentDate: (r) => r.rfqDate,
+    });
+  }, [rfqs, selectedFyId, companyFilter, branchFilter, currentUser]);
+
+  const fyScopedRfqs = fyFilterResult.filteredRecords;
+  const isHistoricalReadOnly = fyFilterResult.isHistoricalReadOnly;
+
+  // 13 KPI Metrics Dashboard Cards Calculation (Scoped to active FY filter)
   const kpiMetrics = useMemo(() => {
-    const total = rfqs.length;
-    const draft = rfqs.filter((r) => r.status === 'DRAFT').length;
-    const pendingApproval = rfqs.filter((r) => r.status === 'PENDING_RELEASE_APPROVAL').length;
-    const approvedReady = rfqs.filter(
+    const total = fyScopedRfqs.length;
+    const draft = fyScopedRfqs.filter((r) => r.status === 'DRAFT').length;
+    const pendingApproval = fyScopedRfqs.filter((r) => r.status === 'PENDING_RELEASE_APPROVAL').length;
+    const approvedReady = fyScopedRfqs.filter(
       (r) => r.status === 'TECHNICAL_GATE_APPROVED' || (r as any).status === 'APPROVED_PENDING_RELEASE'
     ).length;
-    const released = rfqs.filter((r) => r.status === 'RELEASED').length;
-    const awaitingQuotes = rfqs.filter(
+    const released = fyScopedRfqs.filter((r) => r.status === 'RELEASED').length;
+    const awaitingQuotes = fyScopedRfqs.filter(
       (r) => r.status === 'RELEASED' && getQuotationsForRfq(r.id).length === 0
     ).length;
-    const quotesReceived = rfqs.filter((r) => getQuotationsForRfq(r.id).length > 0).length;
-    const techEvalPending = rfqs.filter((r) => r.status === 'UNDER_TECHNICAL_EVALUATION').length;
-    const commEvalPending = rfqs.filter(
+    const quotesReceived = fyScopedRfqs.filter((r) => getQuotationsForRfq(r.id).length > 0).length;
+    const techEvalPending = fyScopedRfqs.filter((r) => r.status === 'UNDER_TECHNICAL_EVALUATION').length;
+    const commEvalPending = fyScopedRfqs.filter(
       (r) => r.status === 'UNDER_COMMERCIAL_EVALUATION' || r.status === 'COMPARATIVE_STATEMENT_GENERATED'
     ).length;
-    const underNegotiation = rfqs.filter((r) => r.status === 'UNDER_NEGOTIATION').length;
-    const awarded = rfqs.filter((r) => r.status === 'AWARDED').length;
-    const partiallyAwarded = rfqs.filter((r) => r.status === 'PARTIALLY_AWARDED').length;
-    const closedCancelled = rfqs.filter((r) => r.status === 'CLOSED' || r.status === 'CANCELLED').length;
+    const underNegotiation = fyScopedRfqs.filter((r) => r.status === 'UNDER_NEGOTIATION').length;
+    const awarded = fyScopedRfqs.filter((r) => r.status === 'AWARDED').length;
+    const partiallyAwarded = fyScopedRfqs.filter((r) => r.status === 'PARTIALLY_AWARDED').length;
+    const closedCancelled = fyScopedRfqs.filter((r) => r.status === 'CLOSED' || r.status === 'CANCELLED').length;
 
     return {
       total,
@@ -196,7 +226,7 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
       partiallyAwarded,
       closedCancelled,
     };
-  }, [rfqs, quotations]);
+  }, [fyScopedRfqs, quotations]);
 
   // Unique filters
   const uniqueBuyers = useMemo(() => {
@@ -219,7 +249,7 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
 
   // Filtered RFQs
   const filteredRfqs = useMemo(() => {
-    return rfqs.filter((r) => {
+    return fyScopedRfqs.filter((r) => {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
@@ -291,7 +321,7 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
       );
     });
   }, [
-    rfqs,
+    fyScopedRfqs,
     searchQuery,
     companyFilter,
     branchFilter,
@@ -303,6 +333,16 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
     quotations,
   ]);
 
+  const rfqGrid = useStandardDataGrid({
+    gridId: 'rfq-management',
+    userId: currentUser?.id,
+    data: filteredRfqs,
+    defaultSortField: 'rfqDate',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'rfqNumber',
+    filterSignature: `${selectedFyId}|${searchQuery}|${companyFilter}|${branchFilter}|${buyerFilter}|${categoryFilter}|${statusFilter}|${quotationFilter}|${evaluationFilter}`,
+  });
+
   // Expand / collapse handlers
   const toggleRfqExpand = (rfqId: string) => {
     setExpandedRfqIds((prev) =>
@@ -311,7 +351,7 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
   };
 
   const handleExpandAll = () => {
-    setExpandedRfqIds(filteredRfqs.map((r) => r.id));
+    setExpandedRfqIds(rfqGrid.pagedData.map((r) => r.id));
   };
 
   const handleCollapseAll = () => {
@@ -320,10 +360,12 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
 
   // Selection handlers
   const handleToggleSelectAll = () => {
-    if (selectedRfqIds.length === filteredRfqs.length) {
-      setSelectedRfqIds([]);
+    const pageIds = rfqGrid.pagedData.map((r) => r.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedRfqIds.includes(id));
+    if (allPageSelected) {
+      setSelectedRfqIds((prev) => prev.filter((id) => !pageIds.includes(id)));
     } else {
-      setSelectedRfqIds(filteredRfqs.map((r) => r.id));
+      setSelectedRfqIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -702,13 +744,13 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-100 text-indigo-800">
-              Procurement & Sourcing
+              Procurement & Sourcing → RFQ
             </span>
             <span className="text-xs text-slate-400 font-medium">Sourcing Demand & Quotation Governance</span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 mt-1 flex items-center gap-2">
             <Layers className="w-6 h-6 text-indigo-600" />
-            <span>RFQ Directory & Sourcing Management Master</span>
+            <span>Sourcing</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Centralized governance console for RFQ floating, supplier quotation tracking, AI examiner runs, and comparative statement evaluations.
@@ -730,7 +772,9 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
 
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+            disabled={isHistoricalReadOnly}
+            title={isHistoricalReadOnly ? 'Historical closed FY view is read-only' : 'Create Direct RFQ'}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4 text-indigo-600" />
             <span>Create Direct RFQ</span>
@@ -745,6 +789,16 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Centralized Financial Year Selector */}
+      <FinancialYearSelector
+        companyId={companyFilter === 'ALL' ? 'co-kosh-01' : companyFilter}
+        selectedFyId={selectedFyId}
+        onSelectFy={setSelectedFyId}
+        currentUser={currentUser}
+        dataQualityGaps={fyFilterResult.dataQualityGaps}
+        entityLabel="RFQs"
+      />
 
       {/* 13 KPI Metrics Dashboard Grid */}
       <div>
@@ -1176,7 +1230,7 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
               Collapse All
             </button>
             <span className="text-[11px] text-slate-400">
-              Showing <strong>{filteredRfqs.length}</strong> of <strong>{rfqs.length}</strong> RFQs
+              Showing <strong>{filteredRfqs.length}</strong> of <strong>{fyScopedRfqs.length}</strong> RFQs
             </span>
           </div>
 
@@ -1216,7 +1270,10 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
                   <input
                     type="checkbox"
                     onChange={handleToggleSelectAll}
-                    checked={selectedRfqIds.length === filteredRfqs.length && filteredRfqs.length > 0}
+                    checked={
+                      rfqGrid.pagedData.length > 0 &&
+                      rfqGrid.pagedData.every((r) => selectedRfqIds.includes(r.id))
+                    }
                     className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                 </th>
@@ -1239,14 +1296,14 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
             </thead>
 
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredRfqs.length === 0 ? (
+              {rfqGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={16} className="p-8 text-center text-slate-400">
                     No RFQ records found matching the active search or filter criteria.
                   </td>
                 </tr>
               ) : (
-                filteredRfqs.map((rfq) => {
+                rfqGrid.pagedData.map((rfq) => {
                   const isExpanded = expandedRfqIds.includes(rfq.id);
                   const rfqQuotations = getQuotationsForRfq(rfq.id);
                   const examinerRun = getExaminerRunForRfq(rfq.id);
@@ -1574,140 +1631,172 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-bold text-slate-700">RFQ Lifecycle Actions:</span>
                                   <span className="text-xs text-slate-400">({rfq.rfqNumber})</span>
+                                  {rfq.financialYearCode && (
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
+                                      {rfq.financialYearCode}
+                                    </span>
+                                  )}
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {rfq.status === 'DRAFT' && (
-                                    <button
-                                      onClick={() => handleSubmitForApproval(rfq)}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                                    >
-                                      <Send className="w-3.5 h-3.5" />
-                                      <span>Submit for Approval</span>
-                                    </button>
-                                  )}
+                                {(() => {
+                                  const rfqMutGuard = financialYearService.evaluateHistoricalRecordMutationGuard({
+                                    companyId: rfq.companyId,
+                                    documentDate: rfq.rfqDate,
+                                    financialYearId: rfq.financialYearId,
+                                    actionLabel: 'MUTATE_RFQ',
+                                  });
+                                  const lockMutations = isHistoricalReadOnly || !rfqMutGuard.allowed;
+                                  return (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {lockMutations && (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold">
+                                          <Lock className="w-3 h-3 text-amber-700" />
+                                          Closed FY Read-Only
+                                        </span>
+                                      )}
+                                      {rfq.status === 'DRAFT' && (
+                                        <button
+                                          disabled={lockMutations}
+                                          onClick={() => handleSubmitForApproval(rfq)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                          <Send className="w-3.5 h-3.5" />
+                                          <span>Submit for Approval</span>
+                                        </button>
+                                      )}
 
-                                  {rfq.status === 'PENDING_RELEASE_APPROVAL' && (
-                                    <>
+                                      {rfq.status === 'PENDING_RELEASE_APPROVAL' && (
+                                        <>
+                                          <button
+                                            disabled={lockMutations}
+                                            onClick={() => handleApproveRfq(rfq)}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                          >
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            <span>Approve RFQ</span>
+                                          </button>
+                                          <button
+                                            disabled={lockMutations}
+                                            onClick={() => {
+                                              rfqService.returnRfq(rfq.id);
+                                              reloadData();
+                                            }}
+                                            className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                          >
+                                            <span>Return to Draft</span>
+                                          </button>
+                                        </>
+                                      )}
+
+                                      {rfq.status === 'RELEASED' && (
+                                        <button
+                                          disabled={lockMutations}
+                                          onClick={() => handleReleaseToSuppliers(rfq)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                          <Send className="w-3.5 h-3.5" />
+                                          <span>Open Quotation Submission Window</span>
+                                        </button>
+                                      )}
+
+                                      {/* Invite Supplier Action */}
                                       <button
-                                        onClick={() => handleApproveRfq(rfq)}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                                        disabled={lockMutations}
+                                        onClick={() => setInviteModalRfq(rfq)}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                       >
-                                        <CheckCircle className="w-3.5 h-3.5" />
-                                        <span>Approve RFQ</span>
+                                        <Users className="w-3.5 h-3.5 text-indigo-600" />
+                                        <span>+ Invite Supplier</span>
                                       </button>
+
+                                      {/* Record Quotation Action */}
                                       <button
+                                        disabled={lockMutations}
+                                        onClick={() => setQuoteModalRfq(rfq)}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>+ Record Supplier Quotation</span>
+                                      </button>
+
+                                      {/* Extend Deadline */}
+                                      <button
+                                        disabled={lockMutations}
                                         onClick={() => {
-                                          rfqService.returnRfq(rfq.id);
-                                          reloadData();
+                                          setExtendDeadlineRfq(rfq);
+                                          setNewDeadlineDate(rfq.responseDeadline);
                                         }}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                       >
-                                        <span>Return to Draft</span>
+                                        <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>Extend Deadline</span>
                                       </button>
-                                    </>
-                                  )}
 
-                                  {rfq.status === 'RELEASED' && (
-                                    <button
-                                      onClick={() => handleReleaseToSuppliers(rfq)}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer"
-                                    >
-                                      <Send className="w-3.5 h-3.5" />
-                                      <span>Open Quotation Submission Window</span>
-                                    </button>
-                                  )}
+                                      {/* Run AI Examiner */}
+                                      <button
+                                        onClick={() => handleRunExaminer(rfq.id)}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-xs font-bold transition cursor-pointer"
+                                      >
+                                        <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                        <span>Run AI Examiner</span>
+                                      </button>
 
-                                  {/* Invite Supplier Action */}
-                                  <button
-                                    onClick={() => setInviteModalRfq(rfq)}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                                  >
-                                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                                    <span>+ Invite Supplier</span>
-                                  </button>
+                                      {/* Start Negotiation */}
+                                      {['TECHNICAL_GATE_APPROVED', 'UNDER_COMMERCIAL_EVALUATION', 'COMPARATIVE_STATEMENT_GENERATED'].includes(
+                                        rfq.status
+                                      ) && (
+                                        <button
+                                          disabled={lockMutations}
+                                          onClick={() => handleStartNegotiation(rfq)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                          <Scale className="w-3.5 h-3.5 text-orange-600" />
+                                          <span>Start Negotiation</span>
+                                        </button>
+                                      )}
 
-                                  {/* Record Quotation Action */}
-                                  <button
-                                    onClick={() => setQuoteModalRfq(rfq)}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                                  >
-                                    <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>+ Record Supplier Quotation</span>
-                                  </button>
+                                      {/* Award RFQ */}
+                                      {['UNDER_COMMERCIAL_EVALUATION', 'COMPARATIVE_STATEMENT_GENERATED', 'UNDER_NEGOTIATION', 'AWARD_RECOMMENDED'].includes(
+                                        rfq.status
+                                      ) && (
+                                        <button
+                                          disabled={lockMutations}
+                                          onClick={() => {
+                                            setAwardModalRfq(rfq);
+                                            setAwardWinningVendor(
+                                              rfqQuotations[0]?.vendorName || 'BASF INDIA LIMITED'
+                                            );
+                                          }}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                          <Award className="w-3.5 h-3.5" />
+                                          <span>Award RFQ (Full / Split)</span>
+                                        </button>
+                                      )}
 
-                                  {/* Extend Deadline */}
-                                  <button
-                                    onClick={() => {
-                                      setExtendDeadlineRfq(rfq);
-                                      setNewDeadlineDate(rfq.responseDeadline);
-                                    }}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
-                                  >
-                                    <Clock className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Extend Deadline</span>
-                                  </button>
+                                      {/* View Conversion History */}
+                                      <button
+                                        onClick={() => setHistoryModalRfq(rfq)}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                                      >
+                                        <History className="w-3.5 h-3.5 text-slate-500" />
+                                        <span>PR Audit History</span>
+                                      </button>
 
-                                  {/* Run AI Examiner */}
-                                  <button
-                                    onClick={() => handleRunExaminer(rfq.id)}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                                    <span>Run AI Examiner</span>
-                                  </button>
-
-                                  {/* Start Negotiation */}
-                                  {['TECHNICAL_GATE_APPROVED', 'UNDER_COMMERCIAL_EVALUATION', 'COMPARATIVE_STATEMENT_GENERATED'].includes(
-                                    rfq.status
-                                  ) && (
-                                    <button
-                                      onClick={() => handleStartNegotiation(rfq)}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-800 border border-orange-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                                    >
-                                      <Scale className="w-3.5 h-3.5 text-orange-600" />
-                                      <span>Start Negotiation</span>
-                                    </button>
-                                  )}
-
-                                  {/* Award RFQ */}
-                                  {['UNDER_COMMERCIAL_EVALUATION', 'COMPARATIVE_STATEMENT_GENERATED', 'UNDER_NEGOTIATION', 'AWARD_RECOMMENDED'].includes(
-                                    rfq.status
-                                  ) && (
-                                    <button
-                                      onClick={() => {
-                                        setAwardModalRfq(rfq);
-                                        setAwardWinningVendor(
-                                          rfqQuotations[0]?.vendorName || 'BASF INDIA LIMITED'
-                                        );
-                                      }}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
-                                    >
-                                      <Award className="w-3.5 h-3.5" />
-                                      <span>Award RFQ (Full / Split)</span>
-                                    </button>
-                                  )}
-
-                                  {/* View Conversion History */}
-                                  <button
-                                    onClick={() => setHistoryModalRfq(rfq)}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
-                                  >
-                                    <History className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>PR Audit History</span>
-                                  </button>
-
-                                  {/* Cancel RFQ */}
-                                  {rfq.status !== 'CANCELLED' && rfq.status !== 'CLOSED' && (
-                                    <button
-                                      onClick={() => setCancelModalRfq(rfq)}
-                                      className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                                    >
-                                      <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                                      <span>Cancel RFQ</span>
-                                    </button>
-                                  )}
-                                </div>
+                                      {/* Cancel RFQ */}
+                                      {rfq.status !== 'CANCELLED' && rfq.status !== 'CLOSED' && (
+                                        <button
+                                          disabled={lockMutations}
+                                          onClick={() => setCancelModalRfq(rfq)}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                          <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                                          <span>Cancel RFQ</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
 
                               {/* SECTION 1: Market Intelligence & Preference Tiers Card */}
@@ -2077,6 +2166,17 @@ export const RfqManagementView: React.FC<RfqManagementViewProps> = ({
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={rfqGrid.currentPage}
+        totalPages={rfqGrid.totalPages}
+        pageSize={rfqGrid.pageSize}
+        totalRecords={rfqGrid.totalRecords}
+        onPageChange={rfqGrid.setCurrentPage}
+        onPageSizeChange={rfqGrid.setPageSize}
+        pageSizeOptions={rfqGrid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (RFQ Date DESC)"
+      />
 
       {/* QUICK BENCHMARK INSPECTION MODAL */}
       {benchmarkModalResult && (

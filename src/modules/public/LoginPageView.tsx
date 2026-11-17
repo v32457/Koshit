@@ -29,9 +29,10 @@ import {
   executePasswordReset,
   PasswordResetTokenRecord,
 } from '../../services/authService';
+import { userRoleAdminService } from '../../services/userRoleAdminService';
 
 interface LoginPageViewProps {
-  onLoginSuccess: (user: User) => void;
+  onLoginSuccess: (user: User, sessionTokenId?: string) => void;
   onNavigateHome: () => void;
   redirectRoute?: string;
 }
@@ -94,25 +95,25 @@ export const LoginPageView: React.FC<LoginPageViewProps> = ({
 
     setTimeout(() => {
       setIsLoading(false);
-      const foundUser = INITIAL_USERS.find(
-        (u) => u.email.toLowerCase().trim() === email.toLowerCase().trim()
-      );
+      const authRes = userRoleAdminService.authenticateWithCredentials({
+        emailOrUsername: email,
+        password,
+      });
 
-      if (!foundUser) {
-        setErrorMessage('Invalid username/email or password. Please verify your credentials.');
+      if (!authRes.ok || !authRes.user) {
+        setErrorMessage(authRes.errorMessage || 'Authentication failed.');
         return;
       }
 
-      // Check if 2FA is required for this user
-      if (foundUser.twoFactorEnabled) {
-        setSelectedUserPending2FA(foundUser);
-        setOtpSentNotice(`Two-factor verification OTP sent to ${foundUser.email} & verified WhatsApp number (+91 98401 22320).`);
+      if (authRes.requires2FA) {
+        setSelectedUserPending2FA(authRes.user);
+        setOtpSentNotice(`Two-factor verification OTP sent to ${authRes.user.email} & verified WhatsApp number (+91 98401 22320).`);
         return;
       }
 
-      // Login directly if 2FA is disabled
-      onLoginSuccess(foundUser);
-    }, 600);
+      const session = userRoleAdminService.createSessionForUser(authRes.user, { mfaVerified: false });
+      onLoginSuccess(authRes.user, session.sessionTokenId);
+    }, 350);
   };
 
   const handleVerify2FA = (e: React.FormEvent) => {
@@ -130,7 +131,8 @@ export const LoginPageView: React.FC<LoginPageViewProps> = ({
     }
 
     if (selectedUserPending2FA) {
-      onLoginSuccess(selectedUserPending2FA);
+      const session = userRoleAdminService.createSessionForUser(selectedUserPending2FA, { mfaVerified: true });
+      onLoginSuccess(selectedUserPending2FA, session.sessionTokenId);
     }
   };
 
@@ -423,8 +425,8 @@ export const LoginPageView: React.FC<LoginPageViewProps> = ({
               <span className="text-[10px] text-cyan-400 bg-cyan-950 px-1.5 py-0.5 rounded border border-cyan-800/60 font-mono">Demo Role Presets</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-1.5">
-              {INITIAL_USERS.map((usr) => (
+            <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto">
+              {(userRoleAdminService.getUsers().length > 0 ? userRoleAdminService.getUsers() : INITIAL_USERS).map((usr) => (
                 <button
                   key={usr.id}
                   type="button"

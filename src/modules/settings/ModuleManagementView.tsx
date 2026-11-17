@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ModuleAuditEvent, ModuleRegistryItem, User } from '../../types';
 import { INITIAL_MODULE_REGISTRY } from '../../data/seedData';
 import { GeneralSettingsView } from './GeneralSettingsView';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
+import { userRoleAdminService } from '../../services/userRoleAdminService';
 import {
   ToggleLeft,
   ToggleRight,
@@ -211,6 +214,26 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
 
     onAddModule(newModule);
 
+    try {
+      userRoleAdminService.registerModuleFeaturePermissions(
+        {
+          moduleCode: newModule.moduleKey,
+          moduleName: newModule.displayName,
+          routeReference: `/${newModule.moduleKey.toLowerCase()}`,
+          apiNamespace: `/api/${newModule.moduleKey.toLowerCase()}`,
+          moduleOwner: newModule.ownerTeam,
+          featureCode: `${newModule.moduleKey}_OVERVIEW`,
+          featureName: `${newModule.displayName} Overview`,
+          featureDescription: newModule.description,
+          relatedApi: `/api/${newModule.moduleKey.toLowerCase()}/overview`,
+          actions: ['VIEW', 'CREATE', 'EDIT', 'APPROVE', 'EXPORT'],
+        },
+        { id: currentUser.id, name: currentUser.fullName }
+      );
+    } catch (err) {
+      console.error('Permission auto-registration notice:', err);
+    }
+
     // Audit log
     setAuditLogs([
       {
@@ -233,15 +256,38 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
     setWizardStep(1);
   };
 
-  const filteredRegistry = moduleRegistry.filter((m) => {
-    const matchesSearch =
-      m.displayName.toLowerCase().includes(registrySearch.toLowerCase()) ||
-      m.moduleKey.toLowerCase().includes(registrySearch.toLowerCase()) ||
-      m.description.toLowerCase().includes(registrySearch.toLowerCase());
-    const matchesStatus =
-      statusFilter === 'ALL' ||
-      (statusFilter === 'ENABLED' ? m.isEnabled : !m.isEnabled);
-    return matchesSearch && matchesStatus;
+  const filteredRegistry = useMemo(
+    () =>
+      moduleRegistry.filter((m) => {
+        const matchesSearch =
+          m.displayName.toLowerCase().includes(registrySearch.toLowerCase()) ||
+          m.moduleKey.toLowerCase().includes(registrySearch.toLowerCase()) ||
+          m.description.toLowerCase().includes(registrySearch.toLowerCase());
+        const matchesStatus =
+          statusFilter === 'ALL' ||
+          (statusFilter === 'ENABLED' ? m.isEnabled : !m.isEnabled);
+        return matchesSearch && matchesStatus;
+      }),
+    [moduleRegistry, registrySearch, statusFilter]
+  );
+
+  const registryGrid = useStandardDataGrid({
+    gridId: 'settings-module-registry',
+    userId: currentUser?.id,
+    data: filteredRegistry,
+    defaultSortField: 'changedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'moduleKey',
+    filterSignature: `${registrySearch}|${statusFilter}`,
+  });
+
+  const auditGrid = useStandardDataGrid({
+    gridId: 'settings-module-audit-logs',
+    userId: currentUser?.id,
+    data: auditLogs,
+    defaultSortField: 'timestamp',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
   });
 
   return (
@@ -495,7 +541,7 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredRegistry.map((mod) => (
+                {registryGrid.pagedData.map((mod) => (
                   <tr key={mod.id} className="hover:bg-slate-50/80 transition">
                     <td className="p-3 font-bold text-slate-900">{mod.displayName}</td>
                     <td className="p-3 font-mono font-bold text-indigo-700">{mod.moduleKey}</td>
@@ -526,6 +572,16 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={registryGrid.currentPage}
+            totalPages={registryGrid.totalPages}
+            pageSize={registryGrid.pageSize}
+            totalRecords={registryGrid.totalRecords}
+            onPageChange={registryGrid.setCurrentPage}
+            onPageSizeChange={registryGrid.setPageSize}
+            pageSizeOptions={registryGrid.pageSizeOptions}
+            defaultSortNotice="Sorted Newest First"
+          />
         </div>
       )}
 
@@ -549,7 +605,7 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {auditLogs.map((log) => (
+                {auditGrid.pagedData.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition">
                     <td className="p-3 font-mono text-slate-500">{log.id}</td>
                     <td className="p-3 font-mono font-bold text-indigo-700">{log.moduleKey}</td>
@@ -574,6 +630,16 @@ export const ModuleManagementView: React.FC<ModuleManagementViewProps> = ({
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={auditGrid.currentPage}
+            totalPages={auditGrid.totalPages}
+            pageSize={auditGrid.pageSize}
+            totalRecords={auditGrid.totalRecords}
+            onPageChange={auditGrid.setCurrentPage}
+            onPageSizeChange={auditGrid.setPageSize}
+            pageSizeOptions={auditGrid.pageSizeOptions}
+            defaultSortNotice="Sorted Newest First (Timestamp DESC)"
+          />
         </div>
       )}
 

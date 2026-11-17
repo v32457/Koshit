@@ -3,12 +3,22 @@ import { User, Buyer } from '../../types';
 import { INITIAL_USERS } from '../../data/seedData';
 import { INITIAL_BUYERS } from '../../data/buyerData';
 import { Plus, Search, CheckCircle, XCircle, User as UserIcon } from 'lucide-react';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export const BuyerManagementView: React.FC = () => {
   const [buyers, setBuyers] = useState<Buyer[]>(INITIAL_BUYERS);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const buyerGrid = useStandardDataGrid({
+    gridId: 'settings-buyer-management',
+    data: buyers,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
 
   const availableUsers = useMemo(() => {
     return INITIAL_USERS.filter(user => !buyers.some(b => b.userId === user.id));
@@ -61,7 +71,7 @@ export const BuyerManagementView: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {buyers.map(b => (
+            {buyerGrid.pagedData.map(b => (
               <tr key={b.id}>
                 <td className="p-3 font-bold">{b.user.fullName}</td>
                 <td className="p-3 text-slate-600">{b.user.email}</td>
@@ -71,6 +81,17 @@ export const BuyerManagementView: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      <DataGridFooter
+        currentPage={buyerGrid.currentPage}
+        totalPages={buyerGrid.totalPages}
+        pageSize={buyerGrid.pageSize}
+        totalRecords={buyerGrid.totalRecords}
+        onPageChange={buyerGrid.setCurrentPage}
+        onPageSizeChange={buyerGrid.setPageSize}
+        pageSizeOptions={buyerGrid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (Updated At DESC)"
+      />
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">

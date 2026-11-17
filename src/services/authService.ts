@@ -3,8 +3,8 @@
  * Provides non-enumerating time-limited token generation, link obfuscation, validation, and session security.
  */
 
-import { INITIAL_USERS } from '../data/seedData';
 import { User } from '../types';
+import { userRoleAdminService } from './userRoleAdminService';
 
 export interface PasswordResetTokenRecord {
   token: string;
@@ -80,9 +80,9 @@ export function generatePasswordResetToken(email: string): {
   // Non-enumerating uniform response message
   const genericMessage = `If an account matching '${email}' exists in our corporate identity system, a single-use 15-minute recovery token and obfuscated email link have been dispatched.`;
 
-  const foundUser = INITIAL_USERS.find(
-    (u) => u.email.toLowerCase().trim() === normalizedEmail
-  );
+  const foundUser = userRoleAdminService
+    .getUsers()
+    .find((u) => u.email.toLowerCase().trim() === normalizedEmail);
 
   if (!foundUser) {
     // Return synthetic response without saving to registry to keep response timing uniform
@@ -186,7 +186,24 @@ export function executePasswordReset(
     };
   }
 
-  // Mark token as consumed/used
+  if (validation.record.userId) {
+    try {
+      userRoleAdminService.resetUserPassword(
+        validation.record.userId,
+        newPassword,
+        { id: validation.record.userId, name: validation.record.email },
+        false,
+        'Self-service password reset via verified single-use recovery token'
+      );
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Password does not satisfy enterprise security policy.',
+      };
+    }
+  }
+
+  // Mark token as consumed/used only after password policy succeeds
   validation.record.isUsed = true;
   validation.record.usedAt = new Date().toISOString();
 

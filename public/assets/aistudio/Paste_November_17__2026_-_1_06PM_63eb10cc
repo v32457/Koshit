@@ -1,0 +1,2113 @@
+# KOSH INNOVATIONS
+# MASTER DEVELOPMENT PROMPT
+## GLOBAL ITEM MASTER & BRANCH ITEM AVAILABILITY — COMPLETE EXISTING APPLICATION ENHANCEMENT
+
+**Project:** KOSH Innovations Enterprise Application  
+**Development Platform:** Google AI Studio  
+**Implementation Type:** Existing Application Modification  
+**Target:** Production-Grade Enterprise ERP Functionality  
+**Priority:** Data Integrity, Governance, Auditability, Procurement Integration and Backward Compatibility
+
+---
+
+# 1. ROLE AND RESPONSIBILITY
+
+Act as the Principal ERP Solution Architect, Enterprise Master Data Architect, Procurement Functional Consultant, Full-Stack Developer, Database Architect, Backend Engineer, Frontend Engineer, Rule Engine Architect, Security Engineer, Migration Engineer and QA Lead for KOSH Innovations.
+
+Your assignment is to examine, redesign, develop, modify, integrate, test and deploy the existing KOSH Global Item Master and Branch Item Availability functionality.
+
+This is an existing application enhancement.
+
+You must modify the existing source code, components, APIs, services, database entities, configuration screens, workflows and validation mechanisms.
+
+**Do not create a new application.**
+
+**Do not replace the existing KOSH application.**
+
+**Do not create a parallel Global Item Master or Branch Item Master.**
+
+**Do not redesign unrelated business modules.**
+
+Preserve existing functionality and data wherever possible.
+
+The final implementation must be fully integrated with existing KOSH authentication, RBAC, company and branch masters, UOM master, procurement modules, approval workflows and audit infrastructure.
+
+# 2. ABSOLUTE IMPLEMENTATION REQUIREMENTS
+
+The following rules are mandatory.
+
+1. Inspect the existing repository before modifying code.
+2. Inspect existing database structures before creating or changing tables.
+3. Reuse existing master data and services wherever appropriate.
+4. Do not create duplicate masters.
+5. Do not use mock data.
+6. Do not use hardcoded categories, UOMs or branch mappings.
+7. Do not simulate rule validation.
+8. Do not create non-functional buttons.
+9. Do not claim a feature is implemented when only its UI exists.
+10. Do not break existing PR, RFQ, PO, Goods Receipt or Inventory workflows.
+11. Do not delete historical records.
+12. Do not silently change historical transaction values.
+13. Do not bypass existing authentication, RBAC or approval mechanisms.
+14. Do not report unexecuted tests as passed.
+15. Do not claim production deployment without actual production verification.
+
+When dependencies, libraries or software are required:
+
+- Inspect existing versions.
+- Verify compatibility.
+- Verify source and licence.
+- Download from official or verified sources.
+- Verify integrity where possible.
+- Install using reproducible procedures.
+- Integrate with the existing application.
+- Execute tests.
+- Record installed versions.
+
+Do not introduce unapproved paid APIs or commercial dependencies.
+
+If the execution environment cannot install software or access production infrastructure, clearly identify the blocker and provide the required reproducible deployment procedure.
+
+# 3. FIRST ACTION — AUDIT THE EXISTING APPLICATION
+
+Before changing any code, inspect the existing KOSH project.
+
+Identify the actual implementation of:
+
+1. Global Item Master.
+2. Create Item screen.
+3. Branch Item Availability.
+4. Branch-Created Items.
+5. Item Code & Description Rule Builder.
+6. Rule Engine Validation Audit.
+7. Category Master.
+8. Material Master.
+9. Item Type Master.
+10. Material Form Master.
+11. Process Master.
+12. Colour Master.
+13. UOM Master.
+14. UOM Conversion.
+15. Manufacturer and Brand Master.
+16. Item Attachments.
+17. Existing compliance fields.
+18. Existing item approval workflows.
+19. Existing company and branch masters.
+20. Existing PR item selection.
+21. Existing RFQ and PO item references.
+22. Existing Goods Receipt and Inventory references.
+23. Existing audit and change-history mechanisms.
+24. Existing database migration framework.
+25. Existing authentication and RBAC.
+
+Determine where each field is currently stored and how it is used.
+
+Identify all dependencies on Category in the existing codebase, including:
+
+- Item creation validation.
+- Item code generation.
+- Item description generation.
+- Item search.
+- Item filtering.
+- Branch availability.
+- PR selection.
+- RFQ.
+- PO.
+- Inventory.
+- Reporting.
+- API requests.
+- Database constraints.
+- Audit rules.
+
+Do not remove a field from the UI without correcting its backend and database ownership.
+
+Produce an audit report and impact analysis before implementing schema changes.
+
+# 4. APPROVED ARCHITECTURAL DECISIONS
+
+The following decisions have been explicitly approved and must not be changed.
+
+## 4.1 Category ownership
+
+Category belongs exclusively to Branch Item Availability.
+
+- Remove Category from Global Item Master.
+- Remove Category from Global Item Creation Audit.
+- Remove Category as a mandatory global code-generation dimension.
+- Remove Category as a mandatory global description-generation dimension.
+- Assign Category separately for each Company and Branch.
+- The same Global Item may have different Categories in different branches.
+- Maintain one active Category assignment per Global Item, Company and Branch, unless an approved future requirement changes this rule.
+
+## 4.2 UOM ownership
+
+Global UOM defaults with authorized branch-specific overrides.
+
+Global Item Master maintains:
+
+- Default Purchase UOM.
+- Default Inventory / Base UOM.
+- Default conversion definition.
+- Conversion precision.
+- Rounding rules.
+- Valid UOM relationships.
+
+Branch Item Availability may maintain:
+
+- Branch Purchase UOM.
+- Branch Inventory UOM.
+- Branch conversion definition.
+- Conversion numerator.
+- Conversion denominator.
+- Conversion precision.
+- Rounding rule.
+
+A valid conversion is mandatory whenever the effective Purchase UOM differs from the effective Inventory UOM.
+
+Branch overrides must be authorized and audited.
+
+## 4.3 Global Item Code
+
+One globally unique Global Item Code.
+
+- Generate once.
+- Reuse across all branches.
+- Do not generate a different global code for each branch.
+- Do not require Category for global code generation.
+- Do not create duplicate Global Item records.
+
+## 4.4 Compliance ownership
+
+All operational controls and compliance settings belong at Branch Item Availability level.
+
+Do not maintain global operational compliance defaults.
+
+## 4.5 Approval workflow
+
+Two independent approval stages are mandatory:
+
+**Stage 1:** Global Item Creation → Global Checker Approval.
+
+**Stage 2:** Branch Item Activation → Branch Checker Approval.
+
+Global approval does not automatically activate an item in any branch.
+
+Branch approval does not modify the Global Item identity.
+
+Only an approved and active Branch Item Availability record may be selected in a new PR.
+
+# 5. TARGET DATA ARCHITECTURE
+
+Implement the following logical architecture using the existing database conventions.
+
+<GLOBAL ITEM MASTER>
+    |
+    |-- Global Item ID
+    |-- Global Item Code
+    |-- Global Item Description
+    |-- Global Item Type
+    |-- Material
+    |-- Material Form
+    |-- Process
+    |-- Colour
+    |-- Technical Specifications
+    |-- Manufacturer / Brand
+    |-- Customer / Part References
+    |-- Default Purchase UOM
+    |-- Default Inventory UOM
+    |-- Default UOM Conversion
+    |-- Global Item Status
+    |-- Duplicate Detection
+    |-- Global Audit History
+    |-- Global Checker Approval
+    |
+    +---- <BRANCH ITEM AVAILABILITY A>
+    |       |-- Company
+    |       |-- Branch
+    |       |-- Category
+    |       |-- UOM Overrides
+    |       |-- Alternative Items
+    |       |-- Attachments
+    |       |-- Barcode / GTIN
+    |       |-- Revision
+    |       |-- Purchase Configuration
+    |       |-- Compliance
+    |       |-- Batch / Lot
+    |       |-- Quality
+    |       |-- Warehouse
+    |       |-- Inventory Planning
+    |       |-- Branch Audit
+    |       |-- Branch Approval
+    |
+    +---- <BRANCH ITEM AVAILABILITY B>
+            Same independent branch configuration
+
+One Global Item must support multiple Branch Item Availability records.
+
+Each branch record must reference the original Global Item ID.
+
+# 6. GLOBAL ITEM MASTER — REDESIGN
+
+Modify the existing Global Item Master and Create Item screens.
+
+The Global Item Master must describe the permanent technical identity of the item.
+
+## 6.1 Remove from Global Item Master
+
+Remove:
+
+- Category.
+- Shelf-Life Controlled.
+- Shelf-Life Duration.
+- Serial Number Tracking.
+- Warranty Applicable.
+- Warranty Duration.
+- MOQ.
+- Order Multiple.
+- Service Control.
+- Other branch-specific purchasing and operational compliance settings.
+
+Remove these fields from global backend validation and global data ownership, not merely from the frontend.
+
+## 6.2 Retain global technical identity
+
+Retain and reuse existing supported attributes:
+
+- Material.
+- Item Type.
+- Material Form.
+- Process.
+- Colour.
+- Specification.
+- Key Specification.
+- Product Name.
+- Dimensions.
+- Rating.
+- Size.
+- Thickness.
+- GSM.
+- Capacity.
+- Manufacturer.
+- Brand.
+- Customer Reference.
+- Customer Part Number.
+- Manufacturer Part Number.
+- Model Number.
+- Other globally applicable technical attributes.
+
+Do not introduce duplicate classification masters.
+
+## 6.3 Global item identity fields
+
+Every Global Item must have:
+
+- Global Item ID.
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Technical specifications.
+- Default Purchase UOM.
+- Default Inventory UOM where applicable.
+- Default conversion definition.
+- Global Status.
+- Created By.
+- Created Date.
+- Modified By.
+- Modified Date.
+- Rule Version.
+- Audit Reference.
+
+# 7. GLOBAL UOM GOVERNANCE
+
+Purchase UOM is mandatory.
+
+Inventory / Base UOM must be configured where required by the existing inventory architecture.
+
+The Global Item Master must use the existing UOM Master.
+
+Do not hardcode UOM values.
+
+Support:
+
+- Default Purchase UOM.
+- Default Inventory UOM.
+- Conversion Numerator.
+- Conversion Denominator.
+- Conversion Factor.
+- Conversion Precision.
+- Rounding Rule.
+- Permitted UOM relationships.
+
+If Purchase UOM and Inventory UOM are identical, use a conversion factor of 1.
+
+If they differ, require a valid conversion definition.
+
+Do not assume that different physical dimensions are directly convertible.
+
+For mass-to-volume conversions, require an approved material-specific conversion basis, such as density, where applicable.
+
+Use exact decimal arithmetic for persisted quantity and financial calculations.
+
+Preserve the applicable UOM conversion snapshot in PR and PO transactions.
+
+Changing the Global UOM configuration must not silently recalculate historical transactions.
+
+# 8. GLOBAL DUPLICATE DETECTION
+
+Implement mandatory duplicate detection.
+
+Check:
+
+1. Global Item Code.
+2. Exact technical identity.
+3. Manufacturer.
+4. Manufacturer Part Number.
+5. Customer Part Number where applicable.
+6. Relevant technical specifications.
+7. Potentially similar item descriptions.
+
+Differentiate:
+
+- Hard duplicate conflict.
+- Potential duplicate warning.
+
+Do not automatically merge or delete similar records.
+
+Provide an authorized duplicate-resolution workflow.
+
+When merging duplicates, preserve all historical PR, RFQ, PO, Goods Receipt, Inventory and audit references.
+
+Global duplicate detection must execute on the backend.
+
+# 9. GLOBAL ITEM CODE AND DESCRIPTION RULE BUILDER
+
+Modify the existing Item Code & Description Rule Builder.
+
+The current implementation may use Category as a required dimension.
+
+Remove that dependency.
+
+## 9.1 Global Item Code
+
+Generate the code using configurable global dimensions, such as:
+
+- Material.
+- Item Type.
+- Material Form.
+- Process.
+- Colour.
+- Other global technical attributes.
+- Sequential Counter.
+
+Support:
+
+- Configurable dimensions.
+- Enable / Disable.
+- Mandatory / Optional.
+- Sequence order.
+- Separators.
+- Padding.
+- Sequence reset scope.
+- Rule versions.
+- Approval and publishing.
+
+Category must never be required for global item code generation.
+
+Preserve existing item codes.
+
+Do not automatically regenerate historical codes.
+
+## 9.2 Global Item Description
+
+Generate descriptions from global technical identity.
+
+Support:
+
+- Configurable description tokens.
+- Token order.
+- Separators.
+- Mandatory attributes.
+- Maximum length.
+- Normalization.
+- Duplicate warnings.
+
+Category must not be part of the mandatory global description.
+
+# 10. BRANCH ITEM AVAILABILITY — COMPLETE REDESIGN
+
+This becomes the authoritative branch-specific operational configuration.
+
+The screen must support the following sections.
+
+## Section A — Branch Context and Global Item Selection
+
+Fields:
+
+- Company.
+- Branch.
+- Global Item Code.
+- Global Item Description.
+- Global Item ID.
+- Global Item Status.
+- Global Item Type.
+- Technical Specifications.
+- Default Purchase UOM.
+- Default Inventory UOM.
+
+Global identity fields must be loaded from the approved Global Item Master.
+
+They must be read-only in the branch configuration screen.
+
+Do not allow branch users to create another global identity through this screen.
+
+Only approved Global Items may be selected.
+
+## Section B — Branch Category
+
+Fields:
+
+- Category.
+- Other supported branch classification attributes.
+
+Category is mandatory for branch activation.
+
+Load Category values from the existing Category Master.
+
+Do not hardcode Category values.
+
+Validate the Category assignment for the selected Company and Branch.
+
+## Section C — Branch Purchase and Inventory Configuration
+
+Support:
+
+- Purchase Enabled.
+- Inventory Enabled.
+- Branch Purchase UOM.
+- Branch Inventory UOM.
+- Conversion Numerator.
+- Conversion Denominator.
+- Conversion Factor.
+- Conversion Precision.
+- Rounding Rule.
+- MOQ.
+- Order Multiple.
+- Preferred Warehouse where applicable.
+- Preferred Buyer where applicable.
+- Preferred Supplier where applicable.
+- Procurement Lead Time where applicable.
+
+Branch UOM overrides are optional.
+
+When an override is not configured, use the Global Item default.
+
+When an override is configured, validate the conversion and compatibility.
+
+## Section D — Branch Item Controls and Compliance
+
+All operational controls must be configured here.
+
+Support:
+
+- Shelf-Life Controlled.
+- Shelf-Life Duration.
+- Shelf-Life Unit.
+- Serial Number Tracked.
+- Warranty Applicable.
+- Warranty Duration.
+- Warranty Unit.
+- MOQ.
+- Order Multiple.
+- Service Control.
+- Batch Tracking.
+- Lot Tracking.
+- Quality Inspection.
+- Inspection Type.
+- Storage Conditions.
+- Regulatory Compliance.
+- Other existing operational controls.
+
+Use conditional fields.
+
+For example:
+
+If Shelf-Life Controlled is enabled:
+- Shelf-Life Duration is required.
+- Shelf-Life Unit is required.
+
+If Warranty Applicable is enabled:
+- Warranty requirements must be configured according to the applicable rules.
+
+If Serial Tracking is enabled:
+- The existing serial tracking requirements must be validated.
+
+If Batch / Lot Tracking is enabled:
+- Batch / Lot requirements must be configured.
+
+Do not show irrelevant fields when their corresponding controls are disabled.
+
+## Section E — Warehouse and Inventory Planning
+
+Support branch-specific configuration for:
+
+- Warehouse eligibility.
+- Preferred Warehouse.
+- Storage Location where applicable.
+- Safety Stock.
+- Reorder Level.
+- Maximum Stock.
+- Replenishment settings.
+- Procurement Lead Time.
+
+Inspect existing Warehouse and Inventory masters before implementing.
+
+A branch may have multiple warehouses.
+
+Do not force a single warehouse where the existing architecture supports multiple warehouses.
+
+## Section F — Alternative Item References
+
+Maintain alternative item references at Branch level.
+
+Support:
+
+- Alternative Global Item.
+- Substitute Global Item.
+- Equivalent Item where supported.
+- Relationship Type.
+- Effective From.
+- Effective To.
+- Active / Inactive.
+- Reason.
+- Approval status where required.
+
+All alternatives must reference existing Global Item IDs.
+
+Validate that the alternative item is approved and available for the relevant branch.
+
+Prevent invalid self-reference and prohibited circular substitute relationships.
+
+Do not create duplicate Global Item records.
+
+## Section G — Item Attachments
+
+Support optional or rule-based branch attachments:
+
+- Technical Datasheet.
+- Engineering Drawing.
+- Technical Specification.
+- Test Certificate.
+- Quality Certificate.
+- Regulatory Certificate.
+- Safety Data Sheet.
+- Other approved document types.
+
+Each attachment must support:
+
+- Document Type.
+- File Reference.
+- Description.
+- Document Version.
+- Uploaded By.
+- Uploaded Date.
+- Effective Date.
+- Expiry Date.
+- Approval Status.
+- Active / Inactive.
+
+Apply configurable mandatory document rules.
+
+Validate file type, size, access permissions and integrity.
+
+Do not expose unrestricted storage URLs.
+
+Preserve historical attachment references.
+
+## Section H — Barcode / GTIN
+
+Support optional branch-level:
+
+- Barcode Value.
+- Barcode Type.
+- GTIN.
+- Effective From.
+- Effective To.
+- Status.
+
+Validate barcode uniqueness according to the approved ownership scope.
+
+Do not assume every item has a GTIN.
+
+Support intentionally shared barcode references through a controlled mechanism where necessary.
+
+## Section I — Branch Item Revision / Version
+
+Maintain branch-specific revision information where applicable.
+
+Fields:
+
+- Revision Number.
+- Revision Description.
+- Technical Change Reference.
+- Effective From.
+- Effective To.
+- Change Reason.
+- Approved By.
+- Approval Status.
+
+A branch must record which revision it has adopted.
+
+Do not overwrite historical revisions.
+
+If a change affects global item identity or specifications, initiate the appropriate Global Item Change workflow.
+
+## Section J — Branch Availability
+
+Support:
+
+- Purchase Availability.
+- Inventory Availability.
+- Active / Inactive.
+- Effective From.
+- Effective To.
+- Reason for Activation.
+- Branch Status.
+
+The item must not be available for new PR selection until Branch Checker Approval and activation are completed.
+
+# 11. BRANCH CATEGORY GOVERNANCE
+
+Category is assigned independently for each Global Item, Company and Branch.
+
+Example:
+
+Global Item: Steel Sheet — 304 Grade.
+
+| Company | Branch | Category |
+|---|---|---|
+| Kosh Innovations | Pondicherry | Raw Materials |
+| Kosh Innovations | Coimbatore | Production Consumables |
+| Kosh Innovations | Chennai | Raw Materials |
+
+These are illustrative examples.
+
+The actual values must be retrieved from existing master data.
+
+A change to one branch Category must not change another branch Category.
+
+Prevent multiple active Category assignments for the same Global Item, Company and Branch unless an approved future business rule permits them.
+
+# 12. GLOBAL AND BRANCH CHANGE HISTORY
+
+Implement mandatory change history at both levels.
+
+## Global Change History
+
+Record changes to:
+
+- Item Code.
+- Item Description.
+- Item Type.
+- Technical Specifications.
+- Material.
+- Material Form.
+- Process.
+- Colour.
+- Manufacturer / Brand references.
+- Default Purchase UOM.
+- Default Inventory UOM.
+- Default UOM Conversion.
+- Global Status.
+
+## Branch Change History
+
+Record changes to:
+
+- Category.
+- Purchase Availability.
+- Inventory Availability.
+- Branch UOM Overrides.
+- Conversion Definitions.
+- Alternative Item References.
+- Attachments.
+- Barcode / GTIN.
+- Revision / Version.
+- Shelf-Life.
+- Serial Tracking.
+- Warranty.
+- MOQ.
+- Order Multiple.
+- Batch / Lot.
+- Quality Controls.
+- Warehouse Configuration.
+- Inventory Planning.
+- Regulatory Requirements.
+- Branch Status.
+
+Every change history entry must capture:
+
+- Entity ID.
+- Company.
+- Branch where applicable.
+- Field / Attribute.
+- Previous Value.
+- New Value.
+- Changed By.
+- Changed At.
+- Change Reason.
+- Approval Reference.
+- Applicable Rule Version.
+- Related request or transaction reference.
+
+Audit history must be append-only for ordinary application users.
+
+Do not silently delete or overwrite audit history.
+
+# 13. RULE-BASED AUDIT ENGINE
+
+Preserve and extend the existing Rule Engine Validation Audit.
+
+Do not replace it with ordinary frontend validation.
+
+Implement two separate audit stages.
+
+## 13.1 Global Item Creation Audit
+
+Check:
+
+1. Mandatory Global Item fields.
+2. Global Item Type.
+3. Required technical attributes.
+4. Global Item Code pattern.
+5. Global Item Code length.
+6. Global Item Description pattern.
+7. Global Item Code duplicate detection.
+8. Potential duplicate detection.
+9. Purchase UOM.
+10. Inventory UOM where required.
+11. Global UOM conversion.
+12. Technical specification completeness.
+13. Applicable global attachments where required.
+14. Rule version and evaluation integrity.
+
+Category must not be a mandatory global checkpoint.
+
+Branch operational compliance must not be evaluated during global creation.
+
+## 13.2 Branch Item Activation Audit
+
+Check:
+
+1. Approved Global Item reference.
+2. Company.
+3. Branch.
+4. Branch Category.
+5. Branch purchase availability.
+6. Branch inventory availability.
+7. Branch UOM overrides.
+8. Branch UOM conversion.
+9. MOQ.
+10. Order Multiple.
+11. Shelf-Life rules.
+12. Serial Tracking rules.
+13. Warranty rules.
+14. Batch / Lot rules.
+15. Quality Inspection rules.
+16. Alternative Item validity.
+17. Attachment requirements.
+18. Barcode uniqueness.
+19. Revision validity.
+20. Warehouse configuration.
+21. Inventory planning.
+22. Regulatory documentation.
+23. Branch duplicate availability.
+24. Effective date.
+25. Audit rule version.
+
+Only execute conditional checks when applicable.
+
+## 13.3 Audit results
+
+Support:
+
+- PASS.
+- WARNING.
+- ERROR.
+- BLOCKED.
+
+Mandatory unresolved errors must block submission.
+
+Warnings must follow published governance rules.
+
+Every audit report must record:
+
+- Audit ID.
+- Entity ID.
+- Audit Type.
+- Rule Version.
+- Checkpoint.
+- Result.
+- Error / Warning details.
+- Evaluated Fields.
+- Evaluated By.
+- Timestamp.
+
+Never generate artificial PASS results.
+
+## 13.4 Rule configuration and publishing
+
+Support:
+
+- Rule Master.
+- Rule Version.
+- Rule Scope.
+- Checkpoint.
+- Severity.
+- Mandatory / Optional.
+- Enabled / Disabled.
+- Effective Date.
+- Draft.
+- Validate.
+- Simulate.
+- Submit for Approval.
+- Approve.
+- Publish.
+- Retire.
+
+Separate rule scopes:
+
+- GLOBAL_ITEM_CREATION.
+- BRANCH_ITEM_ACTIVATION.
+
+Published rule versions must be preserved in historical audit records.
+
+Simulation must not create or modify actual item records.
+
+# 14. DUAL APPROVAL WORKFLOW
+
+Implement two independent approval workflows.
+
+## 14.1 Global Item Approval
+
+1. Authorized user creates Global Item.
+2. User saves draft.
+3. System generates provisional Global Item Code.
+4. System generates provisional Global Item Description.
+5. User executes Global Item Creation Audit.
+6. Mandatory errors are resolved.
+7. User submits for Checker Approval.
+8. Checker reviews the Global Item and audit results.
+9. Checker approves or rejects.
+10. Approved Global Item becomes eligible for Branch Item Availability.
+
+A draft or rejected Global Item must not be selectable for branch activation.
+
+## 14.2 Branch Item Approval
+
+1. Authorized user selects approved Global Item.
+2. Selects Company and Branch.
+3. Configures Category.
+4. Configures branch UOM overrides where required.
+5. Configures purchasing and inventory settings.
+6. Configures compliance.
+7. Configures attachments and other optional controls.
+8. Executes Branch Item Activation Audit.
+9. Resolves mandatory errors.
+10. Submits for Branch Checker Approval.
+11. Checker reviews branch configuration and audit.
+12. Checker approves or rejects.
+13. Approved record becomes active for that branch.
+
+Approval must use existing KOSH RBAC and approval services.
+
+The creator must not approve their own record unless an existing formally approved policy explicitly permits it.
+
+# 15. ITEM MASTER UI REDESIGN
+
+Modify the existing Global Item Master and Branch Item Availability screens.
+
+Use the existing Purchase Requisition screen as the UI/UX reference.
+
+Do not create an unrelated design system.
+
+Follow the existing PR screen's layout principles:
+
+- Clear page header.
+- Compact contextual information.
+- Organized sections.
+- Consistent spacing.
+- Responsive forms.
+- Expandable configuration panels.
+- Readable data grids.
+- Clear status indicators.
+- Inline validation.
+- Audit summary.
+- Consistent footer actions.
+
+## 15.1 Global Item Master screen
+
+Required sections:
+
+1. Global Item Identity & Classification.
+2. Technical Specifications.
+3. Manufacturer / Brand / Customer References.
+4. Purchase UOM & Inventory UOM.
+5. UOM Conversion & Validation.
+6. Global Technical Attachments where applicable.
+7. Global Rule-Based Audit.
+8. Global Checker Approval Status.
+
+Do not display Category or operational branch compliance fields.
+
+Footer actions:
+
+- Cancel.
+- Save Draft.
+- Validate Rules.
+- Submit for Checker Approval.
+
+## 15.2 Branch Item Availability screen
+
+Required sections:
+
+1. Company / Branch / Global Item Selection.
+2. Branch Category.
+3. Branch Purchase & Inventory Configuration.
+4. Branch UOM Overrides.
+5. Branch Item Controls & Compliance.
+6. Batch / Lot / Quality.
+7. Warehouse & Inventory Planning.
+8. Alternative Item References.
+9. Item Attachments.
+10. Barcode / GTIN.
+11. Revision / Version.
+12. Branch Availability.
+13. Branch Rule-Based Audit.
+14. Branch Checker Approval.
+
+Footer actions:
+
+- Cancel.
+- Save Draft.
+- Validate Rules.
+- Submit for Checker Approval.
+
+Both screens must follow the existing KOSH PR screen's interaction and visual conventions.
+
+# 16. GLOBAL ITEM MASTER LIST
+
+Modify the existing Global Item Master listing.
+
+Display:
+
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Material.
+- Material Form.
+- Purchase UOM.
+- Inventory UOM.
+- Global Item Status.
+- Branch Availability Count.
+- Approval Status.
+- Created Date.
+- Actions.
+
+Actions:
+
+- View.
+- Edit where permitted.
+- View Branch Availability.
+- View Audit History.
+- View Rule Version.
+- View Approval History.
+
+Do not display Category as a global item attribute.
+
+# 17. BRANCH ITEM AVAILABILITY LIST
+
+Provide a branch-aware listing.
+
+Filters:
+
+- Company.
+- Branch.
+- Category.
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Purchase Availability.
+- Inventory Availability.
+- Compliance Status.
+- Approval Status.
+- Active / Inactive.
+
+Columns:
+
+- Global Item Code.
+- Global Item Description.
+- Company.
+- Branch.
+- Category.
+- Purchase UOM.
+- Inventory UOM.
+- MOQ.
+- Order Multiple.
+- Batch / Lot Status.
+- Shelf-Life Status.
+- Serial Tracking Status.
+- Warranty Status.
+- Quality Status.
+- Availability Status.
+- Audit Status.
+- Approval Status.
+
+Actions:
+
+- View.
+- Edit.
+- Activate / Deactivate where authorized.
+- View Compliance.
+- View Attachments.
+- View Alternative Items.
+- View Audit History.
+- View Approval History.
+
+All information must come from actual database records.
+
+# 18. PR, RFQ, PO AND INVENTORY INTEGRATION
+
+Inspect existing downstream modules before modifying their data relationships.
+
+## 18.1 Purchase Requisition
+
+When creating a PR:
+
+1. Select Company.
+2. Select Branch.
+3. Load only approved and active Branch Item Availability records.
+4. Display Global Item Code.
+5. Display Global Item Description.
+6. Display Branch Category.
+7. Load effective Purchase UOM.
+8. Load effective Inventory UOM where required.
+9. Load the approved conversion definition.
+10. Validate MOQ.
+11. Validate Order Multiple.
+12. Validate branch purchase availability.
+13. Validate any applicable item restrictions.
+
+Backend submission must independently validate the item/branch relationship.
+
+Do not trust frontend filtering alone.
+
+## 18.2 RFQ and Purchase Order
+
+Preserve Global Item references and branch-specific configuration.
+
+Ensure RFQ and PO retain the relevant transaction-level item, UOM, conversion and specification snapshots.
+
+Do not automatically modify existing commercial calculations.
+
+## 18.3 Goods Receipt and Inventory
+
+Ensure the existing batch, lot, serial, shelf-life, quality and warehouse processes consume the approved Branch Item Availability configuration.
+
+Do not create duplicate inventory controls.
+
+Reuse existing inventory and warehouse services.
+
+# 19. DATA MODEL AND DATABASE MIGRATION
+
+Inspect existing entities before creating or modifying tables.
+
+Reuse existing:
+
+- Global Item Master.
+- Category Master.
+- UOM Master.
+- Company Master.
+- Branch Master.
+- Warehouse Master.
+- Rule Master.
+- Approval Master.
+- Audit infrastructure.
+
+The logical architecture must support:
+
+GLOBAL:
+- Global Item.
+- Global Specifications.
+- Global UOM.
+- Global UOM Conversion.
+- Global Item Code Rules.
+- Global Description Rules.
+- Global Duplicate Detection.
+- Global Audit.
+- Global Approval.
+
+BRANCH:
+- Branch Item Availability.
+- Branch Category Assignment.
+- Branch UOM Override.
+- Branch UOM Conversion.
+- Branch Alternative Items.
+- Branch Attachments.
+- Branch Barcode / GTIN.
+- Branch Revision.
+- Branch Compliance.
+- Branch Batch / Lot.
+- Branch Quality.
+- Branch Warehouse Configuration.
+- Branch Inventory Planning.
+- Branch Audit.
+- Branch Approval.
+
+GOVERNANCE:
+- Rule Master.
+- Rule Version.
+- Rule Checkpoint.
+- Rule Evaluation.
+- Audit Report.
+- Approval History.
+- Change History.
+
+Use the existing database naming conventions and migration framework.
+
+Enforce:
+
+- Primary keys.
+- Foreign keys.
+- Unique constraints.
+- Referential integrity.
+- Tenant isolation.
+- Branch isolation.
+- Appropriate indexes.
+- Transaction handling.
+- Historical snapshots.
+
+Prevent duplicate active Branch Item Availability records for the approved Global Item + Company + Branch uniqueness key.
+
+Do not create duplicate entities if equivalent existing structures are available.
+
+# 20. LEGACY DATA MIGRATION
+
+Existing Global Item records may already contain Category and compliance fields.
+
+Do not delete or overwrite these values blindly.
+
+Before migration:
+
+1. Identify existing Global Item records.
+2. Identify existing Category assignments.
+3. Identify Company and Branch ownership.
+4. Identify existing UOM definitions.
+5. Identify existing compliance values.
+6. Identify existing attachments.
+7. Identify existing item code rules.
+8. Identify PR and PO references.
+9. Identify existing approval history.
+10. Identify existing audit history.
+
+Prepare a migration plan.
+
+For each existing item:
+
+- Preserve Global Item ID.
+- Preserve Global Item Code.
+- Preserve Global Item Description.
+- Preserve historical transactions.
+- Move Category to the correct Branch Item Availability record.
+- Move branch operational compliance to the correct branch record.
+- Preserve UOM conversion definitions.
+- Preserve historical audit information.
+- Preserve attachment references.
+- Preserve approval history where possible.
+
+If the existing data does not establish the correct branch ownership, mark it for migration review.
+
+Do not guess.
+
+Do not activate ambiguous branch records automatically.
+
+Generate a migration reconciliation report.
+
+Do not delete legacy columns until all dependent code, data and reports have been migrated and verified.
+
+# 21. SECURITY AND AUTHORIZATION
+
+Reuse existing KOSH authentication and RBAC.
+
+Define or extend permissions for:
+
+- Global Item Creation.
+- Global Item Modification.
+- Global Item Checker.
+- Global Item Approval.
+- Branch Item Creation.
+- Branch Item Modification.
+- Branch Item Checker.
+- Branch Item Approval.
+- Rule Configuration.
+- Rule Publishing.
+- Duplicate Resolution.
+- Data Migration.
+- Audit Viewing.
+
+A branch administrator must not modify Global Item identity unless authorized.
+
+A global master administrator must not automatically receive unrestricted branch operational permissions.
+
+All backend endpoints must enforce authorization independently.
+
+Validate company and branch access from authenticated server-side context.
+
+# 22. TESTING REQUIREMENTS
+
+Execute actual automated tests.
+
+## Global Item tests
+
+1. Create Global Item without Category.
+2. Verify Category is not required.
+3. Generate unique Global Item Code without Category.
+4. Validate Global Item Description.
+5. Validate Purchase UOM.
+6. Validate Inventory UOM.
+7. Validate UOM conversion.
+8. Reject invalid conversion.
+9. Detect duplicate Global Item Code.
+10. Detect potential duplicate technical identity.
+11. Execute Global Item Creation Audit.
+12. Submit for Global Checker Approval.
+13. Approve and reject Global Items.
+14. Preserve historical codes and audit history.
+
+## Branch Item tests
+
+15. Select an approved Global Item.
+16. Assign Category to Branch A.
+17. Assign a different Category to Branch B.
+18. Verify no duplicate Global Item is created.
+19. Configure branch Purchase UOM override.
+20. Configure branch Inventory UOM override.
+21. Validate branch conversion.
+22. Configure Shelf-Life.
+23. Configure Serial Tracking.
+24. Configure Warranty.
+25. Configure MOQ and Order Multiple.
+26. Configure Batch / Lot.
+27. Configure Quality Inspection.
+28. Configure Warehouse.
+29. Add Alternative Item.
+30. Add Attachment.
+31. Add Barcode.
+32. Configure Revision.
+33. Execute Branch Item Activation Audit.
+34. Submit for Branch Checker Approval.
+35. Approve and reject branch configurations.
+
+## Governance tests
+
+36. Verify global audit and branch audit are independent.
+37. Verify audit version preservation.
+38. Verify change history.
+39. Verify creator cannot approve their own record where prohibited.
+40. Verify unauthorized branch modification is rejected.
+41. Verify unauthorized global modification is rejected.
+
+## PR integration tests
+
+42. Display only approved active branch items.
+43. Display correct branch Category.
+44. Display effective Purchase UOM.
+45. Validate conversion.
+46. Validate MOQ.
+47. Validate Order Multiple.
+48. Reject inactive branch items.
+49. Preserve historical PR snapshots.
+
+## Regression tests
+
+Verify existing:
+
+- Item search.
+- Item selection.
+- Purchase Requisition.
+- RFQ.
+- Purchase Order.
+- Goods Receipt.
+- Inventory.
+- Existing reports.
+- Existing approval workflows.
+- Existing RBAC.
+- Existing audit history.
+
+Do not mark a test passed unless it actually executed.
+
+# 23. PRODUCTION DEPLOYMENT
+
+The final target is the actual KOSH production environment.
+
+Before deployment:
+
+1. Inspect repository and current branch.
+2. Review changes.
+3. Back up application files.
+4. Back up the database.
+5. Verify backup integrity.
+6. Prepare versioned database migrations.
+7. Test migrations on a representative environment.
+8. Deploy backend changes.
+9. Deploy frontend changes.
+10. Execute migration.
+11. Reconcile legacy data.
+12. Verify approval workflows.
+13. Verify PR integration.
+14. Execute functional tests.
+15. Execute security tests.
+16. Execute regression tests.
+17. Verify monitoring and logging.
+18. Verify rollback readiness.
+19. Deploy through the authorized production release process.
+20. Execute production acceptance tests.
+
+Do not deploy untested migrations directly to production.
+
+Do not report deployment success without actual verification.
+
+# 24. EXECUTION PHASES
+
+PHASE 0 — Existing application and database audit.
+
+PHASE 1 — Architecture and data ownership finalization.
+
+PHASE 2 — Global Item Master redesign.
+
+PHASE 3 — Global UOM governance.
+
+PHASE 4 — Global Item Code and Description Rule Builder redesign.
+
+PHASE 5 — Global Duplicate Detection and Global Audit.
+
+PHASE 6 — Branch Item Availability redesign.
+
+PHASE 7 — Branch UOM, compliance, warehouse, quality and documentation configuration.
+
+PHASE 8 — Branch Rule-Based Audit.
+
+PHASE 9 — Dual Checker Approval workflows.
+
+PHASE 10 — UI/UX redesign following the existing PR screen.
+
+PHASE 11 — PR, RFQ, PO and Inventory integration.
+
+PHASE 12 — Legacy data migration and reconciliation.
+
+PHASE 13 — Automated testing and security hardening.
+
+PHASE 14 — Production deployment and verification.
+
+Do not skip phases.
+
+Do not mark a phase complete based on generated code alone.
+
+# 25. REQUIRED IMPLEMENTATION TRACKER
+
+Maintain a live status tracker.
+
+Use:
+
+- NOT STARTED.
+- AUDITING.
+- BLOCKED.
+- IMPLEMENTING.
+- INSTALLED.
+- INTEGRATED.
+- TESTING.
+- PASSED.
+- FAILED.
+- DEPLOYED.
+- PRODUCTION VERIFIED.
+
+For each item, provide:
+
+- Requirement.
+- Source-code location.
+- Database object.
+- API.
+- Frontend component.
+- Dependencies.
+- Test cases.
+- Actual test result.
+- Remaining limitations.
+
+For BLOCKED items, provide the exact missing access, licence, permission, infrastructure or decision.
+
+For PASSED items, provide actual execution evidence.
+
+For DEPLOYED items, provide deployment evidence.
+
+For PRODUCTION VERIFIED items, provide actual production verification evidence.
+
+# 26. REQUIRED FIRST RESPONSE
+
+Before modifying the application, provide:
+
+1. Existing architecture audit.
+2. Existing database audit.
+3. Existing Global Item Master implementation.
+4. Existing Branch Item Availability implementation.
+5. Current Category dependencies.
+6. Existing UOM architecture.
+7. Existing compliance field ownership.
+8. Existing Rule Builder.
+9. Existing Rule Engine Validation Audit.
+10. Existing approval workflow.
+11. Existing PR integration.
+12. Existing RFQ / PO / Inventory dependencies.
+13. Legacy data migration impact.
+14. Proposed implementation sequence.
+15. Identified technical blockers.
+
+After the audit, begin actual implementation.
+
+Do not repeatedly ask questions that the approved requirements already answer.
+
+If an actual business-critical ambiguity is discovered in the existing system, identify the exact conflict and ask only the necessary clarification.
+
+---
+
+# FINAL EXECUTION DIRECTIVE
+
+Modify the existing KOSH Innovations application.
+
+The Global Item Master must own global item identity, technical specifications, default UOM configuration, global duplicate detection and global change history.
+
+The Branch Item Availability master must own Category, branch UOM overrides, alternatives, attachments, barcode, revision, purchasing configuration, compliance, batch/lot, quality, warehouse, inventory planning and branch change history.
+
+Global Item Code must remain globally unique and shared across all branches.
+
+Purchase UOM must be mandatory.
+
+Global UOM defaults must support authorized branch overrides.
+
+Global Item Creation Audit and Branch Item Activation Audit must remain separate.
+
+Global Checker Approval and Branch Checker Approval must remain separate.
+
+The existing PR screen is the UI/UX reference for both creation workflows.
+
+Existing business transactions and historical references must be preserved.
+
+Implement real frontend functionality, backend enforcement, database changes, migrations, approval workflows, rule-based audit, integrations and automated testing.
+
+**Do not deliver a mockup, trial, demonstration, disconnected module or sandbox-only implementation as the final result.**
+
+**The final acceptance requirement is a fully integrated, tested, production-verified enhancement to the existing KOSH application, with all approved mandatory acceptance tests passing.**
+
+Never claim an operation, test or production deployment has succeeded unless it has actually been executed and verified.
+Skip to main content
+My Kosh Innovations Global IT System
+Gemini
+Gemini 4 Hydrogen
+Canceled
+
+Action history
+Here are key actions taken for the app:
+
+Edited 3 files
+src/modules/settings/security/SecurityGovernanceCenter.tsx
+src/modules/settings/security/SecurityOperationsPanels.tsx
+docs/zero-trust-security-architecture-and-deployment.md
+Built
+Used browser, took 7 screenshots
+
+
+
++3
+Implemented and verified the Enterprise Zero-Trust Visual Data Protection & Leakage Prevention Engine inside the KOSH Innovations ERP application.
+Summary of Implementation
+Hierarchical Policy & Optional Scopes Engine:
+Evaluates Global → Company → Branch → Module with independently toggleable Optional Page/Screen (pageLevelEnabled, default false) and Optional User (userLevelEnabled, default false) scopes plus time-limited Maker-Checker Exceptions.
+Enforces parent MANDATORY locks, explicit control states (INHERIT, ENABLED, DISABLED, MANDATORY, OPTIONAL, NOT_APPLICABLE, AUTHORIZED_EXCEPTION), anti-self-modification (403), cross-company/branch tenant isolation (403), policy versioning, and cache invalidation.
+Security Governance Control Center (General Settings → Security Governance & sidebar navigation):
+19 operational views across Policy Hierarchy, Protection Runtimes (Browser Governance, Visual & Watermark, Webcam & AI Detection, Clipboard & Export, Session & Blackout), and Monitoring & Operations (Exceptions & Approvals, Event Monitor, Incident Management, Policy Simulator, Software & Model Registry, Security Audit History, System Health).
+Workspace Protection Runtimes & Express API (/api/security/*):
+Approved Browser Governance: Chrome/Edge family, minimum version, Secure Context, and Web API capability checks (with explicit technical boundary documentation noting managed browser MDM attestation).
+Dynamic Forensic Watermark & Screen Guard: Identity-bound diagonal overlay (User | EmpCode | Company | Branch | Route | SessionRef) and visibilitychange / blur / focus / pagehide blur-and-lock protection, plus clipboard/print/DevTools deterrence.
+Local AI Webcam Detection: Real @tensorflow/tfjs + @tensorflow-models/coco-ssd (ssdlite_mobilenet_v2) running purely in browser memory using SHA-256 verified local weights (public/models/coco-ssd/) and local WASM binaries (public/tfjs-wasm/) with zero frame upload or video retention.
+Coordinated Session Blackout & Recovery: Server-authoritative BLACKOUT_LOCKED / SUSPENDED / TERMINATED enforcement, re-authentication recovery, and audited administrator override.
+Database Schema & Deployment Documentation:
+Added 19 normalized zt_* tables in server/src/migrations/008_create_zero_trust_security_engine.sql.
+Fixed full-stack Express port resolution in server.ts so the server binds reliably on port 3000 instead of colliding with container PORT=8080.
+Published architecture, threat model, local AI SHA-256 inventory, MySQL backup/migration/rollback guide, and enforcement boundaries in docs/zero-trust-security-architecture-and-deployment.md.
+Implementation & Verification Status
+Area	Status	Verified Result
+Build & TypeScript Lint (compile_applet, lint_applet)	PASSED	Clean Vite production build and tsc --noEmit with 0 errors after final edit
+Full Automated Test Suite (npx --yes tsx --test src/test/*.test.ts server/test/*.test.ts)	PASSED	231 / 231 passed, 0 failed (including /api/security/* RBAC/isolation/blackout/exceptions/incident lifecycle, policy evaluator benchmark < 5ms avg, and real local COCO-SSD tensor inference)
+Live Browser Verification (playwright-cli Chromium, 2 rounds)	PASSED	Verified http://localhost:3000/purchasing/requisitions (watermark + table intact) and /settings/general/security (Optional Page toggle + Simulator Page=ON, Test Blackout + Admin Override unlock, Policy Editor, System Health, 390x844 mobile layout with zero overflow and 0 console/page errors)
+Live Remote MySQL Cutover & Endpoint OS/MDM Policies	BLOCKED (Sandbox Infra)	No remote MySQL server or customer workstation MDM/DLP agent exists in the preview sandbox; DDL migration 008 and honest boundary notices are prepared for production deployment
+The Enterprise Zero-Trust Visual Data Protection & Leakage Prevention Engine is implemented, verified, and integrated into the existing KOSH Innovations platform.
+Key Implemented Capabilities
+Hierarchical Policy Engine & Optional Scopes
+Deterministic policy evaluation across Global → Company → Branch → Module, plus independently toggleable Optional Page/Screen and Optional Individual User overrides (DISABLED by default).
+Enforces explicit states (INHERIT, ENABLED, DISABLED, MANDATORY, OPTIONAL, NOT_APPLICABLE, AUTHORIZED_EXCEPTION), parent MANDATORY locks, anti-self-tampering (403 on modifying own user policy or self-approving exceptions), cross-company/branch isolation, time-bound maker-checker exceptions with automatic expiry reversion, policy versioning, and cache invalidation.
+Full-Stack Express Security API & Database Schema
+Resolved container port collision so the Express + Vite server listens cleanly on port 3000 (APP_PORT / DEFAULT_APP_PORT), exposing /api/security/* for health, hierarchy, policy evaluation, optional scope switches, exceptions, session blackout/re-authentication recovery/admin override, events, incidents, verified software/AI registry, and audit history.
+Prepared normalized MySQL schema migration (19 zt_* tables) alongside backup and rollback instructions.
+Protection Runtimes & Privacy-Preserving Local AI
+Approved Browser Governance: Evaluates Edge/Chrome families, versions, secure context (HTTPS/localhost), and Web API capabilities with transparent MDM boundary notices.
+Forensic Watermark & Visual Shield: Identity-bound diagonal watermark overlay across protected routes (Purchase Requisitions, etc.), focus/visibility-loss masking, clipboard/print deterrence, and coordinated blackout/lockout recovery overlay with Re-Authentication and audited Administrator Override.
+Local Webcam Computer Vision (@tensorflow/tfjs + @tensorflow-models/coco-ssd): Verified local COCO-SSD ssdlite_mobilenet_v2 model weights (18 MB total across model.json + 5 weight shards, SHA-256 verified) and local WebAssembly inference binaries (1.2 MB) running strictly in-memory with zero frame uploads or video storage.
+Security Governance Control Center (General Settings → Security Governance)
+Streamlined 19-section control center covering Policy Hierarchy (Dashboard, Global, Company, Branch, Module, Optional Page, Optional User), Protection Runtimes (Browser, Visual & Watermark, Webcam & AI, Clipboard & Export, Session & Blackout), and Monitoring & Operations (Exceptions & Approvals, Event Monitor, Incident Management, Policy Simulator, Software & Model Registry, Security Audit History, System Health).
+Verification & Implementation Status
+Component / Check	Status	Verified Result
+Static Build & TypeScript (compile_applet + tsc --noEmit)	PASSED	Clean Vite bundle & 0 TypeScript lint errors
+Full Automated Test Suite (tsx --test)	PASSED	231 / 231 tests passing (0 failures), including real local TFJS COCO-SSD model load & tensor inference, policy evaluator latency (< 5ms), RBAC, anti-self-tamper, tenant isolation, maker-checker expiry, and blackout HTTP 423 / re-auth recovery
+Live Browser Verification — Desktop (1440×900)	PASSED	Verified in headless Chromium (0 console/page errors): PR forensic watermark & status bar, Security Dashboard KPIs above fold, Optional Page scope toggle reflected live in Policy Simulator, Session Blackout overlay trigger + Admin Override recovery, Company policy matrix, Software/AI Registry, and System Health
+Live Browser Verification — Mobile (390×844)	PASSED	Responsive vertical reflow verified with zero horizontal overflow
+Production Documentation	PASSED	Architecture, SHA-256 inventory, honest boundaries, and MySQL backup/migration/rollback guide documented
+Live Remote MySQL Execution & Workstation MDM/DLP	BLOCKED (Environment Scope)	No remote MySQL daemon or endpoint MDM agent runs inside this sandbox; runtime executes in Express in-memory store until production MySQL migration 008 and customer MDM policies are applied
+Checkpoint
+[AIS_METADATA_SECTION_START]
+Media attachment: User sent attachment: /assets/aistudio/Paste_November_17__2026_-10_36AM_f2405896 (saved in workspace at /public/assets/aistudio/Paste_November_17__2026-10_36AM_f2405896). Read it with view_file at that path; in shell commands, which run from the workspace root, use the relative path public/assets/aistudio/Paste_November_17__2026-_10_36AM_f2405896. When displaying or embedding this asset in code, reference this local file path directly. Only invoke image generation tools if the user explicitly requests creating or modifying an image.
+[AIS_METADATA_SECTION_END]
+Paste November 17, 2026 - 10:36AM
+Gemini 4 Hydrogen
+Ran for 3m 57s
+
+Action history
+Phase 0 Audit Report & Impact Analysis — Global Item Master & Branch Item Availability
+Status: Phase 0 Audit Complete — No application code or database schema files have been modified yet (strictly honoring Section 3 and Section 26).
+1. Existing Architecture Audit
+Frontend Stack: React + TypeScript SPA (src/App.tsx) using Tailwind CSS and lucide-react. Item, workflow, procurement, and master settings state are persisted primarily in browser localStorage keys (kosh_global_items, kosh_branch_classifications, cip_purchase_requisitions_v1, kosh_rfq_headers_v1, kosh_purchase_orders_v1, kosh_goods_receipts_v1, kosh_enterprise_audit_log_v4) with memory fallbacks for Node unit testing.
+Backend Stack: Express 5 (server/src/app.ts) running on port 3000 via server.ts, mounting /api/health, /api/items, /api/gst, /api/charges, and /api/security.
+Architectural Gap: /api/charges and /api/security use Express-backed backend stores paired with SQL migrations, whereas /api/items (server/src/routes/items.ts) executes direct mysql2 pool queries (getPool()) with no fallback store, no authentication/RBAC middleware, and no branch item availability, UOM, duplicate-detection, or rule-audit endpoints. Frontend src/App.tsx manages items exclusively in React state + localStorage without calling /api/items.
+Governance & Audit Infrastructure: EnterpriseAuditService (src/services/enterpriseAuditService.ts) provides SHA-256 hash-chained append-only logging (AuditEntityType), and rbacPermissionService (src/services/rbacPermissionService.ts) manages central permissions. Neither currently registers granular Global Item / Branch Item / Checker / Rule / Migration permissions or logs global/branch item mutations.
+2. Existing Database Audit
+Migration Runner: server/src/db/migrate.ts applies versioned ^\d+_.+\.sql$ files from server/src/migrations/ under a MySQL GET_LOCK('koshit_schema_migrations', 10) lock and records versions in schema_migrations.
+Important Constraint: server/src/db/migrate.ts line 61 executes one SQL query per file (// Each migration file must contain exactly one SQL statement).
+Existing Item Tables:
+global_items (002_create_global_items.sql): Stores item_id, item_code (unique), item_description, category_code CHAR(2) NULL, type_code, material_form_code, process_code, material_code, colour_code, grade, status, is_active, created_at, updated_at, with composite index ix_global_items_category_type (category_code, type_code).
+item_approval_history (003_create_item_approval_history.sql): Stores approval_id, item_id (FK -> global_items.item_id), action, action_by, comments, created_at.
+Missing Database Entities: No tables exist for uom_master, uom_conversions, global_item_specifications, global_item_attachments, global_duplicate_detections, branch_item_availability, branch_category_assignments, branch_uom_overrides, branch_item_compliance, branch_warehouse_configs, branch_item_alternatives, branch_item_attachments, branch_item_barcodes, branch_item_revisions, item_code_rules, item_description_rules, rule_audit_reports, global_change_history, branch_change_history, or legacy_migration_reconciliation.
+3. Existing Global Item Master Implementation
+Model (src/types/index.ts lines 561–612): GlobalItem mixes global identity (globalItemCode, description, attributes, status, approvalHistory) with branch-level and operational fields: categoryCode, sapSyncInfo, shelfLifeControl, serialNumberControl, warrantyPolicy, procurementControls (moq, orderMultiple, inventoryUom, isServiceItem), and branchAvailability: BranchAvailabilitySetting[].
+Creation Flow (src/modules/items/ItemCreationView.tsx & src/App.tsx):
+Collects category, shelfLifeApplicable/shelfLifeDays/minRemainingShelfLifeDays, serialControlApplicable, warrantyApplicable/warrantyMonths, moq, orderMultiple, inventoryUom, and isServiceItem during Global Item creation.
+Embeds an inline interactive Rule Builder inside creation that resets state locally instead of reading/enforcing centrally published rules.
+handleSaveDraft and handleSubmitForApproval (src/App.tsx lines 464–542) automatically populate branchAvailability with isActive: true across all branches immediately upon Global Item creation.
+Listing & Import (src/modules/items/ItemMasterListView.tsx): Displays, filters, searches, and exports item.categoryCode; bulk CSV import parses categoryCode onto GlobalItem and creates BranchItemClassification defaults without checker approval.
+Custom Specifications (src/modules/items/CustomSpecificationsView.tsx): Manages CustomerManufacturerBrandMaster and CustomerPartModelReference in component-local React state (INITIAL_CUSTOM_SPECIFICATIONS, INITIAL_CUSTOMER_PART_MODEL_REFS) without backend/service persistence.
+Backend (server/src/routes/items.ts): CRUD (GET /, GET /:id, POST /, PUT /:id, GET /:id/approvals) validates and inserts category_code directly onto global_items, lacks Purchase UOM/Inventory UOM, has no technical duplicate check beyond ER_DUP_ENTRY on item_code, and has no server-side submission/approval endpoints.
+4. Existing Branch Item Availability Implementation
+Split & Inconsistent State: Availability is fragmented across two disconnected client structures:
+item.branchAvailability[] inside kosh_global_items (GlobalItem.branchAvailability).
+BranchItemClassification[] in localStorage (kosh_branch_classifications), read/written by BranchAvailabilityView.tsx and BranchCreatedItemsView.tsx.
+Current Screen (src/modules/items/BranchAvailabilityView.tsx):
+Displays a Global Cat column alongside a branch category dropdown.
+Hardcoded Data Violation: Lines 70–88 hardcode categoryNames and roles dictionaries instead of querying Classification/Category Master; line 273 guesses defaults (portalBranchCode === '001' ? 'FG' : ...).
+Broken Persistence: assignedWarehouses (line 22, handleSelectWarehouse line 159) is ephemeral local component state (Record<string, string>) never saved to localStorage or backend, and supports only 1 warehouse per item/branch.
+Missing Capabilities: No Company selector, no Approved-Global-Item gate (shows DRAFT/REJECTED items), no Branch UOM overrides/conversions, no Shelf-Life/Serial/Warranty/MOQ/Order Multiple/Batch/Lot/Quality/Regulatory controls, no Multi-Warehouse Inventory Planning, no Alternative Items, no Attachments, no Barcode/GTIN, no Revision tracking, no Branch Item Activation Audit, and no Branch Checker Approval workflow.
+Branch Catalog (src/modules/items/BranchCreatedItemsView.tsx): Filters solely via isItemAvailableInBranch (src/utils/branchItemHelper.ts), ignoring Global Item approval status and Branch Checker approval.
+5. Current Category Dependencies
+Audit across src/ and server/ identified these active dependencies on global item.categoryCode / category_code:
+DB & API: global_items.category_code (002_create_global_items.sql) and GET/POST/PUT /api/items (server/src/routes/items.ts).
+Code & Description Engines: itemCodeEngine.ts (input.categoryCode, throws "Missing required component '...' for category ..."), itemDescriptionEngine.ts ({CATEGORY} token and required categoryCode), INITIAL_ITEM_CODE_RULES[0] (Category isRequired: true, sequenceScope: 'CATEGORY'), INITIAL_DESCRIPTION_RULES (keyed by categoryCode).
+Seed & Registry: INITIAL_GLOBAL_ITEMS (src/data/seedData.ts), INITIAL_MODULE_REGISTRY (categoryCode field), dashboardCatalogue.ts (GROUP_BY(items.categoryCode)).
+UI Views: ItemCreationView.tsx, ItemMasterListView.tsx, BranchAvailabilityView.tsx, BranchCreatedItemsView.tsx, MyRequestsView.tsx (Category column), ApprovalInboxView.tsx (line 541), DashboardView.tsx (lines 175, 196–200, 833).
+UOM Fallback & PR Defaults: uomConversionService.ts line 50 (itemObj.categoryCode === 'RM' ? 'BAG' : ...), PurchaseCreationModal.tsx lines 287/507/518 (selectedItem.categoryCode).
+Master Data & Procurement Policies: ClassificationsView.tsx (static read-only CLASSIFICATION_DIMENSIONS; "Add Classification Code" button calls alert(...)), prTypeMasterService.ts (normalizeItemCategoryCode, resolveItemCategoryName), BuyerService.getDefaultBuyer (matches itemCategory === categoryCode), inventoryValidationService.ts / inventoryAgingService.ts (company/branch/category policy scoping).
+Existing Unit Tests: src/test/itemCodeEngine.test.ts, src/test/itemDescriptionEngine.test.ts, src/test/classificationDimensions.test.ts.
+6. Existing UOM Architecture
+No UOM Master: There is no UOM Master entity, dimension taxonomy (WEIGHT, VOLUME, COUNT, LENGTH, TIME, AREA, etc.), or management screen.
+Hardcoded Conversion Service (src/services/uomConversionService.ts):
+Hardcodes ITEM_UOM_MAP for only 3 seed codes (RMPAOPOEXLG0001, FGHDMCRGY0002, MAPALBL0003).
+Falls back to guessing purchaseUom from itemObj.categoryCode and ratio (BAG -> 25, BOX -> 10, else 1), defaulting unknown items to EA/BOX ratio 10.
+Lacks numerator, denominator, decimalPrecision, roundingRule, unit compatibility checks (e.g., Mass-to-Volume density requirement), global default conversion storage on GlobalItem, and branch-level Purchase/Inventory UOM overrides.
+Usage: PurchaseCreationModal.tsx locks line UOM to selectedItem.inventoryUom || 'NOS' (does not distinguish Purchase UOM vs Inventory UOM or show conversion preview), while rfqService.ts, purchaseOrderService.ts, goodsReceiptService.ts, futureRfqFloatingService.ts, and marketBenchmarkService.ts call uomConversionService.getUomSnapshot.
+7. Existing Compliance Field Ownership
+All compliance/operational controls are currently misassigned:
+Owned Globally Today (Must Move to Branch Item Availability):
+GlobalItem.shelfLifeControl (isApplicable, shelfLifeDays, minRemainingShelfLifeDays)
+GlobalItem.serialNumberControl (isApplicable, prefix/format)
+GlobalItem.warrantyPolicy (isApplicable, warrantyMonths, warrantyTerms)
+GlobalItem.procurementControls (moq, orderMultiple, inventoryUom, isServiceItem)
+GlobalItem.branchAvailability[] (isStocked, isPurchased, isManufactured, isActive)
+Missing Everywhere (Must Be Added to Branch Item Availability): Batch Tracking, Lot Tracking, Quality Inspection & Inspection Type, Storage Conditions, Regulatory Compliance, Multi-Warehouse Planning (Safety Stock, Reorder Level, Max Stock, Replenishment, Lead Time), Alternative Item References, Document Attachments with expiry/approval, Barcode/GTIN, and Branch Item Revisions.
+8. Existing Rule Builder
+src/modules/settings/RuleBuilderView.tsx:
+Code Rule tab starts from INITIAL_ITEM_CODE_RULES[0], where Category is order: 1, isRequired: true, and default sequenceScope is 'CATEGORY'.
+Description Rule tab is keyed exclusively by categoryCode (selectedDescCategory / simCat).
+Persistence & Lifecycle Gap: Publishing only updates React state + shows a banner (saveSuccessNotice), without persisting rule versions, audit scopes (GLOBAL_ITEM_CREATION vs BRANCH_ITEM_ACTIVATION), or lifecycle states (Draft -> Validate -> Simulate -> Submit for Approval -> Approve -> Publish -> Retire).
+9. Existing Rule Engine Validation Audit
+ItemCreationView.tsx (Rule Engine Validation Audit Modal):
+Runs strictly in frontend component state inside ItemCreationView.
+Check #1 explicitly fails if !category (!category ? 'FAIL' : 'PASS'), coupling Category into global audit.
+Duplicate check is purely frontend exact-match against globalItems.some(i => i.globalItemCode === generatedCode.code).
+Audit reports are ephemeral UI state — never persisted with Audit ID, Rule Version, Evaluated Fields, Timestamp, PASS/WARNING/ERROR/BLOCKED status, or backend enforcement.
+Branch Item Availability Audit: Completely nonexistent.
+10. Existing Approval Workflow
+Global Item Approval: App.tsx sets status: 'SUBMITTED' locally; ApprovalInboxView.tsx merges legacy GlobalItem submissions (SUBMITTED / UNDER_REVIEW) with static INITIAL_WORKFLOW_INSTANCES (using useState, not persistent across reloads).
+Maker-Checker Risk: ApprovalInboxView.tsx computes isSelfSubmission, but has no backend enforcement preventing creators from self-approving, and uses alert(...) for validation remarks.
+Branch Item Approval: Completely absent. Changes in BranchAvailabilityView.tsx immediately write status: 'ACTIVE' into localStorage with zero audit, zero Checker queue, and zero separation between Global Checker and Branch Checker.
+11. Existing PR Integration
+src/modules/requests/PurchaseCreationModal.tsx:
+branchAvailableItems (lines 113–117) calls getBranchActiveItems(allGlobalItems, targetBranch) and falls back to returning allGlobalItems if empty — completely bypassing branch eligibility!
+Does not check GlobalItem.status === 'APPROVED' or Branch Item Availability approval/active status.
+Populates itemCategory from selectedItem.categoryCode, inventoryUom from selectedItem.inventoryUom || 'NOS', and defaultWarehouse via string heuristics (codeUpper.startsWith('RM')) rather than Branch Warehouse Planning.
+Enforces neither MOQ nor Order Multiple on frontend or backend.
+src/services/purchaseRequisitionService.ts: createPR() and submitPR() enforce company/branch ownership, FY/period, Expected Delivery Date policy, PR Type eligibility, and duplicate PRs, but perform no validation of Global Item approval, Branch Item Availability activation, Branch Category consistency, effective UOM/conversion, MOQ, or Order Multiple.
+12. Existing RFQ / PO / Inventory Dependencies
+RFQ (src/services/rfqService.ts & prRfqConversionService.ts): Reads UOM conversions via uomConversionService.getUomSnapshot(itemCode) and stores transaction-level purchaseUom, inventoryUom, conversionRatio, and category snapshots on RfqLineItem.
+PO (src/services/purchaseOrderService.ts): Consumes uomConversionService and preserves purchaseUom, inventoryUom, conversionRatio, itemCategory snapshots on PurchaseOrderLine.
+GRN (src/services/goodsReceiptService.ts): Converts receivedQtyPurchUom -> convertedQtyInvUom via l.conversionRatio || uomSnap.conversionRatio, posts accepted stock to inventoryValidationService, and enforces FY posting gates.
+Inventory Validation & Aging (inventoryValidationService.ts, inventoryAgingService.ts): Stock balances (InventoryBalanceRecord) and batch/lot expiry (InventoryBatchLotRecord) store itemCode, warehouseCode, branchId, uom, itemCategory, batchNo, expiryDate, reusing Branch.warehouses. They do not yet read Branch Item Availability flags (batchTracking, lotTracking, shelfLifeControlled, serialTracking, qualityInspection, preferred/eligible warehouses).
+13. Legacy Data Migration Impact
+Existing seed/runtime records (INITIAL_GLOBAL_ITEMS, INITIAL_BRANCH_ITEM_CLASSIFICATIONS, INITIAL_PRS, INITIAL_RFQS, INITIAL_POS, INITIAL_GOODS_RECEIPTS, INITIAL_INVENTORY_BALANCES) use global items with categoryCode (RM, FG, MA), legacy codes (RMPAOPOEXLG0001, FGHDMCRGY0002, MAPALBL0003), and compliance fields directly on GlobalItem.
+Migration Requirements & Impact:
+Preserve all existing Global Item IDs, Global Item Codes, Descriptions, and historical PR/RFQ/PO/GRN/Inventory transaction snapshots without recalculation.
+Extract categoryCode + compliance (shelfLifeControl, serialNumberControl, warrantyPolicy, moq, orderMultiple, branchAvailability) from each legacy GlobalItem into Branch Item Availability records where (Company, Branch) ownership is unambiguous (e.g., INITIAL_BRANCH_ITEM_CLASSIFICATIONS), and flag ambiguous/unmapped records as MIGRATION_REVIEW_REQUIRED (inactive until verified) without guessing.
+Generate an auditable Migration Reconciliation Report and retain deprecated SQL columns until dependent reports/queries are migrated and verified.
+14. Proposed Implementation Sequence (Phases 0–14)
+Phase 1 — Architecture & Data Ownership: Define TypeScript domain models (src/types/itemMasterGovernance.ts, updating src/types/index.ts), RBAC permission keys in rbacPermissionService.ts, and versioned MySQL SQL migrations (009+) + Express backend persistence store.
+Phase 2 & 3 — Global Item Master & Global UOM Governance: Build UOM Master & Conversion Engine (dimensions, numerator/denominator/factor, precision/rounding, density compatibility), Global Item backend CRUD/service/routes without Category or branch compliance, Global Change History, and Custom Specification Master persistence.
+Phase 4 & 5 — Rule Builder, Duplicate Detection & Global Audit: Redesign itemCodeEngine, itemDescriptionEngine, RuleBuilderView (Draft -> Validate -> Simulate -> Approve -> Publish -> Retire), backend Exact + Technical/MPN/Customer-Part/Similarity Duplicate Detection & Merge, and GLOBAL_ITEM_CREATION Audit Engine.
+Phase 6, 7 & 8 — Branch Item Availability, Category Governance & Branch Audit: Create normalized Branch Item Availability store/API/routes covering Sections A–J (Branch Category unique constraint (globalItemId, companyId, branchId), Branch UOM overrides, all compliance conditionals, Multi-Warehouse Planning, Alternatives with circular-check, Attachments, Barcode/GTIN, Revisions, Availability) and BRANCH_ITEM_ACTIVATION Audit Engine.
+Phase 9 — Dual Checker Approval Workflows: Enforce separate Stage 1 (Global Checker) and Stage 2 (Branch Checker) queues in ApprovalInboxView + backend APIs with strict maker != checker non-self-approval and RBAC isolation.
+Phase 10 — UI/UX Redesign (PR Screen Reference): Redesign ItemCreationView, ItemMasterListView, BranchAvailabilityView, BranchCreatedItemsView, ClassificationsView (replacing alert() with real Category/Dimension + UOM Master CRUD), and DashboardView / MyRequestsView.
+Phase 11 & 12 — Downstream Integration & Legacy Migration: Gate PR item selection (PurchaseCreationModal + PurchaseRequisitionService backend/frontend) on approved active Branch Item Availability with Branch Category, effective UOM/conversion, MOQ, and Order Multiple; preserve RFQ/PO snapshots; align GRN/Inventory; run deterministic Legacy Migration + Reconciliation Report.
+Phase 13 & 14 — Automated Testing, Security Hardening & Browser/Deployment Verification: Execute unit/integration/security tests covering all 49+ scenarios plus full existing regression suite, run Playwright live Chromium UI verification, and document production migration/backup/rollback steps.
+15. Identified Technical Blockers & Clarifications
+Database Engine vs. Sandbox Runtime (BLOCKER / ARCHITECTURE DECISION):
+/server/src/routes/items.ts currently assumes an external MySQL pool (getPool()), which is not running in this local sandbox.
+Resolution: Implement both versioned MySQL .sql migrations (adhering strictly to migrate.ts's one-statement-per-file rule) and a dual-mode backend repository/store (MySQL when pool/env is configured, Express server persistent store when running without remote MySQL) matching /api/charges and /api/security so all Express APIs, RBAC, duplicate checks, and tests run end-to-end here and deploy cleanly to MySQL production.
+Legacy Seed Item Codes vs. New Non-Category Code Rules:
+Existing tests (itemCodeEngine.test.ts, itemDescriptionEngine.test.ts, futureRfqFloating.test.ts) and historical PR/RFQ/PO/GRN seeds rely on existing item codes (RMPAOPOEXLG0001, etc.). We will preserve all legacy Global Item Codes/IDs/transactions intact per Section 20 while removing Category as a mandatory dimension for new Global Item Rules and updating rule/code tests cleanly alongside the new rule versions.
+(No business-critical requirement ambiguities remain open — Sections 1–26 provide complete specifications for Category, UOM, Compliance, Audits, Dual Approvals, UI Reference, and Legacy Migration.)
+Section 25 — Live Implementation Tracker
+Phase / Requirement	Status	Source / Service	DB Object	API	Frontend Component	Dependencies	Test Cases	Actual Result	Remaining Limitations
+P0: Existing App & DB Audit	PASSED	src/*, server/src/*	001–008	/api/items	Item/Settings/PR views	Read-only inspection	Manual code & schema audit	Completed	Remote MySQL not attached in sandbox
+P1: Data Model, RBAC & Migrations	NOT STARTED	types/index.ts, rbacPermissionService.ts	009+ SQL migrations	—	Role Admin	P0	Schema/RBAC tests	Pending	—
+P2–P3: Global Item & UOM Master	NOT STARTED	uomConversionService.ts, global item backend	global_items, uom_*	/api/items, /api/uoms	ItemCreationView, UOM Master	P1	Cases 1–8, 14	Pending	—
+P4–P5: Rule Builder, Duplicate & Global Audit	NOT STARTED	itemCodeEngine, itemDescriptionEngine	item_rules, rule_audits	/api/item-rules, /api/item-audits	RuleBuilderView, ClassificationsView	P2–P3	Cases 9–11	Pending	—
+P6–P8: Branch Availability, Controls & Branch Audit	NOT STARTED	Branch item backend & audit service	branch_item_* tables	/api/branch-items	BranchAvailabilityView, BranchCreatedItemsView	P2–P5	Cases 15–33	Pending	—
+P9–P10: Dual Approval & PR-Style UI Redesign	NOT STARTED	Approval & audit workflow engine	item_approval_history	/api/items/:id/approve, /api/branch-items/:id/approve	ApprovalInboxView, ItemMasterListView, redesigned forms	P6–P8	Cases 12–13, 34–41	Pending	—
+P11–P12: PR/RFQ/PO/GRN Integration & Legacy Migration	NOT STARTED	purchaseRequisitionService, rfqService, purchaseOrderService, goodsReceiptService, inventoryValidationService	legacy_migration_reconciliation	/api/items/migrate-legacy, PR validation	PurchaseCreationModal, PR/Inventory views	P9–P10	Cases 42–49 + Migration	Pending	—
+P13–P14: Automated Suite, Security & Production Guide	NOT STARTED	Full test suite + Playwright + Docs	All tables	All /api/*	All views	P1–P12	49+ new + 231 existing tests	Pending	—
+Ready to proceed with Phase 1 — Architecture & Data Ownership Finalization on your go-ahead (or let me know if you want any adjustments to the audit or MySQL vs. Express store strategy before I begin modifying files).
+Checkpoint
+go-ahead and implement all
+Gemini 4 Hydrogen
+Ran for 3m 28s
+
+Action history
+Here are key actions taken for the app:
+
+Edited 9 files
+src/types/itemMasterGovernance.ts
+server/src/migrations/009_create_global_and_branch_item_governance.sql
+src/types/index.ts
+src/services/rbacPermissionService.ts
+src/services/enterpriseAuditService.ts
+src/services/uomConversionService.ts
+src/services/classificationMasterService.ts
+src/services/itemCodeEngine.ts
+src/services/itemDescriptionEngine.ts
+Quota limits exceeded
+Checkpoint
+check now
+Gemini 4 Hydrogen
+Ran for 0s
+Quota limits exceeded
+Cotinue with @Argon
+Gemini 4 Argon
+Ran for 1h 2s
+
+Action history
+Here are key actions taken for the app:
+
+Edited 24 files
+src/services/itemRuleAndAuditService.ts
+src/data/seedData.ts
+src/services/itemMasterGovernanceService.ts
+src/utils/branchItemHelper.ts
+server/src/db/migrate.ts
+server/src/services/itemGovernanceBackend.ts
+server/src/routes/itemGovernance.ts
+server/src/app.ts
+server.ts
+src/modules/items/ItemCreationView.tsx
+src/modules/items/ItemMasterListView.tsx
+src/modules/items/BranchAvailabilityView.tsx
+src/modules/items/BranchCreatedItemsView.tsx
+src/modules/settings/ClassificationsView.tsx
+src/modules/settings/RuleBuilderView.tsx
+src/modules/approvals/ApprovalInboxView.tsx
+src/modules/requests/MyRequestsView.tsx
+src/modules/dashboard/DashboardView.tsx
+src/App.tsx
+src/modules/requests/PurchaseCreationModal.tsx
+src/services/purchaseRequisitionService.ts
+src/test/globalAndBranchItemGovernance.test.ts
+server/test/itemGovernanceRoutes.test.ts
+docs/global-and-branch-item-governance-deployment.md
+The request timed out. Please try again.
+Checkpoint
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+STOP all new feature development temporarily.
+The existing KOSH Global IT System application is failing to build and the development server is not starting.
+The errors displayed are:
+Build failed. Please verify your build compile configs.
+The dev server didn't start.
+Your application failed to start.
+The current error indicator shows 13 errors and 112 additional warning/information items.
+I need you to perform a systematic build failure diagnosis and repair.
+STRICT INSTRUCTIONS:
+Inspect the complete current build output and retrieve the actual compiler errors, including file names, line numbers and error messages.
+Identify the FIRST/root compilation error. Do not start fixing random errors.
+Inspect package.json, TypeScript configuration, Vite configuration, imports, exports, dependencies and affected source files.
+Check for:
+TypeScript compilation errors.
+Missing modules or dependencies.
+Incorrect import paths.
+Missing exports.
+Duplicate declarations.
+Invalid JSX/TSX.
+Incorrect component properties.
+Undefined variables and functions.
+Invalid configuration.
+Dependency version conflicts.
+Circular imports.
+Build script failures.
+Inspect the changes made immediately before the build started failing.
+Identify whether the failure was introduced by the latest implementation changes.
+Fix the root cause using the smallest safe code changes.
+Do not remove existing features, modules, permissions, security controls, routes or business logic to make the build pass.
+Do not replace real functionality with mock data or placeholder components.
+Do not rewrite the entire application.
+Do not upgrade or downgrade dependencies without verifying compatibility.
+Do not change production configuration.
+Preserve all existing database records and application settings.
+REPAIR PROCEDURE:
+A. Retrieve the complete build errors.
+B. Prepare an error report with:
+Error number.
+File path.
+Line and column.
+Actual error message.
+Root cause.
+Proposed correction.
+C. Fix the root errors.
+D. Re-run the project's existing dependency and build checks using its actual package scripts.
+E. Start the development server.
+F. Verify that the application opens successfully.
+G. Check the browser console and application runtime for new errors.
+H. Run regression checks on existing application navigation and major modules.
+I. Report the final result with actual execution evidence.
+IMPORTANT:
+Do not report SUCCESS merely because code was edited.
+The final status must be one of:
+BUILD_FIXED_AND_VERIFIED
+BUILD_FAILED
+BLOCKED
+If you cannot access the complete compiler output, tell me exactly how to retrieve it. Do not guess the cause.
+Gemini 4 Argon
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Continue @Flash
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+rebuild
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I need to recover and rebuild the existing KOSH Innovations Global IT System.
+Do not create a new application.
+Do not delete, reset, overwrite or recreate any existing source files.
+First inspect the current project files and build configuration.
+Identify the root cause of the development server startup failure.
+Check package.json, build scripts, dependencies, TypeScript, Vite configuration, imports, exports and all compiler errors.
+Fix only the actual root causes.
+After correction:
+Run the existing dependency installation command if required.
+Run the project's build command.
+Resolve all compilation errors.
+Start the development server.
+Verify the Preview loads.
+Check the browser console.
+Confirm that existing navigation and major modules still work.
+Do not remove existing functionality to make the build pass.
+Return the actual commands, execution results, remaining errors and final build status.
+Do not publish the application.
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini 3.5 Flash Lite
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Manual edit
+Edited 1 file
+metadata.json
+Checkpoint
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Checkpoint
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Checkpoint
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Inspect the project's 'package.json' and 'vite.config.ts' files, and run 'npm install' followed by 'npm run build' to capture and identify the specific compiler errors currently causing the build failure.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Run 'npm install' to ensure dependencies are resolved, then run 'npm run build' and output the full error log to identify the root cause of the build failure.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Run 'npm install' to ensure dependencies are up-to-date and execute 'npm run build' to capture and output the full, detailed error log for debugging.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Restored from
+Snapshot from Cotinue with @Argon
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Manual edit
+Edited 1 file
+metadata.json
+Checkpoint
+I made some changes.
+Manual edit
+Edited 1 file
+branch_catalog_PDY_1794554051865.pdf
+Checkpoint
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Manual edit
+Edited 10 files
+branch_catalog_PDY_1794554224957.pdf
+branch_catalog_PDY_1794554254744.pdf
+branch_catalog_PDY_1794554900082.pdf
+branch_catalog_PDY_1794559729469.pdf
+branch_catalog_PDY_1794560037947.pdf
+branch_catalog_PDY_1794826688028.pdf
+branch_catalog_PDY_1794828098314.pdf
+branch_catalog_PDY_1794828813312.pdf
+branch_catalog_PDY_1794828837460.pdf
+branch_catalog_PDY_1794828865066.pdf
+Checkpoint
+I made some changes.
+Manual edit
+Edited 14 files
+branch_catalog_PDY_1794828970704.pdf
+branch_catalog_PDY_1794832788091.pdf
+branch_catalog_PDY_1794832918386.pdf
+branch_catalog_PDY_1794833065365.pdf
+branch_catalog_PDY_1794834024785.pdf
+branch_catalog_PDY_1794834509788.pdf
+branch_catalog_PDY_1794886669973.pdf
+branch_catalog_PDY_1794887977854.pdf
+branch_catalog_PDY_1794888268883.pdf
+branch_catalog_PDY_1794890126500.pdf
+branch_catalog_PDY_1794891103475.pdf
+branch_catalog_PDY_1794891290356.pdf
+branch_catalog_PDY_1794891751483.pdf
+branch_catalog_PDY_1794896483273.pdf
+Checkpoint
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Manual edit
+Edited 1 file
+src/services/enterpriseAuditService.ts
+Checkpoint
+Fix the errors in the app
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Run 'npm install' to ensure dependencies are resolved, then run 'npm run build' to capture and output the full error log, then report the specific compiler errors including file paths and line numbers.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+Restored from
+2026-11-17T05:19:17.707554Z
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+There was an unexpected error. Finish what you were doing.
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Checkpoint
+The dev server didn't start, please fix it
+Gemini Flash-Lite Latest
+Ran for 0s
+Build failed. Please verify your build compile configs.
+I made some changes.
+Manual edit
+Edited 1 file
+server/src/config/env.ts
+Checkpoint
+Suggestions
+Make changes, add new features, ask for anything
+

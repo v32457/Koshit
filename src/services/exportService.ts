@@ -347,10 +347,63 @@ function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+export interface ScopedExportOptions extends ExportTableData {
+  format: 'pdf' | 'excel' | 'word' | 'csv';
+  exportScope: 'CURRENT_PAGE' | 'ALL_FILTERED';
+  maxRecordsLimit?: number;
+  maxSizeBytesLimit?: number;
+}
+
+export async function executeScopedExport(
+  options: ScopedExportOptions
+): Promise<{ success: boolean; exportedCount: number; message: string }> {
+  const maxRecords = options.maxRecordsLimit ?? 50000;
+  const maxBytes = options.maxSizeBytesLimit ?? 15 * 1024 * 1024;
+
+  if (options.rows.length > maxRecords) {
+    return {
+      success: false,
+      exportedCount: 0,
+      message: `Export blocked: ${options.rows.length.toLocaleString()} records exceeds maximum configured export limit of ${maxRecords.toLocaleString()} records.`,
+    };
+  }
+
+  const estimatedBytes =
+    options.headers.join(',').length +
+    options.rows.reduce((sum, r) => sum + r.map((c) => String(c ?? '')).join(',').length + 4, 0);
+
+  if (estimatedBytes > maxBytes) {
+    return {
+      success: false,
+      exportedCount: 0,
+      message: `Export blocked: estimated payload size (${(estimatedBytes / (1024 * 1024)).toFixed(2)} MB) exceeds configured maximum limit.`,
+    };
+  }
+
+  const scopeSuffix =
+    options.exportScope === 'CURRENT_PAGE' ? 'Current Page' : 'All Filtered Records';
+  const enrichedData: ExportTableData = {
+    ...options,
+    scopeLabel: options.scopeLabel
+      ? `${options.scopeLabel} | Export Scope: ${scopeSuffix} (${options.rows.length} rows)`
+      : `Export Scope: ${scopeSuffix} (${options.rows.length} rows)`,
+    filenamePrefix: `${options.filenamePrefix}_${options.exportScope === 'CURRENT_PAGE' ? 'page' : 'all'}`,
+  };
+
+  await executeExport(options.format, enrichedData);
+  return {
+    success: true,
+    exportedCount: options.rows.length,
+    message: `Exported ${options.rows.length} record(s) (${scopeSuffix}) as ${options.format.toUpperCase()}.`,
+  };
+}
+
 export const exportService = {
   exportToCsv,
   exportToExcel,
   exportToWord,
   exportToPdf,
   executeExport,
+  executeScopedExport,
 };
+

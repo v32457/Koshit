@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { InPortalNotification, User } from '../../types';
 import { INITIAL_IN_PORTAL_NOTIFICATIONS } from '../../data/communicationSeed';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Bell,
   CheckCircle2,
@@ -30,17 +32,31 @@ export const NotificationCentreView: React.FC<NotificationCentreViewProps> = ({
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredNotifs = notifications.filter((n) => {
-    if (activeCategory !== 'ALL' && n.category !== activeCategory) return false;
-    if (priorityFilter !== 'ALL' && n.priority !== priorityFilter) return false;
-    if (
-      searchQuery &&
-      !n.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !n.message.toLowerCase().includes(searchQuery.toLowerCase())
-    ) {
-      return false;
-    }
-    return true;
+  const filteredNotifs = useMemo(
+    () =>
+      notifications.filter((n) => {
+        if (activeCategory !== 'ALL' && n.category !== activeCategory) return false;
+        if (priorityFilter !== 'ALL' && n.priority !== priorityFilter) return false;
+        if (
+          searchQuery &&
+          !n.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !n.message.toLowerCase().includes(searchQuery.toLowerCase())
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [notifications, activeCategory, priorityFilter, searchQuery]
+  );
+
+  const notifGrid = useStandardDataGrid({
+    gridId: 'comm-notification-centre',
+    userId: currentUser?.id,
+    data: filteredNotifs,
+    defaultSortField: 'createdAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: `${activeCategory}|${priorityFilter}|${searchQuery}`,
   });
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
@@ -162,12 +178,12 @@ export const NotificationCentreView: React.FC<NotificationCentreViewProps> = ({
         </div>
 
         <div className="divide-y divide-slate-100">
-          {filteredNotifs.length === 0 ? (
+          {notifGrid.pagedData.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-xs">
               No notifications match your current category or search criteria.
             </div>
           ) : (
-            filteredNotifs.map((notif) => {
+            notifGrid.pagedData.map((notif) => {
               return (
                 <div
                   key={notif.id}
@@ -247,6 +263,16 @@ export const NotificationCentreView: React.FC<NotificationCentreViewProps> = ({
           )}
         </div>
       </div>
+      <DataGridFooter
+        currentPage={notifGrid.currentPage}
+        totalPages={notifGrid.totalPages}
+        pageSize={notifGrid.pageSize}
+        totalRecords={notifGrid.totalRecords}
+        onPageChange={notifGrid.setCurrentPage}
+        onPageSizeChange={notifGrid.setPageSize}
+        pageSizeOptions={notifGrid.pageSizeOptions}
+        defaultSortNotice="Newest Notifications First (DESC)"
+      />
     </div>
   );
 };

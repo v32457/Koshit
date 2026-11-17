@@ -1,0 +1,1505 @@
+# KOSH INNOVATIONS — MASTER IMPLEMENTATION PROMPT
+# ZERO-TRUST SECURITY GOVERNANCE, GLOBAL MASTER CONTROL, INCIDENT MANAGEMENT & GENERAL SETTINGS CONSOLIDATION
+
+**Project:** My Kosh Innovations Global IT System  
+**Application:** Existing KOSH Enterprise Application  
+**Implementation Type:** Existing Application Enhancement — Full Stack  
+**Priority:** Critical / Enterprise Security Governance  
+**Target:** Production-Ready Implementation
+
+---
+
+# PART 1 — ROLE, OBJECTIVE AND IMPLEMENTATION RULES
+
+## 1. Your role
+
+Act as the Lead Enterprise Cybersecurity Architect, Zero-Trust Security Architect, Full-Stack Software Engineer, Database Architect, UI/UX Architect, DevSecOps Engineer and QA Automation Lead for Kosh Innovations.
+
+Your responsibility is to inspect, correct, enhance, integrate, test and prepare the existing KOSH Global IT System for production.
+
+You must work on the existing application.
+
+**Do not create a new application, parallel security system, duplicate master modules or isolated prototype.**
+
+Reuse the existing:
+
+- Application architecture.
+- Frontend framework and design system.
+- Backend services and APIs.
+- Database and existing records.
+- Authentication and authorization.
+- RBAC and user administration.
+- Company and branch hierarchy.
+- Maker-Checker approval workflows.
+- Rule engine.
+- Audit infrastructure.
+- Email configuration.
+- Notification centre.
+- Software and Model Registry.
+- General Settings architecture.
+- Existing deployment process.
+
+## 2. Mandatory engineering principles
+
+1. Inspect before modifying.
+2. Verify every assumption against the actual source code and runtime.
+3. Never invent file names, database tables, APIs, model paths or configuration values.
+4. Never create mock data to make the interface appear functional.
+5. Never display fabricated success indicators.
+6. Never claim a model is installed or verified without actual verification.
+7. Never claim an email has been delivered when it has only been queued.
+8. Never claim a security control prevents an activity when it only detects or logs it.
+9. Never delete existing data, security incidents, approvals or audit history.
+10. Use reversible database migrations.
+11. Preserve existing business functionality and backward compatibility.
+12. Use real-time backend state rather than hardcoded frontend values.
+13. Follow the existing KOSH UI/UX theme.
+14. Do not introduce unapproved commercial APIs or external data transmission.
+15. Do not mark unexecuted tests as PASSED.
+
+If access to the source code, database, infrastructure, email server or deployment environment is unavailable, explicitly report the blocker. Do not pretend to have completed that work.
+
+---
+
+# PART 2 — EXISTING APPLICATION AUDIT
+
+## 3. Mandatory initial technical audit
+
+Before implementation, inspect the complete existing application.
+
+Identify:
+
+### Frontend
+- Main application layout.
+- Navigation and sidebar configuration.
+- Security Governance components.
+- General Settings components.
+- Watermark components.
+- Browser monitoring components.
+- Session and blackout components.
+- Incident management screens.
+- Policy configuration screens.
+- Notification screens.
+- Model Registry screens.
+- Existing theme and design tokens.
+
+### Backend
+- Authentication.
+- RBAC.
+- Policy evaluation engine.
+- Session management.
+- Security event services.
+- Incident services.
+- Email notification services.
+- Approval workflow services.
+- Audit services.
+- File and evidence management.
+- Model registry and runtime integration.
+- Cache and policy propagation mechanisms.
+
+### Database
+- User and employee masters.
+- Reporting manager relationships.
+- Company and branch records.
+- Security policies.
+- Policy versions.
+- User overrides.
+- Security events.
+- Security incidents.
+- Approval records.
+- Evidence references.
+- Email delivery records.
+- Audit records.
+- General Settings master data.
+
+### Infrastructure
+- Application hosting.
+- Backend services.
+- Database.
+- Email/SMTP provider.
+- Model runtime.
+- Model storage.
+- CPU/GPU availability.
+- External network dependencies.
+- Existing deployment and backup process.
+
+### Required audit report
+
+Return:
+
+1. Existing architecture summary.
+2. Exact watermark implementation source.
+3. Exact blackout trigger and event handler.
+4. Actual backend enforcement status.
+5. Actual AI model identity and installation status.
+6. Current email configuration.
+7. Current employee-to-manager mapping.
+8. Existing incident and audit data model.
+9. Existing approval and RBAC architecture.
+10. Existing General Settings and navigation architecture.
+11. Exact files, APIs and database objects affected.
+12. Backward compatibility risks.
+13. Implementation sequence.
+14. Test plan.
+15. Infrastructure and access blockers.
+
+Do not begin with replacement UI code. First identify the actual implementation.
+
+---
+
+# PART 3 — WATERMARK REMOVAL AND KOSH UI/UX STANDARDIZATION
+
+## 4. Remove visible watermark from user-facing screens
+
+The existing application displays repeated diagonal watermark text across the interface.
+
+Remove this visible watermark from normal end-user screens.
+
+First identify whether it originates from:
+
+- Global application layout.
+- Security Governance overlay.
+- Dynamic forensic watermark component.
+- CSS background.
+- SVG or canvas rendering.
+- Screenshot protection component.
+- Development/debugging overlay.
+- Third-party library.
+
+Remove the visible diagonal watermark from:
+
+- Security Governance.
+- Dashboards.
+- General Settings.
+- Forms and grids.
+- Modals and dialogs.
+- Reports and exports, subject to approved document protection policy.
+- Protected workspace.
+- Blackout and recovery screens.
+
+Do not replace it with another visible watermark.
+
+Do not leave an invisible overlay that blocks mouse, keyboard or application interaction.
+
+### Preserve security auditing
+
+Removing the visible watermark must not remove security traceability.
+
+Continue recording appropriate metadata:
+
+- User ID.
+- Session ID.
+- Company and branch.
+- Resource/document reference.
+- Timestamp.
+- Policy version.
+- Access and export events.
+- Incident reference.
+
+Do not delete historical audit records.
+
+---
+
+# PART 4 — ZERO-TRUST SECURITY GOVERNANCE ARCHITECTURE
+
+## 5. Governance hierarchy
+
+Implement and preserve this hierarchy:
+
+GLOBAL  
+↓  
+COMPANY  
+↓  
+BRANCH  
+↓  
+MODULE  
+↓  
+PAGE / SCREEN  
+↓  
+OPTIONAL USER
+
+The effective policy must be calculated and enforced by the backend.
+
+A lower-level policy must not override a mandatory restriction imposed by a higher-level policy.
+
+Each policy must display its effective state:
+
+- INHERITED
+- OVERRIDDEN
+- DISABLED
+- ENFORCED
+- PENDING APPROVAL
+- PARTIALLY APPLIED
+- FAILED
+
+Optional Page/Screen and User overrides must remain configurable.
+
+Preserve the existing policy hierarchy and Maker-Checker model.
+
+---
+
+# PART 5 — GLOBAL SECURITY GOVERNANCE MASTER ENABLE/DISABLE
+
+## 6. Mandatory global master switch
+
+Implement one authoritative Global Security Governance Enable/Disable control.
+
+### Location
+
+Governance & System Settings → Security Governance → Security Dashboard / Global Baseline Policy.
+
+Display:
+
+- ZERO-TRUST SECURITY GOVERNANCE.
+- Global Status: ENABLED / DISABLED.
+- Master Enable/Disable control.
+- Current policy version.
+- Last modified by.
+- Last modified date and time.
+- Approval status.
+- Effective company and branch scope.
+- Policy propagation status.
+
+This control must govern the enforcement of all policies under the Zero-Trust Security Governance hierarchy.
+
+## 7. Global ENABLED behaviour
+
+When enabled:
+
+- Activate approved Global Baseline Security Policy.
+- Enforce applicable Company policies.
+- Enforce applicable Branch policies.
+- Enforce applicable Module policies.
+- Enforce configured Page/Screen policies.
+- Enforce authorized User-specific policies.
+- Activate configured browser governance.
+- Activate configured visual and data protection controls.
+- Activate configured clipboard and export controls.
+- Activate configured session and blackout controls.
+- Activate security event monitoring.
+- Activate incident detection.
+- Activate configured compliance notification workflows.
+
+Only approved, published and effective policies should be enforced.
+
+## 8. Global DISABLED behaviour
+
+When disabled:
+
+- Stop enforcement of policies governed by this master switch.
+- Stop new policy-triggered blackouts caused solely by disabled policies.
+- Stop generating new violations solely because disabled policy conditions were encountered.
+- Preserve existing security incidents.
+- Preserve existing evidence.
+- Preserve all audit history.
+- Do not automatically release existing security locks.
+- Do not remove existing approvals or restrictions.
+- Do not disable mandatory platform security safeguards.
+
+The following must remain active even when Global Governance is disabled:
+
+- Authentication.
+- Authorization.
+- RBAC.
+- User identity verification.
+- Company isolation.
+- Branch isolation.
+- API authorization.
+- Audit logging.
+- Mandatory platform security controls.
+- Existing incident and evidence records.
+
+Display this warning:
+
+"Global Security Governance is disabled. Configured visual and data protection enforcement policies are currently inactive. Authentication, authorization, RBAC, audit logging and mandatory platform security controls remain active."
+
+## 9. Policy inheritance rules
+
+1. Global Disabled disables descendant governance enforcement, except mandatory platform safeguards.
+2. Company Disabled disables applicable enforcement within that company.
+3. Branch Disabled disables applicable enforcement within that branch.
+4. Module Disabled disables applicable enforcement within that module.
+5. Page/Screen and User overrides require authorization from the parent policy.
+6. A child policy cannot activate enforcement when its parent is disabled.
+7. A child policy cannot bypass mandatory parent restrictions.
+8. Effective policy state must be calculated server-side.
+9. Frontend state must reflect verified backend state.
+
+## 10. Maker-Checker approval
+
+Global Enable/Disable is a critical administrative action.
+
+Require:
+
+- Authorized administrator to initiate.
+- Independent authorized Checker to approve.
+- Mandatory reason.
+- Change reference.
+- Effective date/time.
+- Optional expiry date/time for temporary disablement.
+- Confirmation before execution.
+- Immutable audit record.
+
+The initiator cannot approve their own request.
+
+Reuse the existing KOSH Maker-Checker and RBAC infrastructure.
+
+## 11. Emergency disable
+
+Provide a separate, permission-controlled Emergency Disable mechanism.
+
+Require:
+
+- Emergency privilege.
+- Incident or change reference.
+- Mandatory business justification.
+- Affected scope.
+- Initiator identity.
+- Start time.
+- Expiry time.
+- Administrator notification.
+- Independent post-action review.
+
+Emergency disable must not bypass authentication, authorization, RBAC, tenant isolation or audit logging.
+
+When the expiry time is reached, restore the previously approved policy state only if safe and authorized.
+
+If the prior policy configuration is unsafe, retain a controlled state and escalate to the security administrator.
+
+## 12. Policy propagation
+
+After an approved change:
+
+1. Validate authorization.
+2. Persist the new policy version.
+3. Invalidate relevant policy caches.
+4. Propagate the new policy to applicable backend services.
+5. Refresh active sessions according to policy.
+6. Verify the effective state.
+7. Record propagation results.
+8. Notify configured administrators.
+
+Do not display SUCCESS until the backend confirms the effective state.
+
+If propagation fails, display PARTIALLY_APPLIED or FAILED, identify affected services and preserve the last known safe state.
+
+## 13. Global dashboard
+
+Display actual database/runtime values for:
+
+- Global Governance Status.
+- Active Company Policies.
+- Active Branch Policies.
+- Active Module Policies.
+- Active Page/Screen Overrides.
+- Active User Overrides.
+- Disabled Policies.
+- Pending Enable/Disable Approvals.
+- Active Security Incidents.
+- Pending Investigations.
+- Pending Release Approvals.
+- Last Policy Change.
+- Policy Propagation Health.
+
+No hardcoded counts.
+
+---
+
+# PART 6 — SESSION LOCKOUT, BLACKOUT AND RECOVERY
+
+## 14. Correct the existing unexplained blackout
+
+The current screen displays:
+
+- Incident Ref: LOCAL-GUARD.
+- Policy Version: v2.
+- Trigger: Protected workspace locked when tab visibility became hidden.
+- Protected workspace data and backend APIs suspended.
+- Resume Protected Workspace button.
+
+Trace the actual event handler, policy evaluation and backend enforcement.
+
+Verify whether the lock is:
+
+- Frontend-only.
+- Backend-enforced.
+- Both frontend and backend.
+
+Do not assume the message accurately describes the actual backend behaviour.
+
+## 15. Configurable session and blackout policy
+
+Location:
+
+Security Governance → Global Baseline Policy → Session & Blackout.
+
+Support:
+
+- Browser tab visibility detection.
+- Browser window focus loss.
+- Session inactivity timeout.
+- Explicit user lock.
+- Repeated unauthorized access attempts.
+- Unauthorized navigation.
+- Session termination.
+- Temporary protected-workspace lock.
+- Automatic recovery where explicitly permitted.
+- Manual security administrator release.
+- Violation severity and thresholds.
+
+Each event must support configurable actions:
+
+1. LOG_ONLY
+2. WARN_USER
+3. REQUIRE_REAUTHENTICATION
+4. TEMPORARY_LOCK
+5. BLOCK_SENSITIVE_ACTION
+6. TERMINATE_SESSION
+7. CREATE_SECURITY_INCIDENT
+
+Do not treat every ordinary tab visibility change as a confirmed violation.
+
+Provide configurable grace periods, thresholds and escalation rules.
+
+## 16. Lock screen
+
+Follow the KOSH application theme.
+
+Display:
+
+- Incident reference.
+- Lock reason.
+- Event timestamp and timezone.
+- Policy version.
+- Session status.
+- Investigation status.
+- User instructions.
+- Authorized recovery action.
+
+Do not expose sensitive internal policy rules or other users' information.
+
+The Resume button must not bypass an active security hold.
+
+Recovery must follow applicable policy, including reauthentication and required approvals.
+
+Do not claim backend services are suspended unless this has actually been enforced and verified.
+
+---
+
+# PART 7 — AI MODEL IDENTIFICATION AND LOCAL VERIFICATION
+
+## 17. Verify the existing AI model
+
+The current screen displays:
+
+`Model *2.2.3 verified locally`
+
+This is insufficient evidence.
+
+Identify the actual:
+
+1. Model name.
+2. Model version.
+3. Provider/source.
+4. Purpose.
+5. Runtime/framework.
+6. Model file location.
+7. File size.
+8. File format.
+9. SHA-256 checksum.
+10. Installation status.
+11. Local or remote inference mode.
+12. Internet connectivity requirements.
+13. External data transmission behaviour.
+14. Licence and commercial-use restrictions.
+15. CPU/GPU and memory requirements.
+
+## 18. Model download and installation rules
+
+Do not download a replacement model simply to display a verified status.
+
+First inspect existing model files and runtime.
+
+If a required model is missing:
+
+- Identify the exact supported model.
+- Verify its official source.
+- Verify licence and permitted use.
+- Verify system compatibility.
+- Download only from an approved source.
+- Validate SHA-256 checksum.
+- Record installation path.
+- Test real local inference.
+- Verify network behaviour.
+
+Do not transmit protected user data to unapproved external services.
+
+If the model cannot be identified, display:
+
+`MODEL STATUS: NOT VERIFIED`
+
+Never fabricate a model name, version or installation path.
+
+## 19. Model Registry integration
+
+Integrate with the existing KOSH Software & Model Registry.
+
+Support statuses:
+
+- NOT_INSTALLED
+- DOWNLOAD_PENDING
+- INSTALLING
+- INSTALLED
+- CHECKSUM_FAILED
+- LICENCE_REVIEW_REQUIRED
+- CONFIGURATION_REQUIRED
+- INFERENCE_TEST_PENDING
+- VERIFIED_LOCAL
+- VERIFIED_REMOTE
+- FAILED
+- DEPRECATED
+
+Only mark VERIFIED_LOCAL after actual local inference and integrity verification.
+
+If the model is not required for a particular control, do not create an artificial model dependency.
+
+---
+
+# PART 8 — AUTOMATED COMPLIANCE VIOLATION EMAILS
+
+## 20. Notification architecture
+
+Implement server-side email notifications for confirmed security and compliance violations.
+
+Use the existing KOSH Email Configuration, Notification Centre, Email Templates and employee/user master wherever possible.
+
+Do not build a separate notification platform.
+
+## 21. Recipients
+
+Primary recipient:
+
+- Affected employee's registered corporate email address.
+
+CC recipients:
+
+- Employee's reporting manager.
+- Configured security administrators.
+- Optional compliance officers.
+- Other authorized recipients.
+
+Recipient configuration must be administrator-controlled.
+
+Resolve manager identity using the actual employee/organization hierarchy.
+
+Never fabricate email addresses.
+
+## 22. Configurable notification controls
+
+Provide:
+
+- Enable/disable employee notification.
+- Enable/disable reporting manager CC.
+- Enable/disable administrator CC.
+- Enable/disable compliance officer CC.
+- Configurable additional recipients.
+- Severity thresholds.
+- Escalation delays.
+- Retry count.
+- Retry interval.
+- Email template selection.
+- Language selection where supported.
+
+Validate email addresses before sending.
+
+## 23. Notification triggers
+
+Support configurable notifications for:
+
+- Confirmed data leakage violations.
+- Unauthorized data export.
+- Repeated prohibited clipboard operations where detectable.
+- Policy bypass attempts.
+- Unauthorized access attempts.
+- Confirmed session compromise indicators.
+- Security blackout activation.
+- Unauthorized administrative override.
+- Repeated failed authentication.
+- Other configured compliance violations.
+
+Do not send a violation email for every ordinary tab switch unless the approved policy explicitly defines that event as reportable.
+
+## 24. Email contents
+
+Include:
+
+- KOSH Innovations branding.
+- Incident reference.
+- Violation category.
+- Severity.
+- Affected employee.
+- Employee ID, where authorized.
+- Department.
+- Company and branch.
+- Reporting manager.
+- Event timestamp and timezone.
+- Protected module/resource.
+- Policy name and version.
+- Event description.
+- Action taken.
+- Investigation status.
+- Required employee response.
+- Security team contact information.
+- Authorized incident record link.
+
+Do not include passwords, authentication tokens, confidential documents or unnecessary sensitive data.
+
+Generate all content from actual incident records.
+
+## 25. Email delivery audit
+
+Record:
+
+- Incident ID.
+- Recipient.
+- Recipient role.
+- To/CC designation.
+- Template version.
+- Provider configuration reference.
+- Attempt timestamp.
+- Provider/API response.
+- Retry count.
+- Final delivery status.
+- Failure reason.
+
+Use these delivery states:
+
+- QUEUED
+- SENT_TO_PROVIDER
+- ACCEPTED_BY_PROVIDER
+- DELIVERY_CONFIRMED
+- FAILED
+- RETRY_PENDING
+
+Use DELIVERY_CONFIRMED only where the provider supports actual delivery confirmation.
+
+Use a reliable server-side notification queue and idempotency controls.
+
+Do not mark queued messages as delivered.
+
+During development and UAT, use approved test recipients. Do not send real incident notifications to employees without authorization.
+
+---
+
+# PART 9 — SECURITY INCIDENT INVESTIGATION AND CONTROLLED RELEASE
+
+## 26. Persistent incident management
+
+Every protected workspace lock or reportable violation must create a persistent incident record.
+
+Use the existing KOSH Incident Management module if available.
+
+Do not create duplicate incident systems.
+
+## 27. Incident lifecycle
+
+Implement controlled transitions:
+
+1. DETECTED
+2. RECORDED
+3. NOTIFICATION_PENDING
+4. NOTIFICATION_SENT
+5. ACKNOWLEDGED
+6. UNDER_INVESTIGATION
+7. EVIDENCE_REVIEW
+8. JUSTIFICATION_REQUESTED
+9. JUSTIFICATION_RECEIVED
+10. REVIEW_PENDING
+11. APPROVED_FOR_RELEASE
+12. RELEASED
+13. REJECTED
+14. ESCALATED
+15. CLOSED
+
+Enforce valid state transitions server-side.
+
+Do not allow users to arbitrarily change incident status.
+
+## 28. Incident record
+
+Capture:
+
+- Unique incident ID.
+- User and session identifiers.
+- Company and branch.
+- Department.
+- Reporting manager.
+- Incident category.
+- Severity.
+- Policy ID and version.
+- Detection timestamp.
+- Event timestamp.
+- Trigger source.
+- Actual detected activity.
+- Technical evidence references.
+- User explanation.
+- Manager comments.
+- Security investigator comments.
+- Corrective action.
+- Preventive action.
+- Final decision.
+- Decision reason.
+- Release approver.
+- Release timestamp.
+- Closure approver.
+- Closure timestamp.
+
+## 29. Employee justification
+
+Provide a secure incident-response screen.
+
+The employee can submit:
+
+- Explanation.
+- Business purpose.
+- Whether activity was intentional.
+- Supporting documents, if permitted.
+- Corrective action or acknowledgement.
+
+The employee cannot edit the original detection event, technical evidence or audit record.
+
+Store each justification as a separate timestamped record.
+
+## 30. Investigation roles
+
+Use existing KOSH Maker-Checker and RBAC.
+
+- Affected user: submits justification.
+- Reporting manager: reviews and comments.
+- Security investigator: investigates and recommends.
+- Authorized security approver: approves or rejects release.
+- Security administrator: performs only authorized actions.
+
+The person who triggered the incident cannot approve their own release.
+
+Enforce any stricter existing KOSH approval hierarchy.
+
+## 31. Controlled release procedure
+
+Before release:
+
+1. Verify investigation completion.
+2. Verify employee justification or an approved exception.
+3. Verify evidence review completion.
+4. Record investigation findings.
+5. Record decision and justification.
+6. Obtain independent approval.
+7. Release the protected session/workspace.
+8. Restore only authorized permissions and services.
+9. Verify session functionality.
+10. Record the release event.
+11. Notify affected user and stakeholders.
+12. Close only after closure requirements are met.
+
+If the incident is not cleared, relevant restrictions remain active.
+
+Releasing a session must never erase its incident or evidence history.
+
+## 32. Mandatory release justification
+
+Require:
+
+- Release reason.
+- Investigation conclusion.
+- Evidence references.
+- Corrective action, if applicable.
+- Approver identity.
+- Approval timestamp.
+- Policy version.
+
+Reject blank or generic justifications.
+
+No silent unlocks.
+
+---
+
+# PART 10 — EVIDENCE MANAGEMENT AND AUDIT
+
+## 33. Evidence repository
+
+Use the existing KOSH file/evidence infrastructure.
+
+Evidence may include:
+
+- Security event metadata.
+- Policy evaluation results.
+- Server-side API audit records.
+- Authentication events.
+- Session activity records.
+- User justifications.
+- Approved attachments.
+- Notification records.
+- Investigator findings.
+- Release decisions.
+
+Preserve:
+
+- Evidence ID.
+- Incident ID.
+- Source.
+- Creation timestamp.
+- Uploader or generating service.
+- SHA-256 checksum where applicable.
+- File version.
+- Access history.
+- Retention classification.
+
+Protect evidence from ordinary-user modification and deletion.
+
+## 34. Tamper-evident audit
+
+Use append-only audit records or an equivalent verified tamper-evident mechanism.
+
+Do not claim an ordinary database table is immutable without implementing and verifying the required protections.
+
+Apply configurable retention and access policies.
+
+Do not delete historical incidents or evidence during release or closure.
+
+---
+
+# PART 11 — SECURITY GOVERNANCE UI/UX
+
+## 35. KOSH theme compliance
+
+Every Security Governance screen must use the existing KOSH theme.
+
+Reuse:
+
+- Typography.
+- Colour palette.
+- Navigation.
+- Sidebar.
+- Header.
+- Cards.
+- Buttons.
+- Tables.
+- Form controls.
+- Status badges.
+- Modal conventions.
+- Responsive layout.
+
+Do not introduce a different design language.
+
+## 36. Screens to inspect and correct
+
+1. Security Dashboard.
+2. Global Baseline Policy.
+3. Company Config.
+4. Branch Config.
+5. Module Config.
+6. Optional Page Config.
+7. Optional User Config.
+8. Browser Governance.
+9. Visual & Watermark.
+10. Webcam & AI Detection.
+11. Clipboard & Export.
+12. Session & Blackout.
+13. Exceptions & Approvals.
+14. Event Monitor.
+15. Incident Management.
+16. Policy Simulator.
+17. Software & Model Registry.
+18. Security Audit History.
+19. System Health.
+
+Ensure:
+
+- No visible diagonal watermark.
+- No overlapping components.
+- No unexplained full-screen lock.
+- No misleading status indicators.
+- No nonfunctional buttons.
+- No hardcoded incident counts.
+- No hardcoded model status.
+- No fake audit records.
+- No unapproved notification recipients.
+
+The UI must remain usable on normal desktop resolutions and responsive layouts.
+
+---
+
+# PART 12 — GENERAL SETTINGS AND LEFT NAVIGATION CONSOLIDATION
+
+## 37. Current navigation problem
+
+Under the existing Governance & System Settings left menu, the following appear as separate menu entries:
+
+- PR Type Master.
+- Charge Master.
+- PR Charge Item Mapping.
+- Financial Year Management.
+- Holiday & Workday Calendar.
+
+Remove these five entries from the independent left-menu navigation.
+
+**This is a navigation consolidation only. Do not delete, disable, replace or duplicate their underlying modules.**
+
+## 38. New navigation structure
+
+Retain the existing Governance & System Settings parent.
+
+The consolidated navigation should follow this structure, adapting only where necessary to preserve existing KOSH conventions:
+
+**Governance & System Settings**
+
+- General Settings
+- Security Governance
+- Approval Workflows
+- Organization & Branch
+- Purchase Organization
+- Field & Rule Configurations
+- User & Role Administration
+- Logs & Audit
+
+The five specified master modules must no longer appear as separate left-menu entries.
+
+## 39. General Settings workspace
+
+Move access to the following existing modules into General Settings:
+
+### Procurement Configuration
+- PR Type Master.
+- Charge Master.
+- PR Charge Item Mapping.
+
+### Financial Configuration
+- Financial Year Management.
+
+### Calendar & Working Days
+- Holiday & Workday Calendar.
+
+General Settings should provide dedicated module cards, tabs or secondary navigation.
+
+Suggested structure:
+
+**General Settings**
+
+1. Procurement Configuration.
+2. Financial Configuration.
+3. Calendar & Working Days.
+
+Retain the exact existing module names and terminology.
+
+## 40. Preserve complete existing functionality
+
+For all five modules preserve:
+
+- Create.
+- Edit.
+- View.
+- Deactivate.
+- Existing data.
+- Existing database tables.
+- Existing APIs.
+- Existing business logic.
+- Existing validations.
+- Existing RBAC.
+- Existing Maker-Checker workflows.
+- Existing rule engine integration.
+- Existing audit history.
+- Existing search and filters.
+- Existing reports and exports.
+- Existing defaults.
+- Existing references from PR, RFQ, PO, Finance and other modules.
+
+Do not create duplicate masters or duplicate database tables.
+
+Do not migrate data unnecessarily when a navigation-only change is sufficient.
+
+## 41. Route and permission compatibility
+
+Existing URLs and internal references must continue working.
+
+If route changes are required:
+
+- Implement backward-compatible route aliases or controlled redirects.
+- Preserve authorization checks.
+- Preserve company and branch context.
+- Prevent unauthorized direct URL access.
+- Preserve existing integrations.
+
+The same permissions must apply before and after relocation.
+
+## 42. General Settings UI/UX
+
+Follow the KOSH theme.
+
+Provide:
+
+- Clear module grouping.
+- Consistent cards or tabs.
+- Module descriptions.
+- Permission-aware navigation.
+- Standard breadcrumbs.
+- Existing page headers.
+- Consistent forms, buttons, tables and modals.
+
+Do not show empty placeholder cards.
+
+Do not duplicate the five modules in the sidebar.
+
+Do not introduce a separate design language.
+
+---
+
+# PART 13 — TECHNICAL LIMITATIONS AND SECURITY ACCURACY
+
+## 43. Do not overstate browser security
+
+Do not claim that browser JavaScript can reliably prevent:
+
+- Photographing the screen with another device.
+- All operating-system screenshots.
+- External screen recording.
+- Camera-based capture from another device.
+- Clipboard capture by privileged software.
+- Browser or operating-system compromise.
+
+Implement only controls that can be technically enforced and verified.
+
+Use layered controls:
+
+- Server-side authorization.
+- Session controls.
+- Controlled exports.
+- Download restrictions where supported.
+- Clipboard event monitoring where supported.
+- Browser visibility monitoring.
+- Security event correlation.
+- Endpoint security integration where available.
+- Incident and evidence workflows.
+
+Clearly distinguish:
+
+- PREVENTED
+- BLOCKED
+- DETECTED
+- LOGGED
+- NOT_DETECTABLE
+- NOT_SUPPORTED
+
+Do not display a green success indicator for an event that was only detected or logged.
+
+---
+
+# PART 14 — REAL-TIME FUNCTIONAL TESTING
+
+## 44. Testing requirement
+
+Test every implemented feature using the actual application, backend APIs and database.
+
+Visual inspection alone is insufficient.
+
+Create an execution matrix with:
+
+- Test ID.
+- Feature.
+- Test name.
+- Preconditions.
+- Test input.
+- Expected result.
+- Actual result.
+- Execution timestamp.
+- Tester.
+- Pass/fail.
+- Evidence reference.
+- Defect reference.
+
+Use statuses:
+
+- NOT_STARTED
+- RUNNING
+- PASSED
+- FAILED
+- BLOCKED
+- NOT_APPLICABLE
+
+Never mark an unexecuted test PASSED.
+
+## 45. Watermark tests
+
+Verify:
+
+- No watermark on normal pages.
+- No watermark on modals.
+- No watermark on blackout screen.
+- No invisible overlay blocking interaction.
+- Server-side audit remains functional.
+
+## 46. Session and blackout tests
+
+Test:
+
+- Normal tab switching.
+- Window focus loss.
+- Tab visibility change.
+- Inactivity timeout.
+- Explicit user lock.
+- Session expiration.
+- Unauthorized navigation.
+- Repeated authentication failure.
+- Reauthentication.
+- Temporary lock.
+- Approved release.
+- Unauthorized release attempt.
+
+Verify frontend and backend enforcement.
+
+## 47. Global master switch tests
+
+Test:
+
+1. Global Enable activates approved applicable policies.
+2. Global Disable stops governed enforcement.
+3. Authentication remains active.
+4. RBAC remains active.
+5. Audit logging remains active.
+6. Existing incidents remain preserved.
+7. Existing locks are not silently released.
+8. Company cannot override Global Disabled.
+9. Branch cannot override Company Disabled.
+10. Module cannot override Branch Disabled.
+11. Page/User overrides cannot bypass parent restrictions.
+12. Unauthorized users cannot operate the master control.
+13. Initiator cannot approve their own request.
+14. Emergency disable is audited and escalated.
+15. Cache invalidation works.
+16. Backend services report correct effective state.
+17. Failed propagation is displayed correctly.
+18. Approved policy restoration works.
+
+## 48. Email tests
+
+Use a real approved test mail account/provider.
+
+Verify:
+
+- Employee receives the email.
+- Correct manager is resolved.
+- Manager receives CC.
+- Security administrator receives CC.
+- Disabled recipients are excluded.
+- Invalid addresses are rejected or flagged.
+- Provider failure is recorded.
+- Retry works.
+- Duplicate messages are prevented.
+- Delivery status is accurate.
+
+## 49. Incident lifecycle tests
+
+Test:
+
+- Incident creation.
+- Acknowledgement.
+- Investigation.
+- User justification.
+- Evidence attachment.
+- Manager review.
+- Investigator recommendation.
+- Approval.
+- Rejection.
+- Release.
+- Closure.
+- Escalation.
+- Reopening where authorized.
+
+Verify:
+
+- User cannot approve their own release.
+- Unauthorized manager cannot approve.
+- Normal administrator cannot bypass mandatory approval.
+- Released session retains incident history.
+- Failed release attempt is audited.
+
+## 50. AI model tests
+
+Verify:
+
+- Actual model identity.
+- Installation.
+- File path.
+- Checksum.
+- Licence.
+- Local inference.
+- CPU/GPU utilization.
+- Missing model handling.
+- Runtime failure.
+- Network access behaviour.
+
+## 51. General Settings navigation tests
+
+Verify:
+
+1. Five modules no longer appear independently in the left sidebar.
+2. All five are accessible through General Settings.
+3. Existing data remains unchanged.
+4. Create/edit/view/deactivate work.
+5. PR Type references continue working.
+6. Charge Master references continue working.
+7. PR Charge Item Mapping continues working.
+8. Financial Year validation continues working.
+9. Holiday and workday calculations continue working.
+10. Existing permissions remain effective.
+11. Direct URLs remain secure and functional.
+12. Existing reports and audit records remain accessible.
+13. No duplicate masters or routes are created.
+
+## 52. API, database and security tests
+
+Test:
+
+- Authentication and authorization.
+- RBAC.
+- Company isolation.
+- Branch isolation.
+- Session enforcement.
+- Incident persistence.
+- Audit persistence.
+- Email queue persistence.
+- Evidence access restrictions.
+- Duplicate prevention.
+- Concurrency.
+- API error handling.
+- Unauthorized API requests.
+- Cross-company access.
+- Cross-branch access.
+- Session replay.
+- CSRF where applicable.
+- XSS.
+- IDOR.
+- File upload validation.
+- Privilege escalation.
+- Unauthorized evidence access.
+- Unauthorized incident modification.
+- Audit tampering attempts.
+
+Run regression tests on existing KOSH workflows.
+
+---
+
+# PART 15 — IMPLEMENTATION AND PRODUCTION DEPLOYMENT
+
+## 53. Required implementation sequence
+
+### Phase 1 — Existing application audit
+- Inspect frontend.
+- Inspect backend.
+- Inspect database.
+- Inspect policies.
+- Inspect model integration.
+- Inspect email configuration.
+- Inspect incident management.
+- Inspect General Settings.
+- Inspect existing approvals and RBAC.
+
+Deliver the audit report.
+
+### Phase 2 — Security correction
+- Identify and remove visible watermark.
+- Correct blackout behaviour.
+- Implement configurable session controls.
+- Verify backend enforcement.
+- Correct model registry information.
+
+### Phase 3 — Global Governance Master Control
+- Implement Global Enable/Disable.
+- Implement policy inheritance.
+- Implement Maker-Checker.
+- Implement emergency disable.
+- Implement cache invalidation.
+- Implement policy propagation.
+- Implement audit.
+
+### Phase 4 — Incident and notification lifecycle
+- Incident creation.
+- Employee justification.
+- Manager review.
+- Investigator review.
+- Email notifications.
+- Evidence management.
+- Independent release approval.
+- Controlled session restoration.
+- Closure and audit.
+
+### Phase 5 — General Settings consolidation
+- Remove five separate left-menu entries.
+- Add the five modules to General Settings.
+- Preserve all data, APIs, routes and permissions.
+- Verify existing business integrations.
+
+### Phase 6 — UI/UX standardization
+- Apply KOSH theme.
+- Correct layout.
+- Remove visible watermark.
+- Improve status indicators.
+- Correct responsive behaviour.
+
+### Phase 7 — Full testing
+- Unit tests.
+- Integration tests.
+- API tests.
+- Database tests.
+- End-to-end tests.
+- Security tests.
+- Regression tests.
+- UAT.
+
+### Phase 8 — Production deployment
+- Back up database and configuration.
+- Apply reversible migrations.
+- Deploy through the existing KOSH deployment process.
+- Verify actual production state.
+- Record deployment evidence.
+- Obtain acceptance approval.
+
+## 54. Deployment safeguards
+
+Before production:
+
+1. Back up the database.
+2. Back up existing policy configuration.
+3. Preserve existing audit history.
+4. Prepare reversible migrations.
+5. Verify rollback procedures.
+6. Obtain approval for policy changes.
+7. Obtain UAT sign-off.
+8. Deploy using existing infrastructure.
+9. Verify frontend and backend behaviour.
+10. Verify email delivery.
+11. Verify incident release.
+12. Verify policy propagation.
+13. Verify existing business workflows.
+14. Record the production verification evidence.
+
+Do not overwrite production configuration without backup and approval.
+
+---
+
+# PART 16 — FINAL ACCEPTANCE CRITERIA
+
+## 55. Security acceptance
+
+The implementation is accepted only when:
+
+- Visible diagonal watermark is removed.
+- Security auditability is preserved.
+- Blackout trigger is identified and corrected.
+- Ordinary tab switching does not cause an unexplained permanent lock.
+- Session policies are configurable.
+- Global Enable/Disable works.
+- Policy inheritance is enforced server-side.
+- Mandatory platform security remains active.
+- Maker-Checker approval works.
+- Emergency disable is controlled and audited.
+- Policy propagation is verified.
+- AI model identity and installation are verifiable.
+- Compliance violation emails reach configured recipients.
+- Employee and manager mapping works.
+- Investigation and justification are recorded.
+- Release requires authorized independent approval.
+- Release justification is mandatory.
+- Incident history is preserved.
+- Evidence is protected.
+- Audit records are tamper-evident.
+
+## 56. General Settings acceptance
+
+- PR Type Master is accessible inside General Settings.
+- Charge Master is accessible inside General Settings.
+- PR Charge Item Mapping is accessible inside General Settings.
+- Financial Year Management is accessible inside General Settings.
+- Holiday & Workday Calendar is accessible inside General Settings.
+- These five entries no longer appear independently in the left menu.
+- Existing data and functionality remain unchanged.
+- Existing permissions and approval workflows remain effective.
+- Existing integrations continue working.
+
+## 57. Overall application acceptance
+
+- All screens follow the KOSH theme.
+- No duplicate modules or masters exist.
+- No fake data or hardcoded statuses exist.
+- No nonfunctional controls remain.
+- No existing KOSH workflows are broken.
+- Every applicable test has actual execution evidence.
+- Production deployment is verified, not merely claimed.
+
+---
+
+# PART 17 — MANDATORY FIRST RESPONSE AND EXECUTION REPORTING
+
+## 58. First response requirement
+
+Before implementation, return a technical audit report covering:
+
+1. Watermark source and reason.
+2. Blackout event handler and policy.
+3. Frontend/backend lock enforcement.
+4. Actual AI model and installation evidence.
+5. Email infrastructure.
+6. Employee-to-manager mapping.
+7. Incident and audit data model.
+8. Existing approval and RBAC dependencies.
+9. Global policy and cache architecture.
+10. Existing General Settings navigation.
+11. Five master modules and their dependencies.
+12. Exact source files and database objects affected.
+13. Backward compatibility risks.
+14. Implementation sequence.
+15. Test plan.
+16. Access and infrastructure blockers.
+
+Do not begin by generating a replacement UI.
+
+## 59. Implementation status tracker
+
+Maintain an honest implementation tracker:
+
+- NOT STARTED
+- AUDITING
+- BLOCKED
+- IMPLEMENTING
+- INSTALLED
+- INTEGRATED
+- TESTING
+- PASSED
+- FAILED
+- DEPLOYED
+- PRODUCTION VERIFIED
+
+Each status must be supported by actual evidence.
+
+## 60. Final instruction
+
+Implement this complete enhancement within the existing KOSH Global IT System.
+
+The Global Security Governance master switch must control governed policy enforcement without disabling mandatory platform security.
+
+A security lock must have a traceable reason.
+
+A compliance violation must have an accountable investigation.
+
+Notifications must reach configured stakeholders.
+
+A user must have an opportunity to provide a justification.
+
+A workspace release must require documented findings, independent authorization and a complete audit trail.
+
+General Settings must consolidate the five specified master modules without deleting their functionality or breaking existing integrations.
+
+The entire application must retain the approved KOSH theme and design standards.
+
+**No unexplained lockouts. No silent unlocks. No fabricated model verification. No fake emails. No fake test results. No duplicate modules. No destructive migrations. No unverified production claims.**
+
+Work on the actual existing application and prove every implemented capability with execution evidence.

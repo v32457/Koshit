@@ -15,6 +15,8 @@ import { INITIAL_COMPANIES, INITIAL_BRANCHES, INITIAL_USERS } from '../../data/s
 import { CLASSIFICATION_DIMENSIONS } from '../../data/seedData';
 import { EnterpriseModal } from '../../components/EnterpriseModal';
 import { SearchableUserSelect } from '../../components/SearchableUserSelect';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Plus,
   Building2,
@@ -650,6 +652,42 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
     });
   }, [selectedCompanyFilter, histPoFilter, auditEntityTypeFilter, histUserFilter, auditSearchQuery, historyLogs, effectiveAssignments, organizations]);
 
+  const orgGrid = useStandardDataGrid({
+    data: filteredOrgs,
+    gridId: 'purchase-org-master',
+    userId: 'usr-default',
+    primarySortField: 'updatedAt',
+    tieBreakerField: 'code',
+    filterSignature: selectedCompanyFilter,
+  });
+
+  const branchMatrixGrid = useStandardDataGrid({
+    data: branchesList,
+    gridId: 'purchase-org-branch-matrix',
+    userId: 'usr-default',
+    primarySortField: 'portalBranchCode',
+    tieBreakerField: 'id',
+    filterSignature: selectedCompanyFilter,
+  });
+
+  const rulesGrid = useStandardDataGrid({
+    data: rules,
+    gridId: 'purchase-org-assignment-rules',
+    userId: 'usr-default',
+    primarySortField: 'effectiveFrom',
+    tieBreakerField: 'id',
+    filterSignature: `${rules.length}`,
+  });
+
+  const auditGrid = useStandardDataGrid({
+    data: auditLogsList,
+    gridId: 'purchase-org-audit-logs',
+    userId: 'usr-default',
+    primarySortField: 'timestamp',
+    tieBreakerField: 'id',
+    filterSignature: `${selectedCompanyFilter}|${histPoFilter}|${auditEntityTypeFilter}|${histUserFilter}|${auditSearchQuery}`,
+  });
+
   const auditMetrics = useMemo(() => {
     return EnterpriseAuditService.getDashboardMetrics({
       companyId: selectedCompanyFilter,
@@ -972,7 +1010,7 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredOrgs.map((org) => {
+                {orgGrid.pagedData.map((org) => {
                   const companyObj = companiesList.find(c => c.id === org.companyId);
                   const assignedBranchIds = orgBranchMap[org.id] || [];
                   const branchNames = branchesList
@@ -1100,6 +1138,16 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 })}
               </tbody>
             </table>
+            <DataGridFooter
+              totalRecords={orgGrid.totalRecords}
+              currentPage={orgGrid.currentPage}
+              pageSize={orgGrid.pageSize}
+              totalPages={orgGrid.totalPages}
+              onPageChange={orgGrid.onPageChange}
+              onPageSizeChange={orgGrid.onPageSizeChange}
+              entityLabel="purchase organizations"
+              sortNotice="Sorted newest updated first"
+            />
           </div>
         </div>
       )}
@@ -1199,7 +1247,7 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {branchesList.map((branch) => {
+              {branchMatrixGrid.pagedData.map((branch) => {
                 const companyObj = companiesList.find(c => c.id === branch.companyId);
                 const assignedPo = organizations.find(o => (orgBranchMap[o.id] || []).includes(branch.id));
 
@@ -1234,6 +1282,16 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
               })}
             </tbody>
           </table>
+          <DataGridFooter
+            totalRecords={branchMatrixGrid.totalRecords}
+            currentPage={branchMatrixGrid.currentPage}
+            pageSize={branchMatrixGrid.pageSize}
+            totalPages={branchMatrixGrid.totalPages}
+            onPageChange={branchMatrixGrid.onPageChange}
+            onPageSizeChange={branchMatrixGrid.onPageSizeChange}
+            entityLabel="branches"
+            sortNotice="Sorted newest branch code first"
+          />
         </div>
       )}
 
@@ -1420,7 +1478,7 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rules.map((rule) => {
+                {rulesGrid.pagedData.map((rule) => {
                   const companyObj = companiesList.find(c => c.id === rule.companyId);
                   const branchObj = branchesList.find(b => b.id === rule.branchId);
 
@@ -1478,6 +1536,16 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 })}
               </tbody>
             </table>
+            <DataGridFooter
+              totalRecords={rulesGrid.totalRecords}
+              currentPage={rulesGrid.currentPage}
+              pageSize={rulesGrid.pageSize}
+              totalPages={rulesGrid.totalPages}
+              onPageChange={rulesGrid.onPageChange}
+              onPageSizeChange={rulesGrid.onPageSizeChange}
+              entityLabel="assignment rules"
+              sortNotice="Sorted newest effective date first"
+            />
           </div>
         </div>
       )}
@@ -1681,7 +1749,7 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {auditLogsList.map((log) => (
+                {auditGrid.pagedData.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition">
                     <td className="p-3">
                       <div className="font-mono font-bold text-slate-800">
@@ -1748,6 +1816,16 @@ export const PurchaseOrganizationView: React.FC<PurchaseOrganizationViewProps> =
                 ))}
               </tbody>
             </table>
+            <DataGridFooter
+              totalRecords={auditGrid.totalRecords}
+              currentPage={auditGrid.currentPage}
+              pageSize={auditGrid.pageSize}
+              totalPages={auditGrid.totalPages}
+              onPageChange={auditGrid.onPageChange}
+              onPageSizeChange={auditGrid.onPageSizeChange}
+              entityLabel="audit events"
+              sortNotice="Sorted newest timestamp first"
+            />
           </div>
         </div>
       )}

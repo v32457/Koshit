@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   SapCompanyRegistryConfig,
   SapCompanyFieldDiscoveryRecord,
@@ -52,6 +52,8 @@ import {
 
 import { OperatingContext } from '../../services/operatingContextService';
 import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface SapIntegrationViewProps {
   currentUser: User;
@@ -712,14 +714,46 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
   };
 
   // Filtered Field Records
-  const filteredFieldRecords = fieldRecords.filter((rec) => {
-    const matchesTab = selectedTabFilter === 'ALL' || rec.tabName === selectedTabFilter;
-    const matchesStatus = selectedStatusFilter === 'ALL' || rec.discoveryStatus === selectedStatusFilter;
-    const matchesSearch =
-      rec.visibleSapLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rec.technicalPropertyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rec.koshTargetEntity.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesTab && matchesStatus && matchesSearch;
+  const filteredFieldRecords = useMemo(
+    () =>
+      fieldRecords.filter((rec) => {
+        const matchesTab = selectedTabFilter === 'ALL' || rec.tabName === selectedTabFilter;
+        const matchesStatus = selectedStatusFilter === 'ALL' || rec.discoveryStatus === selectedStatusFilter;
+        const matchesSearch =
+          rec.visibleSapLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          rec.technicalPropertyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          rec.koshTargetEntity.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesTab && matchesStatus && matchesSearch;
+      }),
+    [fieldRecords, selectedTabFilter, selectedStatusFilter, searchTerm]
+  );
+
+  const requestsGrid = useStandardDataGrid({
+    gridId: 'sap-registration-requests',
+    userId: currentUser?.id,
+    data: registrationRequests,
+    defaultSortField: 'requestedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'requestNumber',
+  });
+
+  const fieldGrid = useStandardDataGrid({
+    gridId: 'sap-field-discovery',
+    userId: currentUser?.id,
+    data: filteredFieldRecords,
+    defaultSortField: 'lastVerifiedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'technicalPropertyName',
+    filterSignature: `${selectedTabFilter}|${selectedStatusFilter}|${searchTerm}`,
+  });
+
+  const jobLogsGrid = useStandardDataGrid({
+    gridId: 'sap-sync-job-logs',
+    userId: currentUser?.id,
+    data: jobLogs,
+    defaultSortField: 'startedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'jobCorrelationId',
   });
 
   return (
@@ -1048,7 +1082,7 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {registrationRequests.map((req) => (
+                  {requestsGrid.pagedData.map((req) => (
                     <tr key={req.id} className="hover:bg-slate-50/80 transition">
                       <td className="p-3.5 font-mono font-bold text-indigo-700">{req.requestNumber}</td>
                       <td className="p-3.5">
@@ -1105,6 +1139,18 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-200">
+              <DataGridFooter
+                currentPage={requestsGrid.currentPage}
+                totalPages={requestsGrid.totalPages}
+                pageSize={requestsGrid.pageSize}
+                totalRecords={requestsGrid.totalRecords}
+                onPageChange={requestsGrid.setCurrentPage}
+                onPageSizeChange={requestsGrid.setPageSize}
+                pageSizeOptions={requestsGrid.pageSizeOptions}
+                defaultSortNotice="Sorted Newest First (Requested Date DESC)"
+              />
             </div>
           </div>
         </div>
@@ -1328,7 +1374,7 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredFieldRecords.map((rec) => (
+                  {fieldGrid.pagedData.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/80 transition">
                       <td className="p-3.5 font-bold text-slate-900">
                         <div>{rec.visibleSapLabel}</div>
@@ -1377,6 +1423,18 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-200">
+              <DataGridFooter
+                currentPage={fieldGrid.currentPage}
+                totalPages={fieldGrid.totalPages}
+                pageSize={fieldGrid.pageSize}
+                totalRecords={fieldGrid.totalRecords}
+                onPageChange={fieldGrid.setCurrentPage}
+                onPageSizeChange={fieldGrid.setPageSize}
+                pageSizeOptions={fieldGrid.pageSizeOptions}
+                defaultSortNotice="Sorted Newest First (Last Verified DESC)"
+              />
             </div>
           </div>
         </div>
@@ -1454,7 +1512,7 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredFieldRecords.map((rec) => (
+                  {fieldGrid.pagedData.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/80 transition">
                       <td className="p-3.5 font-bold text-slate-900">
                         <div>{rec.visibleSapLabel}</div>
@@ -1503,6 +1561,18 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-200">
+              <DataGridFooter
+                currentPage={fieldGrid.currentPage}
+                totalPages={fieldGrid.totalPages}
+                pageSize={fieldGrid.pageSize}
+                totalRecords={fieldGrid.totalRecords}
+                onPageChange={fieldGrid.setCurrentPage}
+                onPageSizeChange={fieldGrid.setPageSize}
+                pageSizeOptions={fieldGrid.pageSizeOptions}
+                defaultSortNotice="Sorted Newest First (Last Verified DESC)"
+              />
             </div>
           </div>
         </div>
@@ -1559,7 +1629,7 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {jobLogs.map((log) => (
+                {jobLogsGrid.pagedData.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/80 transition">
                     <td className="p-3.5 font-mono font-bold text-indigo-700">{log.jobCorrelationId}</td>
                     <td className="p-3.5 font-bold text-slate-900">{log.operationType}</td>
@@ -1580,6 +1650,16 @@ export const SapIntegrationView: React.FC<SapIntegrationViewProps> = ({
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={jobLogsGrid.currentPage}
+            totalPages={jobLogsGrid.totalPages}
+            pageSize={jobLogsGrid.pageSize}
+            totalRecords={jobLogsGrid.totalRecords}
+            onPageChange={jobLogsGrid.setCurrentPage}
+            onPageSizeChange={jobLogsGrid.setPageSize}
+            pageSizeOptions={jobLogsGrid.pageSizeOptions}
+            defaultSortNotice="Sorted Newest First (Started Timestamp DESC)"
+          />
         </div>
       )}
 

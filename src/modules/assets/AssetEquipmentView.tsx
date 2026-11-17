@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { Company, Branch } from '../../types';
 import { INITIAL_COMPANIES, INITIAL_BRANCHES } from '../../data/seedData';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export interface EquipmentRecord {
   id: string;
@@ -114,6 +116,15 @@ export const AssetEquipmentView: React.FC = () => {
       return true;
     });
   }, [equipmentList, criticalityFilter, statusFilter, searchQuery]);
+
+  const equipmentGrid = useStandardDataGrid({
+    data: filteredEquipment,
+    gridId: 'asset-equipment-master',
+    userId: 'usr-default',
+    primarySortField: 'lastBreakdownDate',
+    tieBreakerField: 'equipmentId',
+    filterSignature: `${criticalityFilter}|${statusFilter}|${searchQuery}`,
+  });
 
   return (
     <div className="space-y-5 text-xs font-sans select-none">
@@ -239,14 +250,14 @@ export const AssetEquipmentView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredEquipment.length === 0 ? (
+              {equipmentGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-6 text-center text-slate-400">
                     No equipment records match the selected criteria.
                   </td>
                 </tr>
               ) : (
-                filteredEquipment.map((eq) => (
+                equipmentGrid.pagedData.map((eq) => (
                   <tr key={eq.id} className="hover:bg-slate-50 transition">
                     <td className="p-3 font-bold text-slate-900">
                       <span className="px-1.5 py-0.5 bg-slate-100 text-indigo-800 rounded font-mono text-[10px] block w-fit mb-0.5">
@@ -309,6 +320,16 @@ export const AssetEquipmentView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          totalRecords={equipmentGrid.totalRecords}
+          currentPage={equipmentGrid.currentPage}
+          pageSize={equipmentGrid.pageSize}
+          totalPages={equipmentGrid.totalPages}
+          onPageChange={equipmentGrid.onPageChange}
+          onPageSizeChange={equipmentGrid.onPageSizeChange}
+          entityLabel="equipment units"
+          sortNotice="Sorted newest event & ID first"
+        />
       </div>
 
       {/* Equipment History Modal */}

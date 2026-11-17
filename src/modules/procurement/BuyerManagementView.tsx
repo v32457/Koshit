@@ -20,6 +20,8 @@ import {
 import { User } from '../../types';
 import { BuyerAssignmentRecord } from '../../types/buyerAssignment';
 import { INITIAL_USERS } from '../../data/seedData';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export const INITIAL_BUYER_ASSIGNMENTS: BuyerAssignmentRecord[] = [
   {
@@ -116,6 +118,15 @@ export const BuyerManagementView: React.FC<{ currentUser?: User }> = () => {
       return true;
     });
   }, [assignments, statusFilter, searchQuery]);
+
+  const grid = useStandardDataGrid({
+    gridId: 'procurement-buyer-assignments',
+    data: filteredAssignments,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: `${statusFilter}|${searchQuery}`,
+  });
 
   const toggleSelectAll = () => {
     if (selectedIds.size === filteredAssignments.length) {
@@ -305,7 +316,13 @@ export const BuyerManagementView: React.FC<{ currentUser?: User }> = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredAssignments.map((rec) => (
+              {grid.pagedData.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-6 text-center text-slate-400">
+                    No buyer assignments match your active filters.
+                  </td>
+                </tr>
+              ) : grid.pagedData.map((rec) => (
                 <tr key={rec.id} className="hover:bg-slate-50 transition">
                   <td className="p-3 font-bold text-slate-900">
                     {rec.itemCategory}
@@ -354,6 +371,17 @@ export const BuyerManagementView: React.FC<{ currentUser?: User }> = () => {
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={grid.currentPage}
+        totalPages={grid.totalPages}
+        pageSize={grid.pageSize}
+        totalRecords={grid.totalRecords}
+        onPageChange={grid.setCurrentPage}
+        onPageSizeChange={grid.setPageSize}
+        pageSizeOptions={grid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (Updated At DESC)"
+      />
 
       {/* REASSIGN BUYER MODAL */}
       {reassignModalRecord && (

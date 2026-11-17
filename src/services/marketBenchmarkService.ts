@@ -18,6 +18,7 @@ const STORAGE_KEY_BENCHMARK_HISTORY = 'kosh_market_benchmark_history_v2';
 
 export const marketBenchmarkService = {
   getBenchmarks(): Record<string, MarketBenchmarkResult> {
+    if (typeof localStorage === 'undefined') return {};
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BENCHMARKS);
       if (saved) {
@@ -30,6 +31,7 @@ export const marketBenchmarkService = {
   },
 
   saveBenchmarks(data: Record<string, MarketBenchmarkResult>) {
+    if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY_BENCHMARKS, JSON.stringify(data));
     } catch (err) {
@@ -38,6 +40,7 @@ export const marketBenchmarkService = {
   },
 
   getBenchmarkHistory(itemCode: string): MarketBenchmarkResult[] {
+    if (typeof localStorage === 'undefined') return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BENCHMARK_HISTORY);
       if (saved) {
@@ -51,6 +54,7 @@ export const marketBenchmarkService = {
   },
 
   saveBenchmarkHistory(itemCode: string, result: MarketBenchmarkResult) {
+    if (typeof localStorage === 'undefined') return;
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BENCHMARK_HISTORY);
       const historyMap: Record<string, MarketBenchmarkResult[]> = saved ? JSON.parse(saved) : {};

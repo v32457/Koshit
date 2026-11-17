@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
+import type { User } from '../../types';
 import { NotificationRule } from '../../types/communication';
+import type { CommunicationPurpose } from '../../types/userRoleAdmin';
 import { INITIAL_NOTIFICATION_RULES } from '../../data/communicationExtendedSeed';
+import { userRoleAdminService } from '../../services/userRoleAdminService';
+import { COMMUNICATION_PURPOSE_CATALOG, mobileConsentService } from '../../services/mobileConsentService';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Sliders,
   CheckCircle2,
@@ -9,27 +15,38 @@ import {
   Mail,
   MessageSquare,
   Bell,
-  Plus,
-  Edit2,
-  Check,
-  AlertTriangle,
-  ArrowRight,
-  Sparkles,
+  Smartphone,
 } from 'lucide-react';
 
-export const NotificationRulesView: React.FC = () => {
+interface NotificationRulesViewProps {
+  currentUser?: User;
+}
+
+export const NotificationRulesView: React.FC<NotificationRulesViewProps> = ({ currentUser }) => {
   const [rules, setRules] = useState<NotificationRule[]>(INITIAL_NOTIFICATION_RULES);
-  const [selectedRule, setSelectedRule] = useState<NotificationRule>(rules[0]);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+
+  const rulesGrid = useStandardDataGrid({
+    gridId: 'comm-notification-rules',
+    userId: currentUser?.id,
+    data: rules,
+    defaultSortField: 'id',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'eventCode',
+  });
 
   // Simulator State
   const [simEvent, setSimEvent] = useState('ITEM_SUBMITTED');
   const [simItemCode, setSimItemCode] = useState('MAPALBL0003');
-  const [simRecipient, setSimRecipient] = useState('ramesh.checker@koshinnovations.com');
+  const [simRecipientUserId, setSimRecipientUserId] = useState<string>(
+    () => userRoleAdminService.getUsers()[0]?.id || 'usr-admin-01'
+  );
+  const [simPurpose, setSimPurpose] = useState<CommunicationPurpose>('OPERATIONAL_BUSINESS');
   const [simResult, setSimResult] = useState<{
     matchedRule: string;
     conditionEvaluated: boolean;
     resolvedChannels: string[];
+    blockedChannels: string[];
     simulatedPreview: string;
   } | null>(null);
 
@@ -46,21 +63,57 @@ export const NotificationRulesView: React.FC = () => {
         matchedRule: 'NO_ACTIVE_RULE_FOUND',
         conditionEvaluated: false,
         resolvedChannels: [],
+        blockedChannels: [],
         simulatedPreview: 'No active notification rule mapped to event: ' + simEvent,
       });
       return;
     }
 
+    const target = userRoleAdminService.getUserById(simRecipientUserId);
+    const actor = {
+      id: currentUser?.id || 'usr-admin-01',
+      name: currentUser?.fullName || 'Platform Administrator',
+    };
+
     const channels: string[] = [];
+    const blocked: string[] = [];
     if (matched.channels.email) channels.push('EMAIL (Active SMTP)');
-    if (matched.channels.whatsApp) channels.push('WHATSAPP (Meta Cloud API)');
     if (matched.channels.inPortal) channels.push('IN_PORTAL (Live Drawer)');
+
+    const smsDecision = mobileConsentService.evaluateCommunicationDispatch({
+      targetUserId: simRecipientUserId,
+      channel: 'SMS',
+      purpose: simPurpose,
+      actor,
+      context: `Rule Dry-Run (${simEvent})`,
+    });
+    if (smsDecision.allowed) {
+      channels.push('SMS (DLT Gateway)');
+    } else {
+      blocked.push(`SMS Blocked: ${smsDecision.reason}`);
+    }
+
+    if (matched.channels.whatsApp) {
+      const waDecision = mobileConsentService.evaluateCommunicationDispatch({
+        targetUserId: simRecipientUserId,
+        channel: 'WHATSAPP',
+        purpose: simPurpose,
+        actor,
+        context: `Rule Dry-Run (${simEvent})`,
+      });
+      if (waDecision.allowed) {
+        channels.push('WHATSAPP (Meta Cloud API)');
+      } else {
+        blocked.push(`WhatsApp Blocked: ${waDecision.reason}`);
+      }
+    }
 
     setSimResult({
       matchedRule: matched.name,
       conditionEvaluated: true,
       resolvedChannels: channels,
-      simulatedPreview: `[Simulated Notification] Review Required: Item ${simItemCode} submitted by Karthik Raja. Recipient resolved: ${simRecipient}. Priority: ${matched.priority}.`,
+      blockedChannels: blocked,
+      simulatedPreview: `[Dry-Run] Event ${simEvent} for Item ${simItemCode}. Recipient: ${target?.fullName || simRecipientUserId}. Priority: ${matched.priority}.`,
     });
   };
 
@@ -113,7 +166,7 @@ export const NotificationRulesView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rules.map((rule) => (
+              {rulesGrid.pagedData.map((rule) => (
                 <tr key={rule.id} className="hover:bg-slate-50 transition">
                   <td className="px-4 py-3.5">
                     <div className="font-bold text-slate-900">{rule.name}</div>
@@ -166,6 +219,12 @@ export const NotificationRulesView: React.FC = () => {
                       >
                         <Bell className="w-3.5 h-3.5" />
                       </span>
+                      <span
+                        className="p-1 rounded bg-indigo-50 text-indigo-700"
+                        title="SMS Channel (Consent-Gated)"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" />
+                      </span>
                     </div>
                   </td>
 
@@ -185,6 +244,17 @@ export const NotificationRulesView: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="p-3 border-t border-slate-100">
+          <DataGridFooter
+            currentPage={rulesGrid.currentPage}
+            totalPages={rulesGrid.totalPages}
+            pageSize={rulesGrid.pageSize}
+            totalRecords={rulesGrid.totalRecords}
+            onPageChange={rulesGrid.setCurrentPage}
+            onPageSizeChange={rulesGrid.setPageSize}
+            pageSizeOptions={rulesGrid.pageSizeOptions}
+          />
         </div>
       </div>
 
@@ -228,7 +298,7 @@ export const NotificationRulesView: React.FC = () => {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Item Code Payload</label>
                   <input
@@ -239,14 +309,35 @@ export const NotificationRulesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Resolved Recipient</label>
-                  <input
-                    type="text"
-                    value={simRecipient}
-                    onChange={(e) => setSimRecipient(e.target.value)}
-                    className="w-full text-xs font-mono border border-slate-300 rounded-lg px-3 py-2"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Communication Purpose</label>
+                  <select
+                    value={simPurpose}
+                    onChange={(e) => setSimPurpose(e.target.value as CommunicationPurpose)}
+                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-slate-50"
+                  >
+                    {COMMUNICATION_PURPOSE_CATALOG.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Resolved Enterprise Recipient</label>
+                <select
+                  value={simRecipientUserId}
+                  onChange={(e) => setSimRecipientUserId(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-slate-50"
+                >
+                  {userRoleAdminService.getUsers().map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} — {u.employeeAssociationStatus || 'ASSOCIATED'} •{' '}
+                      {u.mobileNumberType || 'NO_MOBILE'} ({u.mobileConsentStatus || 'N/A'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {simResult && (
@@ -255,8 +346,16 @@ export const NotificationRulesView: React.FC = () => {
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Rule Match: {simResult.matchedRule}</span>
                   </div>
-                  <div>Condition: <span className="text-amber-300">PASS (Rule criteria met)</span></div>
-                  <div>Eligible Channels: {simResult.resolvedChannels.join(' • ')}</div>
+                  <div>
+                    Authorized Channels: {simResult.resolvedChannels.join(' • ') || 'None'}
+                  </div>
+                  {simResult.blockedChannels.length > 0 && (
+                    <div className="text-rose-300 space-y-1">
+                      {simResult.blockedChannels.map((b, i) => (
+                        <div key={i}>{b}</div>
+                      ))}
+                    </div>
+                  )}
                   <div className="pt-2 border-t border-slate-800 text-slate-300 whitespace-pre-wrap">
                     {simResult.simulatedPreview}
                   </div>

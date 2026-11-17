@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { FieldConfigurationRule, UserRole } from '../../types';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Sliders,
   ShieldCheck,
@@ -363,24 +365,36 @@ export const FieldConfigurationsView: React.FC = () => {
   };
 
   // Filter rules by Entity, Search, and Role
-  const filteredRules = fieldRules
-    .filter((r) => r.entityName === activeEntity)
-    .filter((r) => {
-      if (!searchTerm.trim()) return true;
-      const q = searchTerm.toLowerCase();
-      return (
-        r.label.toLowerCase().includes(q) ||
-        r.fieldKey.toLowerCase().includes(q) ||
-        r.tabName.toLowerCase().includes(q) ||
-        (r.sapMappingKey && r.sapMappingKey.toLowerCase().includes(q))
-      );
-    })
-    .filter((r) => {
-      if (roleFilter === 'ALL') return true;
-      if (!r.applicableRoles || r.applicableRoles.length === 0) return true;
-      return r.applicableRoles.includes(roleFilter as UserRole);
-    })
-    .sort((a, b) => a.fieldOrder - b.fieldOrder);
+  const filteredRules = useMemo(
+    () =>
+      fieldRules
+        .filter((r) => r.entityName === activeEntity)
+        .filter((r) => {
+          if (!searchTerm.trim()) return true;
+          const q = searchTerm.toLowerCase();
+          return (
+            r.label.toLowerCase().includes(q) ||
+            r.fieldKey.toLowerCase().includes(q) ||
+            r.tabName.toLowerCase().includes(q) ||
+            (r.sapMappingKey && r.sapMappingKey.toLowerCase().includes(q))
+          );
+        })
+        .filter((r) => {
+          if (roleFilter === 'ALL') return true;
+          if (!r.applicableRoles || r.applicableRoles.length === 0) return true;
+          return r.applicableRoles.includes(roleFilter as UserRole);
+        }),
+    [fieldRules, activeEntity, searchTerm, roleFilter]
+  );
+
+  const rulesGrid = useStandardDataGrid({
+    gridId: 'settings-field-configurations',
+    data: filteredRules,
+    defaultSortField: 'fieldOrder',
+    defaultSortDirection: 'asc',
+    tieBreakerField: 'id',
+    filterSignature: `${activeEntity}|${searchTerm}|${roleFilter}`,
+  });
 
   return (
     <div className="space-y-4 text-xs font-sans select-none">
@@ -489,14 +503,14 @@ export const FieldConfigurationsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRules.length === 0 ? (
+              {rulesGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-8 text-center text-slate-400 font-semibold">
                     No field configuration rules found for {activeEntity.replace('_', ' ')}. Click "Add Field Rule" above to create one.
                   </td>
                 </tr>
               ) : (
-                filteredRules.map((rule) => (
+                rulesGrid.pagedData.map((rule) => (
                   <tr key={rule.id} className="hover:bg-slate-50/80 transition">
                     <td className="p-3.5 font-mono font-bold text-slate-500">#{rule.fieldOrder}</td>
                     <td className="p-3.5 font-bold text-slate-700">{rule.tabName}</td>
@@ -578,6 +592,18 @@ export const FieldConfigurationsView: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="p-3 bg-slate-50 border-t border-slate-200">
+          <DataGridFooter
+            currentPage={rulesGrid.currentPage}
+            totalPages={rulesGrid.totalPages}
+            pageSize={rulesGrid.pageSize}
+            totalRecords={rulesGrid.totalRecords}
+            onPageChange={rulesGrid.setCurrentPage}
+            onPageSizeChange={rulesGrid.setPageSize}
+            pageSizeOptions={rulesGrid.pageSizeOptions}
+            defaultSortNotice="Ordered by Form Field Sequence"
+          />
         </div>
       </div>
 

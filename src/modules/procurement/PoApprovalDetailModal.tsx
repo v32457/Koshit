@@ -23,6 +23,8 @@ import { RfqApproverChatQa } from '../../types/rfqSourcing';
 interface PoApprovalDetailModalProps {
   po: PurchaseOrderHeader;
   currentUser: User;
+  readOnlyHistorical?: boolean;
+  historicalLockReason?: string;
   onClose: () => void;
   onApprove: () => void;
   onReject: (reason: string) => void;
@@ -31,6 +33,8 @@ interface PoApprovalDetailModalProps {
 export const PoApprovalDetailModal: React.FC<PoApprovalDetailModalProps> = ({
   po,
   currentUser,
+  readOnlyHistorical = false,
+  historicalLockReason,
   onClose,
   onApprove,
   onReject,
@@ -314,10 +318,22 @@ export const PoApprovalDetailModal: React.FC<PoApprovalDetailModalProps> = ({
         <div className="border-t border-slate-200 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-[11px] text-slate-400">
             Authorized Approver: <strong>{currentUser.fullName} ({currentUser.role})</strong>
+            {readOnlyHistorical && (
+              <span className="block text-amber-700 font-bold mt-0.5">
+                {historicalLockReason || 'Closed financial year / locked accounting period — inspection only.'}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            {!showRejectInput ? (
+            {readOnlyHistorical ? (
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Close (Read-Only Historical View)
+              </button>
+            ) : !showRejectInput ? (
               <>
                 <button
                   onClick={() => setShowRejectInput(true)}

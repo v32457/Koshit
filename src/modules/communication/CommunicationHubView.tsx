@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   CommunicationTemplate,
   BroadcastAnnouncement,
@@ -12,6 +12,8 @@ import {
   INITIAL_DELIVERY_QUEUE,
   INITIAL_IN_PORTAL_NOTIFICATIONS,
 } from '../../data/communicationSeed';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Mail,
   Megaphone,
@@ -77,6 +79,29 @@ export const CommunicationHubView: React.FC<CommunicationHubViewProps> = ({
 
   // In-Portal Notifications State
   const [inPortalNotifs, setInPortalNotifs] = useState<InPortalNotification[]>(INITIAL_IN_PORTAL_NOTIFICATIONS);
+
+  const filteredQueueItems = useMemo(
+    () => deliveryQueue.filter((item) => (queueFilter === 'ALL' ? true : item.status === queueFilter)),
+    [deliveryQueue, queueFilter]
+  );
+
+  const queueGrid = useStandardDataGrid({
+    gridId: 'comm-hub-delivery-queue',
+    userId: currentUser.id,
+    data: filteredQueueItems,
+    defaultSortField: 'lastAttemptAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: queueFilter,
+  });
+
+  const recentTelemetryItems = useMemo(
+    () =>
+      [...deliveryQueue]
+        .sort((a, b) => (b.lastAttemptAt || '').localeCompare(a.lastAttemptAt || ''))
+        .slice(0, 5),
+    [deliveryQueue]
+  );
 
   // Helper to replace placeholders in preview
   const renderTemplatePreview = (content: string) => {
@@ -347,7 +372,7 @@ export const CommunicationHubView: React.FC<CommunicationHubViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {deliveryQueue.slice(0, 5).map((item) => (
+                  {recentTelemetryItems.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50">
                       <td className="p-3 font-mono text-[11px] text-slate-500">
                         {(item.lastAttemptAt || '').split('T')[1]?.slice(0, 8) || '14:30:12'}
@@ -831,9 +856,7 @@ export const CommunicationHubView: React.FC<CommunicationHubViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {deliveryQueue
-                  .filter((item) => (queueFilter === 'ALL' ? true : item.status === queueFilter))
-                  .map((item) => (
+                {queueGrid.pagedData.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50">
                       <td className="p-2.5 font-bold font-mono">
                         <span
@@ -887,6 +910,15 @@ export const CommunicationHubView: React.FC<CommunicationHubViewProps> = ({
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={queueGrid.currentPage}
+            totalPages={queueGrid.totalPages}
+            pageSize={queueGrid.pageSize}
+            totalRecords={queueGrid.totalRecords}
+            onPageChange={queueGrid.setCurrentPage}
+            onPageSizeChange={queueGrid.setPageSize}
+            pageSizeOptions={queueGrid.pageSizeOptions}
+          />
         </div>
       )}
     </div>

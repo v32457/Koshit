@@ -9,7 +9,24 @@ export type AuditEntityType =
   | 'ASSIGNMENT_RULE'
   | 'PURCHASE_REQUISITION'
   | 'APPROVAL_MAPPING'
-  | 'SECURITY';
+  | 'FINANCIAL_YEAR'
+  | 'ACCOUNTING_PERIOD'
+  | 'WORKDAY_CALENDAR'
+  | 'BUDGET_CONTROL'
+  | 'INVOICE_MATCHING'
+  | 'INVENTORY_VALIDATION'
+  | 'INVENTORY_TRANSFER'
+  | 'STOCK_AGING'
+  | 'PR_AGING'
+  | 'SECURITY'
+  | 'SYSTEM_CONFIG'
+  | 'CHARGE_GOVERNANCE'
+  | 'GLOBAL_ITEM'
+  | 'GLOBAL_ITEM_MASTER'
+  | 'BRANCH_ITEM'
+  | 'UOM_MASTER'
+  | 'CLASSIFICATION_MASTER'
+  | 'ITEM_RULE';
 
 export type AuditSourceType = 'UI' | 'API' | 'SYSTEM';
 
@@ -56,6 +73,8 @@ export interface AuditFilterParams {
   dateTo?: string;
   source?: string;
   searchQuery?: string;
+  financialYearId?: string;
+  financialYearCode?: string;
 }
 
 const STORAGE_KEY_AUDIT_LOGS = 'kosh_enterprise_audit_log_v4';
@@ -87,10 +106,10 @@ export async function calculateRecordHash(
     newValue: payload.newValue || null,
   });
 
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
     try {
       const msgUint8 = new TextEncoder().encode(str);
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+      const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', msgUint8);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     } catch {
@@ -110,37 +129,39 @@ export async function calculateRecordHash(
   return `sha256-${h1Hex}${h2Hex}${Math.abs(hash1).toString(36)}`;
 }
 
-// Initial Immutable Seed Logs
+// Initial Immutable Seed Logs (ordered newest-first; valid cryptographic SHA-256 chain)
 const INITIAL_AUDIT_RECORDS: EnterpriseAuditRecord[] = [
   {
-    id: 'aud-20260101-0001',
-    correlationId: 'corr-po-init-01',
+    id: 'aud-20260101-0003',
+    correlationId: 'corr-mgr-pm-01',
     companyId: 'co-kosh-01',
     companyName: 'Kosh Innovations Pvt Ltd',
     purchaseOrganizationId: 'po-kosh-01',
     purchaseOrganizationCode: 'PO-HQ-01',
-    entityType: 'PURCHASE_ORGANIZATION',
-    entityId: 'po-kosh-01',
-    eventType: 'PURCHASE_ORG_CREATED',
-    eventDescription: 'Created Purchase Organization [PO-HQ-01] Kosh Central Procurement Organization',
+    entityType: 'MANAGER_ASSIGNMENT',
+    entityId: 'eff-po-01-pm-1',
+    eventType: 'PRIMARY_MANAGER_ASSIGNED',
+    eventDescription: 'Assigned Primary Purchasing Manager (Venkatesh Iyer [EMP-3001]) for PO-HQ-01',
     previousValue: undefined,
     newValue: {
-      code: 'PO-HQ-01',
-      name: 'Kosh Central Procurement Organization',
-      model: 'CENTRALIZED',
-      companyId: 'co-kosh-01',
-      status: 'ACTIVE',
-      effectiveFrom: '2026-01-01',
+      role: 'PRIMARY_MANAGER',
+      userId: 'usr-checker-03',
+      userName: 'Venkatesh Iyer',
+      employeeId: 'EMP-3001',
+      designation: 'Chief Purchasing Manager',
+      department: 'Global Sourcing & Contracts',
+      validFrom: '2026-01-01',
+      validTo: null,
     },
     changedByUserId: 'usr-admin-01',
     changedByName: 'Rajesh Sharma (Platform Admin)',
-    timestamp: '2026-01-01T00:00:00.000Z',
+    timestamp: '2026-01-01T00:10:00.000Z',
     effectiveFrom: '2026-01-01',
-    changeReason: 'Initial setup of central procurement governance',
-    authorizationReference: 'AUTH-GOV-2026-001',
+    changeReason: 'Assigned Chief Purchasing Manager',
+    authorizationReference: 'AUTH-MGR-01',
     source: 'UI',
-    previousHash: GENESIS_HASH,
-    hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    previousHash: 'ea26159cb0024fa0afb303b0e3f9df7df9dbd8c08ba1da518ae429423e02f2a2',
+    hash: '7991f6a36f5e547b9db4bdff1849c9a2a4e566ff84b79a60e6c9059d5cd94bba',
   },
   {
     id: 'aud-20260101-0002',
@@ -171,53 +192,61 @@ const INITIAL_AUDIT_RECORDS: EnterpriseAuditRecord[] = [
     changeReason: 'Assigned Primary Buyer for Central HQ Procurement',
     authorizationReference: 'AUTH-BUYER-01',
     source: 'UI',
-    previousHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-    hash: '4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
+    previousHash: 'f74e4acfff032f8343815477cf43a1ba2afccd2ebe091be211a5b7bc41815dc3',
+    hash: 'ea26159cb0024fa0afb303b0e3f9df7df9dbd8c08ba1da518ae429423e02f2a2',
   },
   {
-    id: 'aud-20260101-0003',
-    correlationId: 'corr-mgr-pm-01',
+    id: 'aud-20260101-0001',
+    correlationId: 'corr-po-init-01',
     companyId: 'co-kosh-01',
     companyName: 'Kosh Innovations Pvt Ltd',
     purchaseOrganizationId: 'po-kosh-01',
     purchaseOrganizationCode: 'PO-HQ-01',
-    entityType: 'MANAGER_ASSIGNMENT',
-    entityId: 'eff-po-01-pm-1',
-    eventType: 'PRIMARY_MANAGER_ASSIGNED',
-    eventDescription: 'Assigned Primary Purchasing Manager (Venkatesh Iyer [EMP-3001]) for PO-HQ-01',
+    entityType: 'PURCHASE_ORGANIZATION',
+    entityId: 'po-kosh-01',
+    eventType: 'PURCHASE_ORG_CREATED',
+    eventDescription: 'Created Purchase Organization [PO-HQ-01] Kosh Central Procurement Organization',
     previousValue: undefined,
     newValue: {
-      role: 'PRIMARY_MANAGER',
-      userId: 'usr-checker-03',
-      userName: 'Venkatesh Iyer',
-      employeeId: 'EMP-3001',
-      designation: 'Chief Purchasing Manager',
-      department: 'Global Sourcing & Contracts',
-      validFrom: '2026-01-01',
-      validTo: null,
+      code: 'PO-HQ-01',
+      name: 'Kosh Central Procurement Organization',
+      model: 'CENTRALIZED',
+      companyId: 'co-kosh-01',
+      status: 'ACTIVE',
+      effectiveFrom: '2026-01-01',
     },
     changedByUserId: 'usr-admin-01',
     changedByName: 'Rajesh Sharma (Platform Admin)',
-    timestamp: '2026-01-01T00:10:00.000Z',
+    timestamp: '2026-01-01T00:00:00.000Z',
     effectiveFrom: '2026-01-01',
-    changeReason: 'Assigned Chief Purchasing Manager',
-    authorizationReference: 'AUTH-MGR-01',
+    changeReason: 'Initial setup of central procurement governance',
+    authorizationReference: 'AUTH-GOV-2026-001',
     source: 'UI',
-    previousHash: '4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
-    hash: 'ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d',
+    previousHash: GENESIS_HASH,
+    hash: 'f74e4acfff032f8343815477cf43a1ba2afccd2ebe091be211a5b7bc41815dc3',
   },
 ];
+
+let memoryAuditFallback: EnterpriseAuditRecord[] | null = null;
+let auditWriteQueue: Promise<any> = Promise.resolve();
 
 export const EnterpriseAuditService = {
   getAuditLogs(filters?: AuditFilterParams, currentUser?: User): EnterpriseAuditRecord[] {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY_AUDIT_LOGS);
       let list: EnterpriseAuditRecord[];
-      if (!stored) {
-        localStorage.setItem(STORAGE_KEY_AUDIT_LOGS, JSON.stringify(INITIAL_AUDIT_RECORDS));
-        list = INITIAL_AUDIT_RECORDS;
+      if (typeof localStorage === 'undefined') {
+        if (!memoryAuditFallback) {
+          memoryAuditFallback = JSON.parse(JSON.stringify(INITIAL_AUDIT_RECORDS));
+        }
+        list = [...memoryAuditFallback!];
       } else {
-        list = JSON.parse(stored);
+        const stored = localStorage.getItem(STORAGE_KEY_AUDIT_LOGS);
+        if (!stored) {
+          localStorage.setItem(STORAGE_KEY_AUDIT_LOGS, JSON.stringify(INITIAL_AUDIT_RECORDS));
+          list = [...INITIAL_AUDIT_RECORDS];
+        } else {
+          list = JSON.parse(stored);
+        }
       }
 
       // Company isolation check (RBAC data isolation)
@@ -256,10 +285,24 @@ export const EnterpriseAuditService = {
           list = list.filter(r => r.source === filters.source);
         }
         if (filters.dateFrom) {
-          list = list.filter(r => r.timestamp >= filters.dateFrom!);
+          list = list.filter(r => r.timestamp.slice(0, 10) >= filters.dateFrom!.slice(0, 10));
         }
         if (filters.dateTo) {
-          list = list.filter(r => r.timestamp <= filters.dateTo!);
+          list = list.filter(r => r.timestamp.slice(0, 10) <= filters.dateTo!.slice(0, 10));
+        }
+        if (filters.financialYearCode) {
+          const targetCode = filters.financialYearCode.toLowerCase();
+          list = list.filter(r => {
+            const nv = r.newValue as Record<string, any> | undefined;
+            const pv = r.previousValue as Record<string, any> | undefined;
+            if (nv?.financialYearCode?.toLowerCase() === targetCode || pv?.financialYearCode?.toLowerCase() === targetCode) {
+              return true;
+            }
+            if (filters.financialYearId && (nv?.financialYearId === filters.financialYearId || pv?.financialYearId === filters.financialYearId)) {
+              return true;
+            }
+            return false;
+          });
         }
         if (filters.searchQuery && filters.searchQuery.trim()) {
           const q = filters.searchQuery.toLowerCase().trim();
@@ -306,68 +349,78 @@ export const EnterpriseAuditService = {
     relatedPrId?: string;
     idempotencyKey?: string;
   }): Promise<EnterpriseAuditRecord> {
-    const list = this.getAuditLogs();
+    const task = auditWriteQueue.then(async () => {
+      const list = this.getAuditLogs();
 
-    // Idempotency check to prevent duplicate events
-    if (params.idempotencyKey) {
-      const existing = list.find(r => r.idempotencyKey === params.idempotencyKey);
-      if (existing) {
-        return existing;
+      // Idempotency check to prevent duplicate events
+      if (params.idempotencyKey) {
+        const existing = list.find(r => r.idempotencyKey === params.idempotencyKey);
+        if (existing) {
+          return existing;
+        }
       }
-    }
 
-    const coObj = INITIAL_COMPANIES.find(c => c.id === params.companyId);
-    const prevRecord = list[0]; // newest previous record in list
-    const previousHash = prevRecord ? prevRecord.hash : GENESIS_HASH;
+      const coObj = INITIAL_COMPANIES.find(c => c.id === params.companyId);
+      const chronoLatest = [...list].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )[0];
+      const previousHash = chronoLatest ? chronoLatest.hash : GENESIS_HASH;
+      const minNextTs = chronoLatest ? Math.max(Date.now(), new Date(chronoLatest.timestamp).getTime() + 1) : Date.now();
 
-    const id = `aud-${new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14)}-${Math.random().toString(36).substring(2, 6)}`;
-    const correlationId = `corr-${Math.random().toString(36).substring(2, 9)}`;
-    const timestamp = new Date().toISOString();
+      const id = `aud-${new Date(minNextTs).toISOString().replace(/[-:T.Z]/g, '').slice(0, 14)}-${Math.random().toString(36).substring(2, 6)}`;
+      const correlationId = `corr-${Math.random().toString(36).substring(2, 9)}`;
+      const timestamp = new Date(minNextTs).toISOString();
 
-    const hash = await calculateRecordHash({
-      id,
-      correlationId,
-      previousHash,
-      timestamp,
-      entityType: params.entityType,
-      eventType: params.eventType,
-      changedByUserId: params.changedByUserId,
-      previousValue: params.previousValue,
-      newValue: params.newValue,
+      const hash = await calculateRecordHash({
+        id,
+        correlationId,
+        previousHash,
+        timestamp,
+        entityType: params.entityType,
+        eventType: params.eventType,
+        changedByUserId: params.changedByUserId,
+        previousValue: params.previousValue,
+        newValue: params.newValue,
+      });
+
+      const newRecord: EnterpriseAuditRecord = {
+        id,
+        correlationId,
+        companyId: params.companyId,
+        companyName: params.companyName || coObj?.name || params.companyId,
+        purchaseOrganizationId: params.purchaseOrganizationId,
+        purchaseOrganizationCode: params.purchaseOrganizationCode,
+        branchId: params.branchId,
+        branchName: params.branchName,
+        entityType: params.entityType,
+        entityId: params.entityId,
+        eventType: params.eventType,
+        eventDescription: params.eventDescription,
+        previousValue: params.previousValue,
+        newValue: params.newValue,
+        changedByUserId: params.changedByUserId,
+        changedByName: params.changedByName,
+        timestamp,
+        effectiveFrom: params.effectiveFrom,
+        effectiveTo: params.effectiveTo,
+        changeReason: params.changeReason || 'Enterprise change event recorded',
+        authorizationReference: params.authorizationReference || `AUTH-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+        source: params.source || 'UI',
+        relatedPrId: params.relatedPrId,
+        previousHash,
+        hash,
+        idempotencyKey: params.idempotencyKey,
+      };
+
+      list.unshift(newRecord);
+      memoryAuditFallback = list;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_AUDIT_LOGS, JSON.stringify(list));
+      }
+      return newRecord;
     });
-
-    const newRecord: EnterpriseAuditRecord = {
-      id,
-      correlationId,
-      companyId: params.companyId,
-      companyName: params.companyName || coObj?.name || params.companyId,
-      purchaseOrganizationId: params.purchaseOrganizationId,
-      purchaseOrganizationCode: params.purchaseOrganizationCode,
-      branchId: params.branchId,
-      branchName: params.branchName,
-      entityType: params.entityType,
-      entityId: params.entityId,
-      eventType: params.eventType,
-      eventDescription: params.eventDescription,
-      previousValue: params.previousValue,
-      newValue: params.newValue,
-      changedByUserId: params.changedByUserId,
-      changedByName: params.changedByName,
-      timestamp,
-      effectiveFrom: params.effectiveFrom,
-      effectiveTo: params.effectiveTo,
-      changeReason: params.changeReason || 'Enterprise change event recorded',
-      authorizationReference: params.authorizationReference || `AUTH-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-      source: params.source || 'UI',
-      relatedPrId: params.relatedPrId,
-      previousHash,
-      hash,
-      idempotencyKey: params.idempotencyKey,
-    };
-
-    list.unshift(newRecord);
-    localStorage.setItem(STORAGE_KEY_AUDIT_LOGS, JSON.stringify(list));
-    return newRecord;
+    auditWriteQueue = task.catch(() => {});
+    return task;
   },
 
   // Log Security / Unauthorized Access Attempts
@@ -452,8 +505,12 @@ export const EnterpriseAuditService = {
   },
 
   // Export Filtered Audit Logs to CSV
-  exportAuditLogsToCsv(filters?: AuditFilterParams, currentUser?: User): void {
-    const logs = this.getAuditLogs(filters, currentUser);
+  exportAuditLogsToCsv(
+    filters?: AuditFilterParams,
+    currentUser?: User,
+    preFilteredLogs?: EnterpriseAuditRecord[]
+  ): void {
+    const logs = preFilteredLogs ?? this.getAuditLogs(filters, currentUser);
 
     const headers = [
       'Audit Event ID',

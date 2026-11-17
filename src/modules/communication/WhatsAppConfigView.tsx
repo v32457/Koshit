@@ -1,28 +1,30 @@
 import React, { useState } from 'react';
-import { WhatsAppConfig, WhatsAppMode } from '../../types';
+import { User, WhatsAppConfig, WhatsAppMode } from '../../types';
+import type { CommunicationPurpose } from '../../types/userRoleAdmin';
 import { INITIAL_WHATSAPP_CONFIG } from '../../data/communicationSeed';
+import { userRoleAdminService } from '../../services/userRoleAdminService';
+import { COMMUNICATION_PURPOSE_CATALOG, mobileConsentService } from '../../services/mobileConsentService';
 import {
   MessageSquare,
-  Shield,
   Zap,
   CheckCircle2,
   AlertTriangle,
-  RotateCcw,
   RefreshCw,
   Send,
   Lock,
-  Key,
   Server,
   UserCheck,
-  History,
   Power,
-  ExternalLink,
-  Smartphone,
   Copy,
   Check,
+  ShieldAlert,
 } from 'lucide-react';
 
-export const WhatsAppConfigView: React.FC = () => {
+interface WhatsAppConfigViewProps {
+  currentUser?: User;
+}
+
+export const WhatsAppConfigView: React.FC<WhatsAppConfigViewProps> = ({ currentUser }) => {
   const [config, setConfig] = useState<WhatsAppConfig>(INITIAL_WHATSAPP_CONFIG);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -38,8 +40,10 @@ export const WhatsAppConfigView: React.FC = () => {
 
   // Send test message
   const [isTestSendModalOpen, setIsTestSendModalOpen] = useState(false);
+  const [testTargetUserId, setTestTargetUserId] = useState<string>('');
   const [testPhoneNumber, setTestPhoneNumber] = useState('+919840123456');
-  const [testMsgStatus, setTestMsgStatus] = useState<string | null>(null);
+  const [testPurpose, setTestPurpose] = useState<CommunicationPurpose>('WHATSAPP_NOTIFICATIONS');
+  const [testMsgResult, setTestMsgResult] = useState<{ allowed: boolean; text: string } | null>(null);
   const [isSendingTestMsg, setIsSendingTestMsg] = useState(false);
 
   // Template sync status
@@ -86,14 +90,38 @@ export const WhatsAppConfigView: React.FC = () => {
   };
 
   const handleSendTestMessage = () => {
-    if (!testPhoneNumber) return;
+    if (!testTargetUserId && !testPhoneNumber) return;
     setIsSendingTestMsg(true);
-    setTestMsgStatus(null);
+    setTestMsgResult(null);
 
-    setTimeout(() => {
-      setIsSendingTestMsg(false);
-      setTestMsgStatus(`Meta Cloud API accepted message: wamid.HBgMOTE5ODQwMTIzNDU2FQIAERgSRTk0OTM5 for ${testPhoneNumber}.`);
-    }, 900);
+    const decision = mobileConsentService.evaluateCommunicationDispatch({
+      targetUserId: testTargetUserId || undefined,
+      phoneNumber: testTargetUserId ? undefined : testPhoneNumber,
+      channel: 'WHATSAPP',
+      purpose: testPurpose,
+      actor: {
+        id: currentUser?.id || 'usr-admin-01',
+        name: currentUser?.fullName || 'Platform Administrator',
+      },
+      context: 'WhatsApp Config Test Dispatch',
+    });
+
+    setIsSendingTestMsg(false);
+    if (!decision.allowed) {
+      setTestMsgResult({
+        allowed: false,
+        text: `${decision.reason}${decision.auditEventId ? ` (Audit Ref: ${decision.auditEventId})` : ''}`,
+      });
+      return;
+    }
+
+    const displayDest = testTargetUserId
+      ? mobileConsentService.maskMobileNumber('', decision.e164Number || testPhoneNumber)
+      : testPhoneNumber;
+    setTestMsgResult({
+      allowed: true,
+      text: `Meta Cloud API accepted message for ${displayDest}: ${decision.reason}`,
+    });
   };
 
   const handleSyncTemplates = () => {
@@ -490,28 +518,76 @@ export const WhatsAppConfigView: React.FC = () => {
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Destination Phone Number (E.164 format)</label>
-                <input
-                  type="text"
-                  value={testPhoneNumber}
-                  onChange={(e) => setTestPhoneNumber(e.target.value)}
-                  className="w-full text-xs font-mono border border-slate-300 rounded-lg px-3 py-2"
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Must include country code, e.g. +91 98401 23456.
-                </p>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Target Enterprise User (Optional — Tests Consent Gate)
+                </label>
+                <select
+                  value={testTargetUserId}
+                  onChange={(e) => setTestTargetUserId(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white"
+                >
+                  <option value="">-- Raw External E.164 Number --</option>
+                  {userRoleAdminService.getUsers().map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} ({u.mobileNumberType || 'NO_MOBILE'} • {u.mobileConsentStatus || 'N/A'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!testTargetUserId && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Destination Phone Number (E.164 format)
+                  </label>
+                  <input
+                    type="text"
+                    value={testPhoneNumber}
+                    onChange={(e) => setTestPhoneNumber(e.target.value)}
+                    className="w-full text-xs font-mono border border-slate-300 rounded-lg px-3 py-2"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Communication Purpose</label>
+                <select
+                  value={testPurpose}
+                  onChange={(e) => setTestPurpose(e.target.value as CommunicationPurpose)}
+                  className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white"
+                >
+                  {COMMUNICATION_PURPOSE_CATALOG.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-1">
                 <div className="font-semibold text-slate-900">Payload Preview:</div>
-                <div><strong>Template:</strong> kosh_item_approval_alert (en_US)</div>
-                <div><strong>Parameters:</strong> Ramesh Balasubramanian, MAPALBL0003, Machine Parts, Karthik Raja</div>
-                <div><strong>Mode:</strong> {config.mode}</div>
+                <div>
+                  <strong>Template:</strong> kosh_item_approval_alert (en_US)
+                </div>
+                <div>
+                  <strong>Mode:</strong> {config.mode}
+                </div>
               </div>
 
-              {testMsgStatus && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-lg text-xs font-mono">
-                  {testMsgStatus}
+              {testMsgResult && (
+                <div
+                  className={`p-3 rounded-lg text-xs border flex items-start gap-2 ${
+                    testMsgResult.allowed
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
+                >
+                  {testMsgResult.allowed ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                  )}
+                  <span>{testMsgResult.text}</span>
                 </div>
               )}
             </div>
@@ -521,9 +597,9 @@ export const WhatsAppConfigView: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setIsTestSendModalOpen(false);
-                  setTestMsgStatus(null);
+                  setTestMsgResult(null);
                 }}
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 Close
               </button>
@@ -531,7 +607,7 @@ export const WhatsAppConfigView: React.FC = () => {
                 type="button"
                 onClick={handleSendTestMessage}
                 disabled={isSendingTestMsg}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>{isSendingTestMsg ? 'Dispatching...' : 'Dispatch WhatsApp'}</span>

@@ -39,6 +39,10 @@
 | **Secret Management** | Zero Secrets in Browser Bundles | Verified no raw secrets in `src/` or frontend bundles. | **PASSED** |
 | **GST Provider Credential Handling** | Server-Only `x-api-key` Usage | Provider tests assert the key is sent by the server and absent from client-facing responses. | **PASSED** |
 | **GST Data Truthfulness** | Fail-Closed Verification | Invalid GSTIN, mismatch, malformed response, provider failure, missing key, and DB failure all remain failures with no fabricated records. | **PASSED (automated tests)** |
+| **Centralized RBAC & Deny-by-Default** | 10-Step Policy Engine & Registry Sync | Unregistered permissions, inactive accounts, expired assignments, cross-company/branch access, and self-approval all denied by default. | **PASSED (automated tests)** |
+| **Permission Auto-Registration Guard** | No Silent Privilege Escalation | Newly registered modules/features default to DENY and emit Role-Impact Proposals requiring explicit admin approval. | **PASSED (automated tests)** |
+| **Credential & Session Security** | Salted SHA-256 Password Hashing, Lockout & Force Logout | Plaintext passwords prohibited; lockout threshold, concurrent session ceiling, and instant session revocation verified. | **PASSED (automated tests)** |
+| **SoD & Break-Glass Controls** | Preventive SoD & Bounded Emergency Access | SoD exceptions and access requests block self-approval; Break-Glass enforces mandatory reason, max duration, CRITICAL alert & SHA-256 audit. | **PASSED (automated tests)** |
 
 ---
 

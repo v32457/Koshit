@@ -49,3 +49,11 @@
 - **Total Tests Passing**: 19 / 19 tests passed (100%)
 - **Compiler Status**: 0 errors (`npm run lint`)
 - **Bundle Verification**: Production build verified (`npm run build`)
+
+### Phase 4 — Centralized User & Role Administration (`/settings/users-roles`)
+- [x] User Master & Identity Lifecycle (`userRoleAdminService.ts`): Create/Invite/Employee-linked/Bulk Import Preview+Commit, Lock/Unlock/Suspend, Salted SHA-256 password rotation, Non-destructive Termination (preserves history, revokes sessions/assignments/temp/delegations)
+- [x] Role Hierarchy, Versioning & Comparison: Single-parent inheritance with circular DFS detection, explicit restrictions, protected system role deletion block
+- [x] Granular Module → Submodule → Feature → Action → Data Scope Registry & Sync Audit: Automatic registration wired to `ModuleManagementView.tsx` with **Deny-by-Default** enforcement and explicit Role-Impact Proposals
+- [x] 10-Step Centralized Authorization Engine (`evaluateAuthorization`) + Versioned Cache Invalidation unified with `rbacPermissionService`
+- [x] 11-Dimension Organizational Scopes, 3-Stage Access Request Workflow, Auto-Expiring Temporary Access, Scope-Bounded Delegations, SoD Engine, Security Policies, Active Session Revocation, Break-Glass Emergency Access, Periodic Access Reviews, and 23 Governance Reports
+- [x] Automated unit tests added in `src/services/userRoleAdminService.test.ts`

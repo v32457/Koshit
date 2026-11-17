@@ -31,16 +31,33 @@ import {
   AgingParameterService,
   DEFAULT_AGING_BUCKETS,
 } from '../../services/agingParameterService';
-import { Company, Branch } from '../../types';
+import { Company, Branch, User } from '../../types';
 import { INITIAL_COMPANIES, INITIAL_BRANCHES } from '../../data/seedData';
+import { DataGridFooter } from '../../components/DataGridFooter';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import {
+  inventoryAgingService,
+  StockAgingPolicyConfig,
+  DEFAULT_STOCK_AGING_BUCKETS,
+} from '../../services/inventoryAgingService';
+import {
+  prAgingService,
+  PrAgingPolicyConfig,
+  PrAgingBasis,
+  DEFAULT_PR_AGING_BUCKETS,
+} from '../../services/prAgingService';
+import { PRPriority, PRType } from '../../types/purchaseRequisition';
 
 interface AgingParameterMasterViewProps {
   embedded?: boolean; // If embedded inside GeneralSettingsView
+  currentUser?: User;
 }
 
 export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> = ({
   embedded = false,
+  currentUser,
 }) => {
+  const [activeAgingTab, setActiveAgingTab] = useState<'FINANCIAL' | 'STOCK_AGING' | 'PR_AGING'>('FINANCIAL');
   // Configs state
   const [configs, setConfigs] = useState<AgingParameterConfig[]>(() => AgingParameterService.getConfigs());
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,6 +108,180 @@ export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> =
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<AgingParameterConfig | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Standardized Grid Pagination + Default DESC Sort for Financial Aging Configs
+  const financialGrid = useStandardDataGrid({
+    gridId: 'aging-parameter-financial',
+    userId: currentUser?.id || 'usr-default',
+    data: filteredConfigs,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'code',
+    filterSignature: `${selectedCompanyId}|${statusFilter}|${basisFilter}|${searchQuery}`,
+  });
+
+  // ============================================================================
+  // TAB 2: INVENTORY STOCK AGING POLICIES STATE
+  // ============================================================================
+  const [stockPolicies, setStockPolicies] = useState<StockAgingPolicyConfig[]>(() =>
+    inventoryAgingService.getPolicies()
+  );
+  const [stockScopeBranch, setStockScopeBranch] = useState<string>('ALL');
+  const [stockScopeWarehouse, setStockScopeWarehouse] = useState<string>('ALL');
+  const [stockScopeCategory, setStockScopeCategory] = useState<string>('ALL');
+  const [stockDraft, setStockDraft] = useState<StockAgingPolicyConfig>(() =>
+    inventoryAgingService.getEffectivePolicy({ companyId: companies[0]?.id || 'co-kosh-01' })
+  );
+
+  const companyBranches = useMemo(
+    () => branches.filter((b) => b.orgId === selectedCompanyId || selectedCompanyId === 'ALL'),
+    [branches, selectedCompanyId]
+  );
+
+  const availableWarehouses = useMemo(() => {
+    const list: Array<{ code: string; name: string }> = [];
+    companyBranches.forEach((b) => {
+      (b.warehouses || []).forEach((w) => {
+        if (!list.some((x) => x.code === w.warehouseCode)) {
+          list.push({ code: w.warehouseCode, name: `${w.warehouseName} (${b.name})` });
+        }
+      });
+    });
+    return list;
+  }, [companyBranches]);
+
+  const handleLoadStockPolicy = (
+    compId = selectedCompanyId,
+    brId = stockScopeBranch,
+    whCode = stockScopeWarehouse,
+    cat = stockScopeCategory
+  ) => {
+    const eff = inventoryAgingService.getEffectivePolicy({
+      companyId: compId === 'ALL' ? 'co-kosh-01' : compId,
+      branchId: brId,
+      warehouseCode: whCode,
+      itemCategory: cat,
+    });
+    setStockDraft({
+      ...eff,
+      branchId: brId,
+      warehouseCode: whCode,
+      itemCategory: cat,
+    });
+  };
+
+  const handleSaveStockPolicy = () => {
+    try {
+      const saved = inventoryAgingService.savePolicyConfig(
+        {
+          companyId: selectedCompanyId === 'ALL' ? 'co-kosh-01' : selectedCompanyId,
+          branchId: stockScopeBranch,
+          warehouseCode: stockScopeWarehouse,
+          itemCategory: stockScopeCategory,
+          isEnabled: stockDraft.isEnabled,
+          expiryValidationEnabled: stockDraft.expiryValidationEnabled,
+          excludeExpiredFromAvailable: stockDraft.excludeExpiredFromAvailable,
+          nearExpiryThresholdDays: Number(stockDraft.nearExpiryThresholdDays) || 30,
+          secondaryExpiryThresholdDays: Number(stockDraft.secondaryExpiryThresholdDays) || 60,
+          criticalExpiryThresholdDays: Number(stockDraft.criticalExpiryThresholdDays) || 90,
+          issueMethod: stockDraft.issueMethod,
+          buckets: stockDraft.buckets,
+          effectiveFrom: stockDraft.effectiveFrom || new Date().toISOString().slice(0, 10),
+          updatedBy: currentUser?.fullName || 'Platform Governance Admin',
+          changeReason: stockDraft.changeReason || 'Stock Aging Policy Configuration Update',
+        },
+        { id: currentUser?.id || 'usr-admin', name: currentUser?.fullName || 'Platform Governance Admin' },
+        currentUser
+      );
+      setStockPolicies(inventoryAgingService.getPolicies());
+      setStockDraft(saved);
+      showNotice('success', `Saved Inventory Stock Aging Policy v${saved.version} (${saved.issueMethod}).`);
+    } catch (err: any) {
+      showNotice('error', err?.message || 'Unable to save Stock Aging Policy.');
+    }
+  };
+
+  const stockPolicyGrid = useStandardDataGrid({
+    gridId: 'stock-aging-policy-history',
+    userId: currentUser?.id || 'usr-default',
+    data: stockPolicies,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
+
+  // ============================================================================
+  // TAB 3: SEPARATE PR AGING POLICIES STATE
+  // ============================================================================
+  const [prPolicies, setPrPolicies] = useState<PrAgingPolicyConfig[]>(() =>
+    prAgingService.getPolicies()
+  );
+  const [prScopeBranch, setPrScopeBranch] = useState<string>('ALL');
+  const [prScopeType, setPrScopeType] = useState<PRType | 'ALL'>('ALL');
+  const [prScopePriority, setPrScopePriority] = useState<PRPriority | 'ALL'>('ALL');
+  const [prDraft, setPrDraft] = useState<PrAgingPolicyConfig>(() =>
+    prAgingService.getEffectivePolicy({ companyId: companies[0]?.id || 'co-kosh-01' })
+  );
+
+  const handleLoadPrPolicy = (
+    compId = selectedCompanyId,
+    brId = prScopeBranch,
+    prType: PRType | 'ALL' = prScopeType,
+    priority: PRPriority | 'ALL' = prScopePriority
+  ) => {
+    const eff = prAgingService.getEffectivePolicy({
+      companyId: compId === 'ALL' ? 'co-kosh-01' : compId,
+      branchId: brId,
+      prType: prType === 'ALL' ? undefined : prType,
+      priority: priority === 'ALL' ? undefined : priority,
+    });
+    setPrDraft({
+      ...eff,
+      branchId: brId,
+      prType,
+      priority,
+    });
+  };
+
+  const handleSavePrPolicy = () => {
+    try {
+      const saved = prAgingService.savePolicyConfig(
+        {
+          companyId: selectedCompanyId === 'ALL' ? 'co-kosh-01' : selectedCompanyId,
+          branchId: prScopeBranch,
+          purchaseOrgId: 'ALL',
+          prType: prScopeType,
+          priority: prScopePriority,
+          isEnabled: prDraft.isEnabled,
+          agingBasis: prDraft.agingBasis,
+          excludeDrafts: prDraft.excludeDrafts,
+          excludeTerminalClosed: prDraft.excludeTerminalClosed,
+          buckets: prDraft.buckets,
+          stageSlaDays: prDraft.stageSlaDays,
+          escalationThresholdDays: Number(prDraft.escalationThresholdDays) || 7,
+          effectiveFrom: prDraft.effectiveFrom || new Date().toISOString().slice(0, 10),
+          updatedBy: currentUser?.fullName || 'Platform Governance Admin',
+          changeReason: prDraft.changeReason || 'Separate PR Aging Policy Configuration Update',
+        },
+        { id: currentUser?.id || 'usr-admin', name: currentUser?.fullName || 'Platform Governance Admin' },
+        currentUser
+      );
+      setPrPolicies(prAgingService.getPolicies());
+      setPrDraft(saved);
+      showNotice('success', `Saved PR Aging Policy v${saved.version} (Basis: ${saved.agingBasis}).`);
+    } catch (err: any) {
+      showNotice('error', err?.message || 'Unable to save PR Aging Policy.');
+    }
+  };
+
+  const prPolicyGrid = useStandardDataGrid({
+    gridId: 'pr-aging-policy-history',
+    userId: currentUser?.id || 'usr-default',
+    data: prPolicies,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
 
   // Handlers
   const handleOpenCreateModal = () => {
@@ -236,12 +427,73 @@ export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> =
         </div>
 
         <div className="flex items-center gap-2">
+          {activeAgingTab === 'FINANCIAL' && (
+            <button
+              onClick={handleOpenCreateModal}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" /> Create Aging Parameter
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Independent Aging Engines Navigation Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
-            onClick={handleOpenCreateModal}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
+            type="button"
+            onClick={() => setActiveAgingTab('FINANCIAL')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeAgingTab === 'FINANCIAL'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-white'
+            }`}
           >
-            <Plus className="w-4 h-4" /> Create Aging Parameter
+            Financial & AP/AR Aging ({configs.length})
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveAgingTab('STOCK_AGING')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeAgingTab === 'STOCK_AGING'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-white'
+            }`}
+          >
+            Inventory Stock Aging & Expiry Policies ({stockPolicies.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveAgingTab('PR_AGING')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeAgingTab === 'PR_AGING'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-white'
+            }`}
+          >
+            PR Aging & Stage SLA Policies ({prPolicies.length})
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 px-2">
+          <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+          <select
+            value={selectedCompanyId}
+            onChange={(e) => {
+              const cid = e.target.value;
+              setSelectedCompanyId(cid);
+              handleLoadStockPolicy(cid, 'ALL', 'ALL', 'ALL');
+              handleLoadPrPolicy(cid, 'ALL', 'ALL', 'ALL');
+            }}
+            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 cursor-pointer"
+          >
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.code})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -256,6 +508,9 @@ export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> =
           <span>{notice.message}</span>
         </div>
       )}
+
+      {activeAgingTab === 'FINANCIAL' && (
+        <>
 
       {/* Scope & Search Filter Toolbar */}
       <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -307,14 +562,14 @@ export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> =
 
       {/* Active Aging Configurations List Cards */}
       <div className="space-y-4">
-        {filteredConfigs.length === 0 ? (
+        {financialGrid.pagedData.length === 0 ? (
           <div className="p-8 bg-slate-50 rounded-xl border border-slate-200 text-center space-y-2">
             <Clock className="w-8 h-8 text-slate-400 mx-auto" />
             <p className="font-bold text-slate-700 text-sm">No Aging Parameter configurations found</p>
             <p className="text-slate-500 text-xs">Try adjusting your filters or create a new aging parameter master.</p>
           </div>
         ) : (
-          filteredConfigs.map((cfg) => (
+          financialGrid.pagedData.map((cfg) => (
             <div key={cfg.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3 hover:border-slate-300 transition">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-3">
@@ -413,6 +668,535 @@ export const AgingParameterMasterView: React.FC<AgingParameterMasterViewProps> =
           ))
         )}
       </div>
+      <DataGridFooter
+        currentPage={financialGrid.currentPage}
+        totalPages={financialGrid.totalPages}
+        pageSize={financialGrid.pageSize}
+        totalRecords={financialGrid.totalRecords}
+        onPageChange={financialGrid.setCurrentPage}
+        onPageSizeChange={financialGrid.setPageSize}
+        defaultSortNotice="Default Sort: Newest Updated First (DESC)"
+      />
+      </>
+      )}
+
+      {/* TAB 2: INVENTORY STOCK AGING & EXPIRY POLICIES */}
+      {activeAgingTab === 'STOCK_AGING' && (
+        <div className="space-y-4">
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-extrabold text-emerald-950 text-sm">
+                  Inventory Stock Aging & Shelf-Life Policy Configuration (v{stockDraft.version})
+                </h3>
+                <p className="text-[11px] text-emerald-800">
+                  Strictly independent from PR Aging. Missing batch receipt dates show &ldquo;Data Unavailable&rdquo;; non-expiring items show &ldquo;Not Applicable&rdquo;.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveStockPolicy}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" /> Save Stock Aging Version
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Branch Scope</label>
+                <select
+                  value={stockScopeBranch}
+                  onChange={(e) => {
+                    setStockScopeBranch(e.target.value);
+                    handleLoadStockPolicy(selectedCompanyId, e.target.value, stockScopeWarehouse, stockScopeCategory);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All Branches (Company Default)</option>
+                  {companyBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Warehouse Scope</label>
+                <select
+                  value={stockScopeWarehouse}
+                  onChange={(e) => {
+                    setStockScopeWarehouse(e.target.value);
+                    handleLoadStockPolicy(selectedCompanyId, stockScopeBranch, e.target.value, stockScopeCategory);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All Warehouses</option>
+                  {availableWarehouses.map((w) => (
+                    <option key={w.code} value={w.code}>
+                      {w.code} — {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Item Category Scope</label>
+                <select
+                  value={stockScopeCategory}
+                  onChange={(e) => {
+                    setStockScopeCategory(e.target.value);
+                    handleLoadStockPolicy(selectedCompanyId, stockScopeBranch, stockScopeWarehouse, e.target.value);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All Categories</option>
+                  <option value="Raw Materials">Raw Materials</option>
+                  <option value="Consumables">Consumables</option>
+                  <option value="Spare Parts">Spare Parts</option>
+                  <option value="Chemicals & Adhesives">Chemicals & Adhesives</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-emerald-200">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Issue Sequence Rule</label>
+                <select
+                  value={stockDraft.issueMethod}
+                  onChange={(e) => setStockDraft({ ...stockDraft, issueMethod: e.target.value as 'FIFO' | 'FEFO' })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="FEFO">FEFO (Earliest Expiry First)</option>
+                  <option value="FIFO">FIFO (Oldest Receipt First)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Near-Expiry Warning (Days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={stockDraft.nearExpiryThresholdDays}
+                  onChange={(e) => setStockDraft({ ...stockDraft, nearExpiryThresholdDays: Number(e.target.value) || 30 })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer pt-5">
+                <input
+                  type="checkbox"
+                  checked={stockDraft.expiryValidationEnabled}
+                  onChange={(e) => setStockDraft({ ...stockDraft, expiryValidationEnabled: e.target.checked })}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                <span>Enable Expiry Checks</span>
+              </label>
+              <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer pt-5">
+                <input
+                  type="checkbox"
+                  checked={stockDraft.excludeExpiredFromAvailable}
+                  onChange={(e) => setStockDraft({ ...stockDraft, excludeExpiredFromAvailable: e.target.checked })}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                <span>Exclude Expired from Available</span>
+              </label>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+              <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <span className="font-bold text-slate-800">Editable Stock Aging Buckets</span>
+                <button
+                  type="button"
+                  onClick={() => setStockDraft({ ...stockDraft, buckets: JSON.parse(JSON.stringify(DEFAULT_STOCK_AGING_BUCKETS)) })}
+                  className="text-[11px] font-bold text-indigo-600 underline cursor-pointer"
+                >
+                  Reset 0–30 / 31–90 / 91–180 / 181–365 / &gt;365
+                </button>
+              </div>
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 text-[10px] font-bold uppercase border-b border-slate-200">
+                    <th className="p-2.5">Bucket Key</th>
+                    <th className="p-2.5">Label</th>
+                    <th className="p-2.5 text-center">From Days</th>
+                    <th className="p-2.5 text-center">To Days</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stockDraft.buckets.map((bk, idx) => (
+                    <tr key={bk.key}>
+                      <td className="p-2.5 font-mono font-bold text-slate-700">{bk.key}</td>
+                      <td className="p-2">
+                        <input
+                          type="text"
+                          value={bk.label}
+                          onChange={(e) => {
+                            const next = [...stockDraft.buckets];
+                            next[idx] = { ...next[idx], label: e.target.value };
+                            setStockDraft({ ...stockDraft, buckets: next });
+                          }}
+                          className="w-full p-1.5 border border-slate-300 rounded font-semibold"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={idx === 0}
+                          value={bk.fromDays}
+                          onChange={(e) => {
+                            const next = [...stockDraft.buckets];
+                            next[idx] = { ...next[idx], fromDays: Number(e.target.value) || 0 };
+                            setStockDraft({ ...stockDraft, buckets: next });
+                          }}
+                          className="w-20 p-1.5 border border-slate-300 rounded text-center font-mono font-bold disabled:bg-slate-100"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          value={bk.toDays}
+                          onChange={(e) => {
+                            const v = Number(e.target.value) || 0;
+                            const next = [...stockDraft.buckets];
+                            next[idx] = { ...next[idx], toDays: v };
+                            if (idx < next.length - 1) {
+                              next[idx + 1] = { ...next[idx + 1], fromDays: v + 1 };
+                            }
+                            setStockDraft({ ...stockDraft, buckets: next });
+                          }}
+                          className="w-24 p-1.5 border border-slate-300 rounded text-center font-mono font-bold"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 font-bold text-slate-800">
+              Stock Aging Policy Versions (Sorted Newest First DESC)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 text-[10px] font-bold uppercase border-b border-slate-200">
+                    <th className="p-2.5">Version</th>
+                    <th className="p-2.5">Scope</th>
+                    <th className="p-2.5">Issue Method</th>
+                    <th className="p-2.5">Near Expiry</th>
+                    <th className="p-2.5">Status</th>
+                    <th className="p-2.5">Updated</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stockPolicyGrid.pagedData.map((p) => (
+                    <tr key={p.id}>
+                      <td className="p-2.5 font-mono font-bold">v{p.version}</td>
+                      <td className="p-2.5">{p.companyId} / {p.branchId} / {p.warehouseCode} / {p.itemCategory}</td>
+                      <td className="p-2.5 font-bold">{p.issueMethod}</td>
+                      <td className="p-2.5 font-mono">{p.nearExpiryThresholdDays}d</td>
+                      <td className="p-2.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="p-2.5 font-mono text-slate-500">{p.updatedAt.slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DataGridFooter
+            currentPage={stockPolicyGrid.currentPage}
+            totalPages={stockPolicyGrid.totalPages}
+            pageSize={stockPolicyGrid.pageSize}
+            totalRecords={stockPolicyGrid.totalRecords}
+            onPageChange={stockPolicyGrid.setCurrentPage}
+            onPageSizeChange={stockPolicyGrid.setPageSize}
+            defaultSortNotice="Default Sort: Newest Versions First (DESC)"
+          />
+        </div>
+      )}
+
+      {/* TAB 3: SEPARATE PR AGING & STAGE SLA POLICIES */}
+      {activeAgingTab === 'PR_AGING' && (
+        <div className="space-y-4">
+          <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-extrabold text-amber-950 text-sm">
+                  Purchase Requisition (PR) Pending & Stage Aging Policy (v{prDraft.version})
+                </h3>
+                <p className="text-[11px] text-amber-800">
+                  Strictly separated from Stock Aging. Draft PRs and Closed/Cancelled PRs are excluded from active pending aging.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSavePrPolicy}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" /> Save PR Aging Version
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Branch Scope</label>
+                <select
+                  value={prScopeBranch}
+                  onChange={(e) => {
+                    setPrScopeBranch(e.target.value);
+                    handleLoadPrPolicy(selectedCompanyId, e.target.value, prScopeType, prScopePriority);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All Branches</option>
+                  {companyBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">PR Type</label>
+                <select
+                  value={prScopeType}
+                  onChange={(e) => {
+                    const t = e.target.value as PRType | 'ALL';
+                    setPrScopeType(t);
+                    handleLoadPrPolicy(selectedCompanyId, prScopeBranch, t, prScopePriority);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All PR Types</option>
+                  <option value="MANUAL">Manual</option>
+                  <option value="MRP">MRP</option>
+                  <option value="REPAIR">Repair</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="CAPEX_ASSET">Capex / Asset</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">PR Priority</label>
+                <select
+                  value={prScopePriority}
+                  onChange={(e) => {
+                    const p = e.target.value as PRPriority | 'ALL';
+                    setPrScopePriority(p);
+                    handleLoadPrPolicy(selectedCompanyId, prScopeBranch, prScopeType, p);
+                  }}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="ALL">All Priorities</option>
+                  <option value="LOW">Low</option>
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3.5 rounded-xl border border-amber-200">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">PR Aging Calculation Basis</label>
+                <select
+                  value={prDraft.agingBasis}
+                  onChange={(e) => setPrDraft({ ...prDraft, agingBasis: e.target.value as PrAgingBasis })}
+                  className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  <option value="SUBMITTED_DATE">PR Submitted Date (Default)</option>
+                  <option value="CREATED_DATE">PR Created Date</option>
+                  <option value="STAGE_ENTERED_DATE">Current Stage Entered Date</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Escalation Threshold (Days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={prDraft.escalationThresholdDays}
+                  onChange={(e) => setPrDraft({ ...prDraft, escalationThresholdDays: Number(e.target.value) || 7 })}
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer pt-5">
+                <input
+                  type="checkbox"
+                  checked={prDraft.excludeDrafts}
+                  onChange={(e) => setPrDraft({ ...prDraft, excludeDrafts: e.target.checked })}
+                  className="w-4 h-4 accent-amber-600"
+                />
+                <span>Exclude Draft PRs</span>
+              </label>
+              <label className="flex items-center gap-2 font-bold text-slate-700 cursor-pointer pt-5">
+                <input
+                  type="checkbox"
+                  checked={prDraft.excludeTerminalClosed}
+                  onChange={(e) => setPrDraft({ ...prDraft, excludeTerminalClosed: e.target.checked })}
+                  className="w-4 h-4 accent-amber-600"
+                />
+                <span>Exclude Closed/Cancelled</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="font-bold text-slate-800">Editable PR Pending Aging Buckets</span>
+                  <button
+                    type="button"
+                    onClick={() => setPrDraft({ ...prDraft, buckets: JSON.parse(JSON.stringify(DEFAULT_PR_AGING_BUCKETS)) })}
+                    className="text-[11px] font-bold text-indigo-600 underline cursor-pointer"
+                  >
+                    Reset 0–3 / 4–7 / 8–15 / &gt;15
+                  </button>
+                </div>
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 text-[10px] font-bold uppercase border-b border-slate-200">
+                      <th className="p-2">Label</th>
+                      <th className="p-2 text-center">From</th>
+                      <th className="p-2 text-center">To</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {prDraft.buckets.map((bk, idx) => (
+                      <tr key={bk.key}>
+                        <td className="p-2">
+                          <input
+                            type="text"
+                            value={bk.label}
+                            onChange={(e) => {
+                              const next = [...prDraft.buckets];
+                              next[idx] = { ...next[idx], label: e.target.value };
+                              setPrDraft({ ...prDraft, buckets: next });
+                            }}
+                            className="w-full p-1.5 border border-slate-300 rounded font-semibold"
+                          />
+                        </td>
+                        <td className="p-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            disabled={idx === 0}
+                            value={bk.fromDays}
+                            onChange={(e) => {
+                              const next = [...prDraft.buckets];
+                              next[idx] = { ...next[idx], fromDays: Number(e.target.value) || 0 };
+                              setPrDraft({ ...prDraft, buckets: next });
+                            }}
+                            className="w-16 p-1.5 border border-slate-300 rounded text-center font-mono font-bold disabled:bg-slate-100"
+                          />
+                        </td>
+                        <td className="p-2 text-center">
+                          <input
+                            type="number"
+                            min={0}
+                            value={bk.toDays}
+                            onChange={(e) => {
+                              const v = Number(e.target.value) || 0;
+                              const next = [...prDraft.buckets];
+                              next[idx] = { ...next[idx], toDays: v };
+                              if (idx < next.length - 1) {
+                                next[idx + 1] = { ...next[idx + 1], fromDays: v + 1 };
+                              }
+                              setPrDraft({ ...prDraft, buckets: next });
+                            }}
+                            className="w-20 p-1.5 border border-slate-300 rounded text-center font-mono font-bold"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5">
+                <div className="font-bold text-slate-800">Stage-Wise SLA Targets (Days)</div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {([
+                    ['PENDING_MANAGER_APPROVAL', 'Pending Manager Approval'],
+                    ['PENDING_DEPARTMENT_APPROVAL', 'Pending Department Approval'],
+                    ['PENDING_SUBSEQUENT_APPROVAL', 'Pending Category Approval'],
+                    ['APPROVED_PENDING_BUYER', 'Approved Pending Buyer'],
+                    ['PENDING_BUYER_CONFIGURATION', 'Pending Buyer Action'],
+                    ['PENDING_RFQ_CONVERSION', 'Pending RFQ Conversion'],
+                  ] as const).map(([key, label]) => (
+                    <div key={key}>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-0.5">{label}</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={prDraft.stageSlaDays[key]}
+                        onChange={(e) =>
+                          setPrDraft({
+                            ...prDraft,
+                            stageSlaDays: {
+                              ...prDraft.stageSlaDays,
+                              [key]: Number(e.target.value) || 1,
+                            },
+                          })
+                        }
+                        className="w-full p-1.5 border border-slate-300 rounded font-mono font-bold text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 font-bold text-slate-800">
+              PR Aging Policy Versions (Sorted Newest First DESC)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 text-[10px] font-bold uppercase border-b border-slate-200">
+                    <th className="p-2.5">Version</th>
+                    <th className="p-2.5">Scope</th>
+                    <th className="p-2.5">Basis</th>
+                    <th className="p-2.5">Escalation SLA</th>
+                    <th className="p-2.5">Status</th>
+                    <th className="p-2.5">Updated</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {prPolicyGrid.pagedData.map((p) => (
+                    <tr key={p.id}>
+                      <td className="p-2.5 font-mono font-bold">v{p.version}</td>
+                      <td className="p-2.5">{p.companyId} / {p.branchId} / {p.prType} / {p.priority}</td>
+                      <td className="p-2.5 font-bold">{p.agingBasis}</td>
+                      <td className="p-2.5 font-mono">{p.escalationThresholdDays}d</td>
+                      <td className="p-2.5">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="p-2.5 font-mono text-slate-500">{p.updatedAt.slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DataGridFooter
+            currentPage={prPolicyGrid.currentPage}
+            totalPages={prPolicyGrid.totalPages}
+            pageSize={prPolicyGrid.pageSize}
+            totalRecords={prPolicyGrid.totalRecords}
+            onPageChange={prPolicyGrid.setCurrentPage}
+            onPageSizeChange={prPolicyGrid.setPageSize}
+            defaultSortNotice="Default Sort: Newest Versions First (DESC)"
+          />
+        </div>
+      )}
 
       {/* CREATE / EDIT AGING PARAMETER MODAL */}
       {isModalOpen && editingConfig && (

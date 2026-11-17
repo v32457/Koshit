@@ -1,0 +1,921 @@
+# MASTER IMPLEMENTATION PROMPT
+## KOSH Innovations – Centralized Charge Management Engine
+### Enterprise Procurement Management System
+
+**ROLE**
+
+Act as a Principal Enterprise Solution Architect, Senior Full-Stack Engineer, Procurement Domain Specialist, Database Architect and QA Automation Engineer.
+
+You are implementing a production-grade Centralized Charge Management Engine within the existing KOSH Innovations Procurement Management System.
+
+This is a KOSH Innovations project. Do not reference CIPPlatform or reuse its architecture.
+
+---
+
+# 1. PRIMARY OBJECTIVE
+
+Implement a centralized Charge Management Engine that manages all procurement-related additional charges across the complete procurement lifecycle.
+
+The system must support:
+
+- Domestic procurement.
+- International and import procurement.
+- Multiple suppliers.
+- Multiple currencies.
+- Multiple PO lines.
+- Split purchase orders.
+- Split shipments.
+- Partial deliveries.
+- Partial goods receipts.
+- Multiple invoices.
+- Header-level charges.
+- Line-level charges.
+- Shipment and transportation charges.
+- Actual-cost-based charges.
+- Complex landed-cost calculations.
+
+The architecture must be extensible so that new charge types, calculation methods, application levels and procurement workflows can be added without redesigning the module.
+
+**IMPORTANT:** This must be implemented inside the existing KOSH application. Do not create a standalone application or a disconnected demonstration module.
+
+# 2. MANDATORY FIRST STEP – EXISTING APPLICATION AUDIT
+
+Before changing any code, inspect the entire existing project.
+
+Identify and document:
+
+1. Frontend framework and component architecture.
+2. Backend framework and API architecture.
+3. Database engine, schema and ORM.
+4. Existing PR module and PR Details screen.
+5. Existing PR item and line-item structure.
+6. Existing RFQ module.
+7. Existing supplier quotation comparison.
+8. Existing PO module and PO line structure.
+9. Existing delivery schedule functionality.
+10. Existing shipment and transportation functionality.
+11. Existing GRN and partial receipt functionality.
+12. Existing invoice and accounts payable integration.
+13. Existing approval workflows.
+14. Existing RBAC and user permissions.
+15. Existing audit logging.
+16. Existing currency and exchange-rate handling.
+17. Existing GST and tax calculation functionality.
+18. Existing landed-cost or additional-cost functionality, if any.
+
+Inspect the actual code and database before making architectural decisions.
+
+Do not assume table names, API endpoints, components, frameworks or existing business rules.
+
+Prepare an implementation impact assessment identifying:
+
+- Existing reusable components.
+- Existing modules requiring modification.
+- New components required.
+- Database migrations required.
+- Existing functionality at risk.
+- Integration dependencies.
+
+Do not replace existing modules unnecessarily.
+
+# 3. PR DETAILS – NEW CHARGE ITEMS TAB
+
+Add a separate tab named:
+
+**Charge Items**
+
+Integrate it into the existing Purchase Requisition Details interface.
+
+Preserve the existing navigation, modal behaviour, layout, styling, permissions and responsive design.
+
+The PR Details tabs should include the existing tabs plus the new Charge Items tab. Do not remove existing tabs.
+
+The Charge Items tab must support:
+
+A. Add Charge
+B. Edit Charge
+C. Remove Charge (subject to approval and transaction status)
+D. Select from Charge Master
+E. Configure applicability
+F. Select calculation method
+G. Configure allocation basis
+H. Enter estimated charge amount
+I. Select currency
+J. Configure tax treatment
+K. Attach supporting documents
+L. View charge calculation details
+M. View total estimated charges
+N. View charge distribution across PR lines
+
+Display a charge summary containing:
+
+- Material/Service Subtotal.
+- Additional Charges.
+- Applicable Taxes.
+- Estimated Total PR Value.
+- Currency.
+
+The PR must retain estimated charges independently from subsequent RFQ, PO and actual invoice values.
+
+# 4. SUPPORT ALL CHARGE APPLICATION LEVELS
+
+Implement all ten application levels.
+
+| No. | Application Level | Description |
+|---|---|---|
+| 1 | PR Header | Entire Purchase Requisition |
+| 2 | PR Line | Individual PR item |
+| 3 | PO Header | Entire Purchase Order |
+| 4 | PO Line | Individual PO item |
+| 5 | Shipment | Individual shipment/consignment |
+| 6 | Delivery Schedule | Individual delivery schedule |
+| 7 | Goods Receipt (GRN) | Individual receipt transaction |
+| 8 | Quantity Based | Ordered or received quantity |
+| 9 | Transport / Trip | Individual transportation trip |
+| 10 | Invoice Level | Supplier or service-provider invoice |
+
+Application level and calculation method must be independent configurations.
+
+A charge can be permitted at multiple application levels through Charge Master rules.
+
+Do not automatically apply the same charge at every level. Actual transaction applicability must be explicitly controlled.
+
+# 5. CENTRALIZED CHARGE MASTER
+
+Create a centralized Charge Master.
+
+Suggested initial charge categories:
+
+**A. Logistics**
+- Loading Charges.
+- Unloading Charges.
+- Freight Charges.
+- Transportation Charges.
+- Handling Charges.
+- Packing Charges.
+- Warehousing Charges.
+- Vehicle Charges.
+- Delivery Charges.
+
+**B. Import and Customs**
+- Customs Duty.
+- Customs Clearance.
+- Customs Broker Charges.
+- Port Charges.
+- Terminal Handling Charges.
+- Documentation Charges.
+- Import Handling Charges.
+- Demurrage.
+- Detention Charges.
+
+**C. Insurance**
+- Transit Insurance.
+- Marine Insurance.
+- Cargo Insurance.
+
+**D. Quality and Compliance**
+- Inspection Charges.
+- Testing Charges.
+- Certification Charges.
+- Documentation and Compliance Charges.
+
+**E. Other**
+- Installation Charges.
+- Commissioning Charges.
+- Professional Service Charges.
+- Miscellaneous Charges.
+
+Do not hardcode this list as the only supported charges. Users with appropriate permissions must be able to create additional charge definitions.
+
+Each Charge Master record must contain:
+
+- Charge ID.
+- Charge Code.
+- Charge Name.
+- Charge Description.
+- Charge Category.
+- Default Application Level.
+- Permitted Application Levels.
+- Default Calculation Method.
+- Applicability Rule.
+- Default Currency.
+- Default Tax Treatment.
+- Default Allocation Basis.
+- Charge Bearer.
+- Recoverability.
+- Minimum Charge.
+- Maximum Charge.
+- Effective From.
+- Effective To.
+- Active/Inactive Status.
+- Created By.
+- Created Date.
+- Modified By.
+- Modified Date.
+
+Prevent duplicate active charge codes.
+
+# 6. APPLICABILITY RULES
+
+Support four applicability statuses:
+
+1. Mandatory.
+2. Optional.
+3. Conditional.
+4. Not Applicable.
+
+Business rules:
+
+- Mandatory charges must be automatically populated wherever the configured rule applies.
+- Optional charges can be selected by authorized users.
+- Conditional charges must satisfy configured conditions or receive an explicit applicability confirmation.
+- Not Applicable charges must not be included in calculations.
+- Applicability changes must be recorded in the audit log.
+- Users must not bypass mandatory charges without authorized exception approval.
+
+Support rule conditions based on:
+
+- Procurement category.
+- Material or service category.
+- Domestic/import procurement.
+- Supplier.
+- Supplier country.
+- Purchase organization.
+- Plant/location.
+- Currency.
+- Incoterms.
+- Delivery terms.
+- Shipment method.
+- Material value.
+- Quantity.
+- Weight.
+- Volume.
+- Delivery schedule.
+
+Rules must be configurable, not scattered throughout frontend and backend code.
+
+# 7. CALCULATION ENGINE
+
+Implement the following calculation methods.
+
+| Method | Calculation |
+|---|---|
+| Fixed Amount | Fixed charge amount |
+| Percentage | Percentage of configured calculation base |
+| Per Unit | Rate × Quantity |
+| Per KG | Rate × Weight in KG |
+| Per MT | Rate × Weight in MT |
+| Per Volume | Rate × Volume |
+| Per KM | Rate × Distance |
+| Per Shipment | Rate × Shipment Count |
+| Per Trip | Rate × Trip Count |
+| Per Day | Rate × Number of Days |
+| Actual Cost | Actual documented expense |
+| Formula Based | Approved configurable calculation formula |
+
+Support calculation bases:
+
+- Material line value.
+- Total PO material value.
+- Net quantity.
+- Received quantity.
+- Gross weight.
+- Net weight.
+- Volume.
+- Distance.
+- Number of shipments.
+- Number of trips.
+- Number of days.
+- Manual allocation.
+- Equal allocation.
+- Actual invoice amount.
+
+Calculation formulas must be evaluated on the backend.
+
+Do not execute arbitrary user-supplied JavaScript, Python, SQL or executable code.
+
+Implement a restricted, validated formula evaluator.
+
+Support:
+- Decimal precision.
+- Currency precision.
+- Rounding rules.
+- Minimum charge.
+- Maximum charge.
+- Effective dates.
+- Calculation sequence.
+- Zero-value handling.
+- Negative-value validation.
+- Currency conversion.
+
+Store the calculation inputs and calculation result for audit and reproducibility.
+
+# 8. CHARGE ALLOCATION ENGINE
+
+Implement allocation across PO lines.
+
+Support these allocation methods:
+
+1. Equal Distribution.
+2. Proportional to Material Value.
+3. Proportional to Quantity.
+4. Proportional to Weight.
+5. Proportional to Volume.
+6. Manual Allocation.
+7. Direct Line Allocation.
+
+Example:
+
+PO material value:
+
+| Item | Material Value |
+|---|---:|
+| Item A | ₹50,000 |
+| Item B | ₹30,000 |
+| Item C | ₹20,000 |
+| Total | ₹1,00,000 |
+
+PO Header Freight = ₹10,000.
+
+Proportional allocation:
+
+| Item | Freight Allocation |
+|---|---:|
+| Item A | ₹5,000 |
+| Item B | ₹3,000 |
+| Item C | ₹2,000 |
+
+The allocation engine must:
+
+- Preserve the original header charge.
+- Maintain individual line allocations.
+- Ensure allocated total equals original charge.
+- Handle rounding differences deterministically.
+- Prevent duplicate allocations.
+- Support partial allocation.
+- Recalculate only affected records.
+- Preserve previous allocation versions.
+- Support manual overrides with authorization.
+
+Do not silently overwrite manually approved allocations.
+
+# 9. DOMESTIC AND IMPORT PROCUREMENT
+
+Support different charge and tax treatments for domestic and import procurement.
+
+Domestic procurement examples:
+
+- Freight.
+- Loading.
+- Unloading.
+- Packing.
+- Insurance.
+- Handling.
+- GST.
+- Other applicable statutory charges.
+
+Import procurement examples:
+
+- International freight.
+- Marine insurance.
+- Customs duty.
+- Social Welfare Surcharge, where applicable.
+- Import IGST.
+- Customs broker charges.
+- Port handling.
+- Terminal handling.
+- Demurrage.
+- Detention.
+- Inland transportation.
+
+IMPORTANT TAX CONTROL:
+
+Do not treat all import charges as ordinary taxable expenses.
+
+Customs duty, import IGST, domestic GST, reverse-charge transactions and other statutory levies must have separate tax calculation and accounting treatment.
+
+Do not hardcode tax rates.
+
+Use the existing KOSH tax configuration and approved statutory mappings. If the existing system lacks required tax configuration, identify the gap and implement an authorized configurable mapping.
+
+Do not invent GST or customs rates.
+
+Prevent double taxation and double counting of import taxes.
+
+Maintain separate values for:
+
+- Charge Amount.
+- Taxable Base.
+- Tax Amount.
+- Recoverable Tax.
+- Non-recoverable Tax.
+- Landed Cost Contribution.
+
+# 10. PROCUREMENT LIFECYCLE INTEGRATION
+
+Integrate the centralized Charge Management Engine with the following existing modules.
+
+**PR**
+- Create estimated charges.
+- Select application level.
+- Calculate estimated charge values.
+- Show PR charge summary.
+
+**RFQ**
+- Carry relevant estimated charges into RFQ.
+- Capture supplier-specific charges.
+- Support different charge structures from different suppliers.
+- Compare quoted charges.
+- Identify charges included in material price versus separately quoted charges.
+
+**PO**
+- Carry approved charges into PO.
+- Support PO Header and PO Line charges.
+- Allow authorized amendments.
+- Maintain the commercial charge agreement.
+
+**Shipment**
+- Capture shipment-specific expenses.
+- Support multiple shipments against one PO.
+- Link charges to the correct shipment.
+
+**Delivery Schedule**
+- Support delivery-specific charges.
+- Maintain charges against individual schedules.
+- Handle split deliveries.
+
+**GRN**
+- Capture receipt-related actual expenses.
+- Support partial receipts.
+- Link receipt charges to the relevant GRN.
+- Prevent duplication across multiple GRNs.
+
+**Invoice**
+- Capture supplier and third-party actual charges.
+- Support multiple invoices against one PO.
+- Link invoice charges to PO, PO Line, Shipment or GRN as applicable.
+- Support invoice matching and reconciliation.
+
+**Landed Cost**
+- Calculate final item-wise landed cost.
+- Include eligible direct and allocated indirect charges.
+- Separate recoverable taxes from inventory cost.
+- Support partial receipt and partial invoicing.
+- Maintain traceability to original transactions.
+
+Do not force a charge into a lifecycle stage where it does not belong.
+
+# 11. SPLIT DELIVERY AND PARTIAL RECEIPT
+
+This is a mandatory requirement.
+
+Example:
+
+One PO contains 100 units.
+
+Delivery 1 = 40 units.
+Delivery 2 = 35 units.
+Delivery 3 = 25 units.
+
+Freight charge = ₹10,000 for the complete PO.
+
+The system must support:
+
+- PO-level original freight.
+- Shipment-level actual freight.
+- Schedule-level unloading charges.
+- GRN-level actual handling charges.
+- Quantity-based charge allocation.
+- Partial landed-cost calculation.
+- Remaining unallocated charges.
+
+Ensure that charges are not duplicated when the same PO is received through multiple GRNs.
+
+Use explicit allocation policies for charges that should be distributed across receipts.
+
+# 12. MULTI-SUPPLIER SUPPORT
+
+The system must support:
+
+- Multiple suppliers in an RFQ.
+- Different supplier charge structures.
+- Different freight terms.
+- Different delivery conditions.
+- Different Incoterms.
+- Different currencies.
+- Supplier-specific quotations.
+- Supplier-specific charge comparison.
+- Different PO charges for different suppliers.
+
+Supplier A may quote freight separately.
+
+Supplier B may include freight in material pricing.
+
+Supplier C may charge freight based on weight.
+
+The quotation comparison engine must normalize these costs for fair commercial comparison without incorrectly adding charges already included in supplier prices.
+
+# 13. LANDED COST ENGINE
+
+Implement an item-wise landed-cost engine.
+
+Basic conceptual formula:
+
+Landed Cost = Material Cost + Allocated Eligible Direct Charges + Allocated Eligible Indirect Charges + Non-recoverable Taxes.
+
+Exclude recoverable input taxes from inventory cost where the applicable accounting and tax rules require it.
+
+Support:
+
+- Direct line charges.
+- Allocated PO header charges.
+- Shipment charges.
+- Freight.
+- Insurance.
+- Customs duty.
+- Eligible port and handling expenses.
+- Non-recoverable statutory costs.
+- Other approved acquisition costs.
+
+Maintain separate calculations for:
+
+- Estimated Landed Cost.
+- Quoted Landed Cost.
+- Approved Landed Cost.
+- Actual Landed Cost.
+- Final Reconciled Landed Cost.
+
+The calculation must be traceable to individual charge transactions.
+
+# 14. DATABASE DESIGN
+
+Design the database according to the existing KOSH database standards.
+
+Proposed logical entities:
+
+1. charge_master
+2. charge_application_levels
+3. charge_calculation_methods
+4. charge_rules
+5. charge_rule_conditions
+6. charge_rule_level_mapping
+7. transaction_charge_items
+8. charge_allocations
+9. charge_tax_details
+10. charge_currency_details
+11. charge_attachments
+12. charge_approvals
+13. charge_reconciliation
+14. charge_calculation_history
+15. charge_audit_log
+
+Use proper foreign keys, indexes, unique constraints and transaction boundaries.
+
+Important design requirements:
+
+- Do not duplicate the Charge Master in PR, RFQ, PO and GRN tables.
+- Use a common transaction charge model with explicit source document and source line references.
+- Maintain references to original PR, RFQ, PO, Shipment, Schedule, GRN and Invoice.
+- Preserve historical charge definitions and calculation snapshots.
+- Use soft deletion where transaction history must be retained.
+- Prevent orphaned charge records.
+- Implement idempotency for charge creation and recalculation operations.
+- Use database transactions for financial updates.
+
+Do not blindly create these exact tables if equivalent structures already exist. Reuse and extend existing structures where appropriate.
+
+# 15. UI/UX REQUIREMENTS
+
+Follow the existing KOSH application design system.
+
+The Charge Items interface must include:
+
+A. Charge Summary Dashboard
+- Total estimated charges.
+- Total quoted charges.
+- Total approved charges.
+- Total actual charges.
+- Unallocated charges.
+- Pending reconciliation.
+- Charge variance.
+
+B. Charge Items Grid
+
+Columns:
+
+- Charge Code.
+- Charge Name.
+- Category.
+- Application Level.
+- Applicability.
+- Calculation Method.
+- Calculation Basis.
+- Rate.
+- Currency.
+- Charge Amount.
+- Tax Amount.
+- Charge Bearer.
+- Allocation Status.
+- Approval Status.
+- Actions.
+
+C. Charge Details Modal
+
+Provide:
+- Add.
+- Edit.
+- View.
+- Duplicate.
+- Remove, subject to status.
+- Calculation Breakdown.
+- Allocation Breakdown.
+- Audit History.
+
+D. Filters
+
+- Charge Category.
+- Application Level.
+- Supplier.
+- Currency.
+- Applicability.
+- Approval Status.
+- Reconciliation Status.
+
+E. Visual indicators
+
+Use clear status indicators for:
+
+- Mandatory.
+- Conditional.
+- Not Applicable.
+- Estimated.
+- Quoted.
+- Approved.
+- Actual.
+- Reconciled.
+- Pending Approval.
+
+Do not introduce unrelated navigation changes.
+
+# 16. APPROVAL AND AUDIT GOVERNANCE
+
+Integrate with the existing KOSH approval workflow.
+
+Support:
+
+- Charge creation approval.
+- Mandatory charge exception approval.
+- Charge amount amendment approval.
+- Charge allocation amendment approval.
+- PO charge amendment approval.
+- Actual versus estimated variance approval.
+- Manual calculation override approval.
+
+Maintain complete audit records:
+
+- User.
+- Date/time.
+- Previous value.
+- New value.
+- Reason.
+- Source transaction.
+- Approval reference.
+- Calculation version.
+
+Approved transactions must not be silently modified.
+
+Use existing RBAC permissions and approval matrix wherever possible.
+
+# 17. SECURITY AND DATA VALIDATION
+
+Implement:
+
+- Backend authorization.
+- Role-based permissions.
+- Input validation.
+- Decimal and currency validation.
+- SQL injection protection.
+- Restricted formula execution.
+- Secure document upload.
+- File type and size validation.
+- Audit logging.
+- Transaction integrity.
+- API request validation.
+- Duplicate request protection.
+
+Never rely exclusively on frontend validation for financial calculations.
+
+# 18. API IMPLEMENTATION
+
+Implement APIs following the existing KOSH API conventions.
+
+Required logical operations:
+
+Charge Master:
+- List Charges.
+- Create Charge.
+- Update Charge.
+- Activate/Deactivate Charge.
+- Retrieve Charge Details.
+
+Charge Rules:
+- Create Rule.
+- Update Rule.
+- Validate Applicability.
+- Retrieve Applicable Charges.
+
+Transaction Charges:
+- Retrieve PR Charges.
+- Create PR Charge.
+- Update PR Charge.
+- Retrieve RFQ Charges.
+- Retrieve PO Charges.
+- Create PO Charge.
+- Retrieve Shipment Charges.
+- Retrieve GRN Charges.
+- Retrieve Invoice Charges.
+
+Calculation:
+- Calculate Charge.
+- Preview Allocation.
+- Execute Allocation.
+- Recalculate.
+- Retrieve Calculation History.
+
+Reconciliation:
+- Compare Estimated and Actual.
+- Identify Variance.
+- Submit for Approval.
+- Complete Reconciliation.
+
+Landed Cost:
+- Calculate Landed Cost.
+- Retrieve Item-wise Landed Cost.
+- Retrieve Shipment-wise Landed Cost.
+- Retrieve Cost Breakdown.
+
+All endpoints must have proper authentication, authorization, validation and error handling.
+
+Do not create duplicate APIs if equivalent endpoints already exist.
+
+# 19. ACCEPTANCE TESTING
+
+Implement and execute the following scenarios.
+
+| Test | Scenario | Expected Result |
+|---|---|---|
+| T01 | PR Header fixed freight | Charge calculated correctly |
+| T02 | PR Line loading charge | Charge attached to correct line |
+| T03 | PO Header freight | Charge allocated correctly |
+| T04 | PO Line handling | Correct item-wise charge |
+| T05 | Shipment customs clearance | Linked to correct shipment |
+| T06 | Schedule unloading | Linked to delivery schedule |
+| T07 | Multiple GRNs | No duplicate charges |
+| T08 | Quantity-based freight | Correct quantity calculation |
+| T09 | Transport trip charge | Correct trip calculation |
+| T10 | Invoice actual charges | Correct invoice linkage |
+| T11 | Domestic GST | Correct configured tax treatment |
+| T12 | Import customs duty | Correct configured statutory calculation |
+| T13 | Multiple suppliers | Correct supplier-wise comparison |
+| T14 | Multiple currencies | Correct exchange-rate conversion |
+| T15 | Split delivery | Correct charge distribution |
+| T16 | Partial receipt | Correct partial landed cost |
+| T17 | Manual allocation | Authorized override only |
+| T18 | Charge amendment | Approval and audit history |
+| T19 | Duplicate charge | Duplicate prevented |
+| T20 | Estimated versus actual | Correct reconciliation |
+| T21 | Recoverable GST | Excluded from inventory cost where appropriate |
+| T22 | Rounding differences | Allocation total reconciles exactly |
+| T23 | Inactive charge | Cannot be newly selected |
+| T24 | Unauthorized user | Modification rejected |
+
+Add automated unit, integration and regression tests.
+
+Do not claim a test has passed unless it has actually been executed.
+
+# 20. IMPLEMENTATION EXECUTION STRATEGY
+
+Execute implementation in the following phases.
+
+**Phase 1 – Application Audit**
+- Inspect existing application.
+- Identify current procurement architecture.
+- Document impact assessment.
+- Confirm database and workflow dependencies.
+
+**Phase 2 – Database and Charge Master**
+- Create or extend Charge Master.
+- Implement application levels.
+- Implement calculation methods.
+- Implement charge rules.
+- Apply database migrations.
+
+**Phase 3 – PR Charge Items**
+- Add new PR Details tab.
+- Implement charge selection.
+- Implement applicability.
+- Implement calculations.
+- Implement PR summary.
+
+**Phase 4 – Calculation and Allocation Engine**
+- Implement calculation services.
+- Implement header-to-line allocation.
+- Implement rounding and precision.
+- Implement calculation history.
+
+**Phase 5 – RFQ and PO Integration**
+- Integrate supplier quotations.
+- Implement supplier-specific charges.
+- Implement approved PO charges.
+- Implement amendments and approvals.
+
+**Phase 6 – Execution Integration**
+- Integrate shipment.
+- Integrate delivery schedule.
+- Integrate transport/trip.
+- Integrate GRN.
+- Integrate invoice.
+
+**Phase 7 – Landed Cost and Reconciliation**
+- Implement item-wise landed cost.
+- Implement partial receipt calculations.
+- Implement actual-cost reconciliation.
+- Implement cost variance reporting.
+
+**Phase 8 – Testing and Production Readiness**
+- Execute all acceptance tests.
+- Run regression tests.
+- Verify RBAC.
+- Verify database integrity.
+- Verify existing PR/RFQ/PO workflows.
+- Resolve all critical and high-severity defects.
+
+# 21. NON-NEGOTIABLE IMPLEMENTATION RULES
+
+1. Do not rebuild the existing KOSH application.
+2. Do not create mock procurement records.
+3. Do not insert fabricated supplier, GST, tax or customs information.
+4. Do not replace existing PR functionality.
+5. Do not break existing RFQ, PO, GRN or invoice workflows.
+6. Do not hardcode charge rates or statutory tax rates.
+7. Do not calculate financial values exclusively in the browser.
+8. Do not overwrite estimated values with actual values.
+9. Do not double-count charges.
+10. Do not create duplicate charge records.
+11. Do not bypass approval workflows.
+12. Do not remove existing application features.
+13. Do not use a new database when the existing database can be extended.
+14. Do not introduce paid external APIs or services without authorization.
+15. Do not mark incomplete features as implemented.
+16. Do not use fabricated data to demonstrate successful integration.
+17. Preserve existing application branding and UI consistency.
+
+# 22. FINAL DELIVERY REQUIREMENTS
+
+At completion, provide:
+
+1. Existing architecture audit report.
+2. Final technical architecture.
+3. Database schema and migration scripts.
+4. Charge Master implementation.
+5. Charge Items PR tab.
+6. Calculation engine.
+7. Allocation engine.
+8. RFQ and PO integrations.
+9. Shipment, schedule, GRN and invoice integrations.
+10. Landed-cost engine.
+11. API documentation.
+12. RBAC and approval configuration.
+13. Automated test results.
+14. Regression test results.
+15. List of modified and newly created files.
+16. Deployment instructions.
+17. Known limitations and pending work.
+
+Provide a module-by-module implementation status:
+
+- Completed and verified.
+- Implemented but not tested.
+- Partially implemented.
+- Not implemented.
+- Blocked by dependency.
+
+Do not claim production readiness until the complete critical workflow has passed testing.
+
+---
+
+# FINAL EXECUTION INSTRUCTION
+
+Start by auditing the existing KOSH Innovations repository.
+
+Do not immediately generate new code.
+
+First understand the existing application architecture, identify reusable modules and document the implementation impact.
+
+Then implement the Centralized Charge Management Engine incrementally, using the existing architecture, coding standards, database conventions, UI components, RBAC and approval workflows.
+
+Preserve all existing working functionality.
+
+The final result must be a fully integrated, enterprise-grade procurement charge management capability within KOSH Innovations, supporting domestic procurement, import procurement, multiple suppliers, multiple currencies, split deliveries, partial receipts, invoice reconciliation and item-wise landed-cost calculation.
+
+**Priority: Correct financial calculations, transaction integrity, auditability, procurement governance and backward compatibility over development speed or visual demonstrations.**

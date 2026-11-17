@@ -136,10 +136,13 @@ test('Scenario 8: Cancellation and authorized reversal preserve audit history', 
     assert.strictEqual(revRes.success, true);
     assert.strictEqual(revRes.record?.status, 'CANCELLED');
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    const auditLogs = EnterpriseAuditService.getAuditLogs();
-    const revLog = auditLogs.find((l) => l.eventType === 'RFQ_CONVERSION_REVERSED');
+    let revLog: any;
+    for (let i = 0; i < 20; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const auditLogs = EnterpriseAuditService.getAuditLogs();
+      revLog = auditLogs.find((l) => l.eventType === 'RFQ_CONVERSION_REVERSED');
+      if (revLog) break;
+    }
     assert.ok(revLog !== undefined);
   }
 });

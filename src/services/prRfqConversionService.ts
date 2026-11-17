@@ -6,11 +6,15 @@
 
 import { EnterpriseAuditService } from './enterpriseAuditService';
 import { PurchaseRequisitionService } from './purchaseRequisitionService';
+import { prGovernancePolicyService } from './prGovernancePolicyService';
 
 export type PrConversionStatus = 'NOT_CONVERTED' | 'PARTIALLY_CONVERTED' | 'FULLY_CONVERTED';
 
 export interface PrToRfqConversionRecord {
   id: string;
+  idempotencyKey?: string;
+  companyId?: string;
+  branchId?: string;
   prId: string;
   prNumber: string;
   prLineId: string;
@@ -54,6 +58,8 @@ const STORAGE_KEY_CONVERSIONS = 'kosh_pr_rfq_conversion_ledger_v1';
 const INITIAL_CONVERSIONS: PrToRfqConversionRecord[] = [
   {
     id: 'conv-001',
+    companyId: 'co-kosh-01',
+    branchId: 'br-pond-01',
     prId: 'pr-001',
     prNumber: 'PR-2026-0001',
     prLineId: 'pr-line-001',
@@ -74,12 +80,19 @@ const INITIAL_CONVERSIONS: PrToRfqConversionRecord[] = [
   },
 ];
 
-// In-memory locks to handle concurrent conversion requests safely
+// In-memory locks and fallback for Node unit tests
 const locks = new Set<string>();
+let memoryConversionsFallback: PrToRfqConversionRecord[] | null = null;
 
 export const prRfqConversionService = {
   getRecords(): PrToRfqConversionRecord[] {
     try {
+      if (typeof localStorage === 'undefined') {
+        if (!memoryConversionsFallback) {
+          memoryConversionsFallback = JSON.parse(JSON.stringify(INITIAL_CONVERSIONS));
+        }
+        return memoryConversionsFallback!;
+      }
       const stored = localStorage.getItem(STORAGE_KEY_CONVERSIONS);
       if (!stored) {
         localStorage.setItem(STORAGE_KEY_CONVERSIONS, JSON.stringify(INITIAL_CONVERSIONS));
@@ -92,7 +105,10 @@ export const prRfqConversionService = {
   },
 
   saveRecords(records: PrToRfqConversionRecord[]): void {
-    localStorage.setItem(STORAGE_KEY_CONVERSIONS, JSON.stringify(records));
+    memoryConversionsFallback = records;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_CONVERSIONS, JSON.stringify(records));
+    }
   },
 
   /**
@@ -114,17 +130,20 @@ export const prRfqConversionService = {
     let prNumber = fallbackPrNumber || 'PR-UNKNOWN';
     let itemCode = fallbackItemCode || 'ITEM-UNKNOWN';
 
-    if (!fallbackOriginalQty) {
-      const prs = PurchaseRequisitionService.getPurchaseRequisitions();
-      for (const p of prs) {
-        const line = p.lines.find((l) => l.id === prLineId);
-        if (line) {
+    let shortClosedOrCancelledQty = 0;
+    const prs = PurchaseRequisitionService.getPurchaseRequisitions();
+    for (const p of prs) {
+      const line = p.lines.find((l) => l.id === prLineId);
+      if (line) {
+        if (!fallbackOriginalQty) {
           originalQty = line.requestedQuantity;
           prInvUom = line.inventoryUom || 'EA';
           prNumber = p.prNumber;
           itemCode = line.itemCode;
-          break;
         }
+        shortClosedOrCancelledQty =
+          Number(line.shortClosedQuantity || 0) + Number(line.cancelledQuantity || 0);
+        break;
       }
     }
 
@@ -137,7 +156,10 @@ export const prRfqConversionService = {
     }
 
     const convertedQtyInvUom = activeRecords.reduce((acc, r) => acc + (r.convertedQtyInvUom || 0), 0);
-    const remainingQtyInvUom = Math.max(0, originalQty - convertedQtyInvUom);
+    const remainingQtyInvUom = Math.max(
+      0,
+      originalQty - convertedQtyInvUom - shortClosedOrCancelledQty
+    );
 
     let conversionStatus: PrConversionStatus = 'NOT_CONVERTED';
     if (convertedQtyInvUom > 0) {
@@ -163,7 +185,8 @@ export const prRfqConversionService = {
 
   /**
    * Concurrency-safe conversion execution.
-   * Validates line availability and logs permanent audit trail.
+   * Validates Company/Branch PR Governance Policy, cross-company isolation, idempotency deduplication,
+   * line availability, partial-conversion rule, and logs permanent audit trail.
    */
   recordConversion(params: {
     prId: string;
@@ -182,6 +205,7 @@ export const prRfqConversionService = {
     userName: string;
     companyId?: string;
     branchId?: string;
+    idempotencyKey?: string;
   }): { success: boolean; record?: PrToRfqConversionRecord; summary: PrLineConversionSummary; errorMessage?: string } {
     const lockKey = params.prLineId;
 
@@ -197,6 +221,62 @@ export const prRfqConversionService = {
     try {
       locks.add(lockKey);
 
+      const allPrs = PurchaseRequisitionService.getPurchaseRequisitions();
+      const targetPr = allPrs.find(p => p.id === params.prId || p.prNumber === params.prNumber);
+
+      // Requirement C.4: Prevent Cross-Company RFQ/PO Conversion
+      if (params.companyId && targetPr) {
+        const normTargetComp =
+          params.companyId === 'comp-1' || params.companyId === 'KOSH-HQ'
+            ? 'co-kosh-01'
+            : params.companyId;
+        const normPrComp =
+          targetPr.companyId === 'comp-1' || targetPr.companyId === 'KOSH-HQ'
+            ? 'co-kosh-01'
+            : targetPr.companyId;
+        if (normTargetComp !== normPrComp) {
+          return {
+            success: false,
+            errorMessage: `Cross-Company Conversion Violation: PR ${targetPr.prNumber} belongs to company ${normPrComp} and cannot be converted into an RFQ/PO for company ${normTargetComp}.`,
+            summary: this.getSummaryForPrLine(params.prLineId),
+          };
+        }
+      }
+
+      const effectiveCompanyId = targetPr?.companyId || params.companyId || 'co-kosh-01';
+      const effectiveBranchId = targetPr?.branchId || params.branchId || 'br-pond-01';
+
+      // Requirement M.2 & M.4: Idempotency & Duplicate Conversion Prevention
+      const allRecords = this.getRecords();
+      if (params.idempotencyKey) {
+        const existingByIdem = allRecords.find(
+          (r) => r.idempotencyKey === params.idempotencyKey && r.status === 'ACTIVE'
+        );
+        if (existingByIdem) {
+          return {
+            success: false,
+            errorMessage: `Duplicate Conversion Prevented: Idempotency reference '${params.idempotencyKey}' has already been processed (${existingByIdem.rfqNumber}).`,
+            record: existingByIdem,
+            summary: this.getSummaryForPrLine(params.prLineId),
+          };
+        }
+      }
+
+      // 1. Validate RFQ Conversion Policy
+      const rfqConvCheck = prGovernancePolicyService.evaluatePrAction({
+        action: 'CONVERT_TO_RFQ',
+        companyId: effectiveCompanyId,
+        branchId: effectiveBranchId,
+        pr: targetPr,
+      });
+      if (!rfqConvCheck.allowed) {
+        return {
+          success: false,
+          errorMessage: rfqConvCheck.reason || 'PR to RFQ Conversion is disabled by active governance policy.',
+          summary: this.getSummaryForPrLine(params.prLineId),
+        };
+      }
+
       const summaryBefore = this.getSummaryForPrLine(
         params.prLineId,
         undefined,
@@ -208,7 +288,7 @@ export const prRfqConversionService = {
       if (summaryBefore.conversionStatus === 'FULLY_CONVERTED' || summaryBefore.remainingQtyInvUom <= 0) {
         return {
           success: false,
-          errorMessage: `This PR line (${params.prNumber} / ${params.itemCode}) has already been fully converted to RFQ. No additional conversion is permitted.`,
+          errorMessage: `This PR line (${params.prNumber} / ${params.itemCode}) has already been fully converted or closed. No additional conversion is permitted.`,
           summary: summaryBefore,
         };
       }
@@ -221,9 +301,31 @@ export const prRfqConversionService = {
         };
       }
 
-      const allRecords = this.getRecords();
+      // 2. Validate Partial Conversion Policy if converting less than remaining quantity
+      const isPartial = params.convertQtyInvUom < summaryBefore.remainingQtyInvUom - 0.0001;
+      if (isPartial) {
+        const partialCheck = prGovernancePolicyService.evaluatePrAction({
+          action: 'PARTIAL_CONVERT_TO_RFQ',
+          companyId: effectiveCompanyId,
+          branchId: effectiveBranchId,
+          pr: targetPr,
+        });
+        if (!partialCheck.allowed) {
+          return {
+            success: false,
+            errorMessage:
+              partialCheck.reason ||
+              `Partial RFQ Conversion is disabled for ${effectiveCompanyId}/${effectiveBranchId}. Full remaining quantity (${summaryBefore.remainingQtyInvUom} ${params.prInvUom}) must be converted together.`,
+            summary: summaryBefore,
+          };
+        }
+      }
+
       const newRecord: PrToRfqConversionRecord = {
         id: `conv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        idempotencyKey: params.idempotencyKey,
+        companyId: effectiveCompanyId,
+        branchId: effectiveBranchId,
         prId: params.prId,
         prNumber: params.prNumber,
         prLineId: params.prLineId,
@@ -254,10 +356,31 @@ export const prRfqConversionService = {
         params.itemCode
       );
 
+      // Sync line-level lock status & downstream commitment on the PR record
+      if (targetPr) {
+        const lineObj = targetPr.lines.find(l => l.id === params.prLineId);
+        if (lineObj) {
+          lineObj.convertedRfqQuantity = summaryAfter.convertedQtyInvUom;
+          lineObj.rfqReferences = Array.from(
+            new Set([...(lineObj.rfqReferences || []), params.rfqNumber])
+          );
+          lineObj.lineLockStatus =
+            summaryAfter.remainingQtyInvUom <= 0.0001 ? 'LOCKED' : 'PARTIALLY_CONVERTED';
+        }
+        const recon = prGovernancePolicyService.calculateBudgetReconciliation(targetPr);
+        targetPr.budgetGovernance = {
+          originalReservationAmount: recon.originalReservation,
+          outstandingCommittedAmount: recon.validOutstandingCommitments,
+          previouslyReleasedAmount: recon.previouslyReleasedAmount,
+          releaseHistory: targetPr.budgetGovernance?.releaseHistory || [],
+        };
+        PurchaseRequisitionService.savePurchaseRequisitions(allPrs);
+      }
+
       // Audit Log Entry
       EnterpriseAuditService.logEvent({
-        companyId: params.companyId || 'co-kosh-01',
-        branchId: params.branchId || 'br-pond-01',
+        companyId: effectiveCompanyId,
+        branchId: effectiveBranchId,
         entityType: 'PURCHASE_REQUISITION',
         entityId: params.prLineId,
         eventType: 'PR_LINE_CONVERTED_TO_RFQ',

@@ -37,6 +37,8 @@ import { rfqService } from '../../services/rfqService';
 import { prRfqConversionService, PrLineConversionSummary } from '../../services/prRfqConversionService';
 import { marketBenchmarkService } from '../../services/marketBenchmarkService';
 import { FutureRfqDemandItem, ConsolidatedDemandGroup, MarketBenchmarkResult } from '../../types/rfqSourcing';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface FutureRfqFloatingViewProps {
   currentUser: User;
@@ -156,6 +158,26 @@ export const FutureRfqFloatingView: React.FC<FutureRfqFloatingViewProps> = ({
     });
   }, [consolidatedGroups, searchQuery, companyFilter, branchFilter, categoryFilter, statusFilter]);
 
+  const demandGrid = useStandardDataGrid({
+    gridId: 'future-rfq-floating',
+    userId: currentUser?.id,
+    data: filteredConsolidatedGroups,
+    defaultSortField: 'latestPrDate',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'groupId',
+    filterSignature: `${searchQuery}|${companyFilter}|${branchFilter}|${categoryFilter}|${statusFilter}`,
+    getRowId: (g) => g.groupId,
+    getFieldValue: (g, field) => {
+      if (field === 'latestPrDate') {
+        const timestamps = g.contributingDemandItems
+          .map((item) => Date.parse(item.createdAt || item.requiredDeliveryDate || ''))
+          .filter((n) => !Number.isNaN(n));
+        return timestamps.length > 0 ? Math.max(...timestamps) : null;
+      }
+      return (g as any)[field];
+    },
+  });
+
   // Total Available Demand Items across all active groups
   const allAvailableDemandItems = useMemo(() => {
     return demandItems.filter((i) => i.remainingQuantityInvUom > 0.0001);
@@ -206,7 +228,7 @@ export const FutureRfqFloatingView: React.FC<FutureRfqFloatingViewProps> = ({
   };
 
   const handleExpandAll = () => {
-    setExpandedGroupIds(filteredConsolidatedGroups.map((g) => g.groupId));
+    setExpandedGroupIds(demandGrid.pagedData.map((g) => g.groupId));
   };
 
   const handleCollapseAll = () => {
@@ -415,13 +437,13 @@ export const FutureRfqFloatingView: React.FC<FutureRfqFloatingViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-indigo-100 text-indigo-800">
-              Procurement & Sourcing
+              Procurement & Sourcing → RFQ
             </span>
             <span className="text-xs text-slate-400 font-medium">Unified Demand Queue & Market Benchmark</span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 mt-1 flex items-center gap-2">
             <Clock className="w-6 h-6 text-indigo-600" />
-            <span>Future RFQ Floating – Sourcing Demand Pipeline</span>
+            <span>Future RFQ</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Unified sourcing queue: Consolidate identical PR requirements across branches, track line-level conversion balances, and benchmark live supplier pricing.
@@ -728,14 +750,14 @@ export const FutureRfqFloatingView: React.FC<FutureRfqFloatingViewProps> = ({
             </thead>
 
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredConsolidatedGroups.length === 0 ? (
+              {demandGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="p-8 text-center text-slate-400">
                     No sourcing demand items found matching search or filter criteria.
                   </td>
                 </tr>
               ) : (
-                filteredConsolidatedGroups.map((group) => {
+                demandGrid.pagedData.map((group) => {
                   const isExpanded = expandedGroupIds.includes(group.groupId);
                   const isFullyConverted = group.totalAvailableQtyInvUom <= 0.0001;
 
@@ -1366,6 +1388,17 @@ export const FutureRfqFloatingView: React.FC<FutureRfqFloatingViewProps> = ({
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={demandGrid.currentPage}
+        totalPages={demandGrid.totalPages}
+        pageSize={demandGrid.pageSize}
+        totalRecords={demandGrid.totalRecords}
+        onPageChange={demandGrid.setCurrentPage}
+        onPageSizeChange={demandGrid.setPageSize}
+        pageSizeOptions={demandGrid.pageSizeOptions}
+        defaultSortNotice="Sorted newest first (Demand Date DESC)"
+      />
 
       {/* Pre-Conversion Summary Confirmation Modal */}
       {showPreConversionModal && (

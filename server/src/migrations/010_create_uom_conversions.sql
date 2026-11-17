@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS uom_conversions (
+  conversion_id VARCHAR(64) PRIMARY KEY,
+  scope_level ENUM('GLOBAL', 'BRANCH') NOT NULL DEFAULT 'GLOBAL',
+  global_item_id BIGINT UNSIGNED NULL,
+  branch_availability_id VARCHAR(64) NULL,
+  from_uom_code VARCHAR(16) NOT NULL,
+  to_uom_code VARCHAR(16) NOT NULL,
+  numerator DECIMAL(18,6) NOT NULL,
+  denominator DECIMAL(18,6) NOT NULL,
+  conversion_factor DECIMAL(18,6) NOT NULL,
+  decimal_precision INT NOT NULL DEFAULT 4,
+  rounding_rule ENUM('NONE', 'NEAREST', 'ROUND_UP', 'ROUND_DOWN') NOT NULL DEFAULT 'NONE',
+  requires_density_basis BOOLEAN NOT NULL DEFAULT FALSE,
+  density_factor DECIMAL(18,6) NULL,
+  compatibility_note VARCHAR(255) NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  effective_from DATE NULL,
+  effective_to DATE NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_uom_conv_global (global_item_id, from_uom_code, to_uom_code),
+  KEY idx_uom_conv_branch (branch_availability_id, from_uom_code, to_uom_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

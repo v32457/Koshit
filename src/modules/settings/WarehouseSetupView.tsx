@@ -5,6 +5,8 @@ import { Warehouse as WarehouseIcon, Building, Plus, CheckCircle2, AlertTriangle
 
 import { OperatingContext } from '../../services/operatingContextService';
 import { ContextIndicatorBar } from '../../components/ContextIndicatorBar';
+import { DataGridFooter } from '../../components/DataGridFooter';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
 
 interface WarehouseSetupViewProps {
   operatingContext?: OperatingContext;
@@ -42,6 +44,13 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
   const [isExciseable, setIsExciseable] = useState(false);
   const [enableBinLocations, setEnableBinLocations] = useState(false);
   const [street, setStreet] = useState('');
+  const [warehouseType, setWarehouseType] = useState<NonNullable<Warehouse['warehouseType']>>('MAIN_PLANT_STORE');
+  const [warehousePriority, setWarehousePriority] = useState<number>(1);
+  const [storageLocationsText, setStorageLocationsText] = useState('MAIN-BAY-01, RACK-A1');
+  const [isAvailableForValidation, setIsAvailableForValidation] = useState(true);
+  const [isCrossBranchVisible, setIsCrossBranchVisible] = useState(true);
+  const [isCrossBranchTransferEligible, setIsCrossBranchTransferEligible] = useState(true);
+  const [restrictedCategoriesText, setRestrictedCategoriesText] = useState('');
 
   const activeBranch = branches.find((b) => b.id === selectedBranchId) || branches[0];
   const activeWarehouses = activeBranch ? activeBranch.warehouses || [] : [];
@@ -58,6 +67,13 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
     setIsExciseable(false);
     setEnableBinLocations(false);
     setStreet(activeBranch.streetAddress || '');
+    setWarehouseType('MAIN_PLANT_STORE');
+    setWarehousePriority(existingWhCount + 1);
+    setStorageLocationsText('MAIN-BAY-01, RACK-A1');
+    setIsAvailableForValidation(true);
+    setIsCrossBranchVisible(true);
+    setIsCrossBranchTransferEligible(true);
+    setRestrictedCategoriesText('');
     setIsModalOpen(true);
   };
 
@@ -91,6 +107,19 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
       isDropShip,
       isExciseable,
       enableBinLocations,
+      warehouseType,
+      warehousePriority: Math.max(1, Number(warehousePriority) || 1),
+      storageLocations: storageLocationsText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      isAvailableForValidation,
+      isCrossBranchVisible,
+      isCrossBranchTransferEligible,
+      restrictedItemCategories: restrictedCategoriesText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
       street,
       city: activeBranch.city,
       state: activeBranch.state,
@@ -161,11 +190,42 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  const handleToggleWarehouseFlag = (
+    whId: string,
+    field: 'isAvailableForValidation' | 'isCrossBranchVisible' | 'isCrossBranchTransferEligible'
+  ) => {
+    const updatedBranches = branches.map((b) => {
+      if (b.id === activeBranch.id) {
+        return {
+          ...b,
+          warehouses: (b.warehouses || []).map((w) =>
+            w.id === whId ? { ...w, [field]: !(w[field] ?? true) } : w
+          ),
+        };
+      }
+      return b;
+    });
+    setBranches(updatedBranches);
+    localStorage.setItem('kosh_branches', JSON.stringify(updatedBranches));
+    setSuccessMsg('Updated warehouse validation & cross-branch governance attribute.');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
   const filteredWarehouses = activeWarehouses.filter(
     (w) =>
       w.warehouseCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
       w.warehouseName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const whGrid = useStandardDataGrid({
+    gridId: 'warehouse-setup-grid',
+    data: filteredWarehouses,
+    defaultSortField: 'warehouseCode',
+    defaultSortDirection: 'desc',
+    defaultPageSize: 20,
+    searchQuery: searchTerm,
+    activeFilters: { branchId: selectedBranchId },
+  });
 
   const availableCompanyBranches = operatingContext
     ? branches.filter((b) => (b.companyId || 'co-kosh-01') === operatingContext.activeCompanyId && b.lifecycleStatus === 'ACTIVE')
@@ -267,27 +327,33 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase">
-                <th className="p-3.5">WH Code</th>
-                <th className="p-3.5">Warehouse Name</th>
+                <th className="p-3.5">WH Code & Type</th>
+                <th className="p-3.5">Warehouse Name & Priority</th>
                 <th className="p-3.5">Default Policy</th>
-                <th className="p-3.5">Nett-able</th>
-                <th className="p-3.5">Bin Locations</th>
+                <th className="p-3.5">PR Validation</th>
+                <th className="p-3.5">Cross-Branch</th>
                 <th className="p-3.5">Status</th>
-                <th className="p-3.5 text-right">Action</th>
+                <th className="p-3.5 text-right">Bins / Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredWarehouses.length === 0 ? (
+              {whGrid.paginatedData.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-6 text-center text-slate-400">
                     No warehouses registered for this branch. Click "Add Warehouse" above to create one.
                   </td>
                 </tr>
               ) : (
-                filteredWarehouses.map((wh) => (
+                whGrid.paginatedData.map((wh) => (
                   <tr key={wh.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-mono font-bold text-indigo-700">{wh.warehouseCode}</td>
-                    <td className="p-3.5 font-bold text-slate-900">{wh.warehouseName}</td>
+                    <td className="p-3.5">
+                      <div className="font-mono font-bold text-indigo-700">{wh.warehouseCode}</div>
+                      <div className="text-[10px] text-slate-500">{wh.warehouseType || 'MAIN_PLANT_STORE'}</div>
+                    </td>
+                    <td className="p-3.5">
+                      <div className="font-bold text-slate-900">{wh.warehouseName}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">Priority #{wh.warehousePriority ?? (wh.isDefault ? 1 : 2)}</div>
+                    </td>
                     <td className="p-3.5">
                       {wh.isDefault ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
@@ -303,14 +369,43 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
                       )}
                     </td>
                     <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wh.isNettable ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {wh.isNettable ? 'Yes (Included)' : 'No'}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleWarehouseFlag(wh.id, 'isAvailableForValidation')}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                          wh.isAvailableForValidation !== false
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}
+                      >
+                        {wh.isAvailableForValidation !== false ? 'Eligible' : 'Excluded'}
+                      </button>
                     </td>
                     <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wh.enableBinLocations ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
-                        {wh.enableBinLocations ? 'Enabled' : 'Disabled'}
-                      </span>
+                      <div className="flex flex-col gap-1 items-start">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleWarehouseFlag(wh.id, 'isCrossBranchVisible')}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            wh.isCrossBranchVisible !== false
+                              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                              : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          }`}
+                        >
+                          {wh.isCrossBranchVisible !== false ? 'Visible: ON' : 'Visible: OFF'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleWarehouseFlag(wh.id, 'isCrossBranchTransferEligible')}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            wh.isCrossBranchTransferEligible !== false
+                              ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                              : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          }`}
+                        >
+                          {wh.isCrossBranchTransferEligible !== false ? 'Transfer Source: ON' : 'Transfer Source: OFF'}
+                        </button>
+                      </div>
                     </td>
                     <td className="p-3.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${wh.isInactive ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -318,7 +413,10 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
                       </span>
                     </td>
                     <td className="p-3.5 text-right font-mono text-[11px] text-slate-500">
-                      SAP Ref: {wh.warehouseCode}
+                      <div>{(wh.storageLocations || []).join(', ') || 'Default Bin'}</div>
+                      {wh.restrictedItemCategories && wh.restrictedItemCategories.length > 0 && (
+                        <div className="text-[10px] text-amber-700">Restrict: {wh.restrictedItemCategories.join(', ')}</div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -326,6 +424,14 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          page={whGrid.page}
+          pageSize={whGrid.pageSize}
+          totalRecords={whGrid.totalRecords}
+          totalPages={whGrid.totalPages}
+          onPageChange={whGrid.setPage}
+          onPageSizeChange={whGrid.setPageSize}
+        />
       </div>
 
       {/* Add Warehouse Modal */}
@@ -384,6 +490,62 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Warehouse Type</label>
+                  <select
+                    value={warehouseType}
+                    onChange={(e) => setWarehouseType(e.target.value as any)}
+                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-semibold"
+                  >
+                    <option value="MAIN_PLANT_STORE">Main Plant Store</option>
+                    <option value="RAW_MATERIAL">Raw Material</option>
+                    <option value="WIP">Work-in-Progress (WIP)</option>
+                    <option value="FINISHED_GOODS">Finished Goods</option>
+                    <option value="SPARES_MAINTENANCE">Spares & Maintenance</option>
+                    <option value="QUARANTINE_QC">Quarantine / QC Hold</option>
+                    <option value="REJECTED">Rejected Stock Store</option>
+                    <option value="SCRAP">Scrap Store</option>
+                    <option value="TRANSIT">Transit Store</option>
+                    <option value="EXTERNAL_3PL">External / 3PL</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Warehouse Priority (1 = Highest)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={warehousePriority}
+                    onChange={(e) => setWarehousePriority(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-full text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Storage Locations / Bins</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. RACK-A1, BIN-B2"
+                    value={storageLocationsText}
+                    onChange={(e) => setStorageLocationsText(e.target.value)}
+                    className="w-full text-xs p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Category Restrictions (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Comma separated categories"
+                    value={restrictedCategoriesText}
+                    onChange={(e) => setRestrictedCategoriesText(e.target.value)}
+                    className="w-full text-xs p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                 <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
                   <input
@@ -398,11 +560,31 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
                 <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={isNettable}
-                    onChange={(e) => setIsNettable(e.target.checked)}
+                    checked={isAvailableForValidation}
+                    onChange={(e) => setIsAvailableForValidation(e.target.checked)}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="font-bold text-slate-800 text-xs">Nett-able Stock</span>
+                  <span className="font-bold text-slate-800 text-xs">Eligible for PR Validation</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isCrossBranchVisible}
+                    onChange={(e) => setIsCrossBranchVisible(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <span className="font-bold text-slate-800 text-xs">Cross-Branch Visible</span>
+                </label>
+
+                <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isCrossBranchTransferEligible}
+                    onChange={(e) => setIsCrossBranchTransferEligible(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 rounded"
+                  />
+                  <span className="font-bold text-slate-800 text-xs">Transfer Source Eligible</span>
                 </label>
 
                 <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
@@ -418,11 +600,11 @@ export const WarehouseSetupView: React.FC<WarehouseSetupViewProps> = ({
                 <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={isDropShip}
-                    onChange={(e) => setIsDropShip(e.target.checked)}
+                    checked={isNettable}
+                    onChange={(e) => setIsNettable(e.target.checked)}
                     className="w-4 h-4 text-indigo-600 rounded"
                   />
-                  <span className="font-bold text-slate-800 text-xs">Drop-Ship Warehouse</span>
+                  <span className="font-bold text-slate-800 text-xs">Nett-able Stock</span>
                 </label>
               </div>
 

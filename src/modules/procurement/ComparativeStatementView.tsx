@@ -5,6 +5,8 @@ import { rfqEvaluationService } from '../../services/rfqEvaluationService';
 import { vendorPriceRegisterService } from '../../services/vendorPriceRegisterService';
 import { rfqService } from '../../services/rfqService';
 import { RfqComparativeStatementRow, RfqAwardRecommendation } from '../../types/rfqSourcing';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface ComparativeStatementViewProps {
   currentUser: User;
@@ -17,6 +19,16 @@ export const ComparativeStatementView: React.FC<ComparativeStatementViewProps> =
 }) => {
   const [rfqId] = useState('rfq-001');
   const statementRows = rfqEvaluationService.generateComparativeStatement(rfqId);
+
+  const statementGrid = useStandardDataGrid({
+    gridId: 'comparative-statement-lines',
+    userId: currentUser?.id,
+    data: statementRows,
+    defaultSortField: 'rfqLineId',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'itemCode',
+    getRowId: (r) => r.rfqLineId,
+  });
 
   const handleApproveAward = () => {
     // Publish approved award to Vendor Item Price Register
@@ -88,7 +100,7 @@ export const ComparativeStatementView: React.FC<ComparativeStatementViewProps> =
       </div>
 
       {/* Comparative Statement Table */}
-      {statementRows.map((row) => (
+      {statementGrid.pagedData.map((row) => (
         <div key={row.rfqLineId} className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-4 p-5">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div>
@@ -166,6 +178,17 @@ export const ComparativeStatementView: React.FC<ComparativeStatementViewProps> =
           </div>
         </div>
       ))}
+
+      <DataGridFooter
+        currentPage={statementGrid.currentPage}
+        totalPages={statementGrid.totalPages}
+        pageSize={statementGrid.pageSize}
+        totalRecords={statementGrid.totalRecords}
+        onPageChange={statementGrid.setCurrentPage}
+        onPageSizeChange={statementGrid.setPageSize}
+        pageSizeOptions={statementGrid.pageSizeOptions}
+        defaultSortNotice="Offers ranked L1→Ln within each line"
+      />
     </div>
   );
 };

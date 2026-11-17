@@ -3,6 +3,20 @@
  * Enterprise Export-Level RFQ & Local LLM Management Subsystem
  */
 
+import {
+  QuotationSubmissionChannel,
+  UnifiedQuotationStatus,
+  QuotationAttachmentVersion,
+  InboundEmailQuotationEvidence,
+  QuotationAccessAuditEntry,
+  QuotationClarificationMessage,
+  DirectPoReasonCode,
+  RfqRequirementStatusOnPo,
+  InventoryValidationSnapshot,
+  BudgetValidationSnapshot,
+} from './procurementFinanceGovernance';
+import { FinancialYearTransactionSnapshot } from './financialYear';
+
 export type RfqPolicyMode = 'RFQ_ENABLED' | 'RFQ_OPTIONAL' | 'RFQ_DISABLED';
 
 export interface RfqPolicyConfig {
@@ -214,7 +228,12 @@ export interface RfqHeader {
   incoterms: string;
   evaluationMethod: 'SINGLE_STAGE' | 'TWO_STAGE';
   sealedCommercialQuotations: boolean;
+  sealedOpeningTime?: string; // ISO timestamp before which commercial pricing is locked
   status: RfqStatus;
+  financialYearId?: string;
+  financialYearCode?: string;
+  accountingPeriodCode?: string;
+  fySnapshot?: FinancialYearTransactionSnapshot;
   lines: RfqLineItem[];
   invitations: RfqSupplierInvitation[];
   createdAt: string;
@@ -250,6 +269,7 @@ export interface RfqSupplierInvitation {
   vendorCode: string;
   vendorName: string;
   contactEmail: string;
+  rfqEmailReference?: string; // e.g. RFQ-2026-0001+VEND-BASF-01@inbound.kosh.in
   invitedAt: string;
   invitationStatus: 'INVITED' | 'ACKNOWLEDGED' | 'SUBMITTED' | 'DECLINED';
   responseDeadline: string;
@@ -303,10 +323,29 @@ export interface SupplierQuotation {
     fileName: string;
     fileSize: number;
     uploadedAt: string;
+    category?: 'TECHNICAL' | 'COMMERCIAL' | 'COMPLIANCE' | 'EMAIL_ORIGINAL';
+    versionNumber?: number;
   }>;
   submittedAt: string;
   submittedBy: string;
   isSealed: boolean;
+  // Part M: Unified Portal + Email Quotation Submission Governance
+  submissionChannel?: QuotationSubmissionChannel; // 'PORTAL' | 'EMAIL'
+  unifiedStatus?: UnifiedQuotationStatus;
+  originalSubmissionTimestamp?: string;
+  verificationStatus?: 'VERIFIED_PORTAL' | 'PENDING_BUYER_VERIFICATION' | 'BUYER_VERIFIED' | 'REJECTED_BY_BUYER';
+  isLateSubmission?: boolean;
+  isDuplicateEmail?: boolean;
+  isEvaluationReady?: boolean;
+  sealedOpeningTime?: string;
+  emailEvidence?: InboundEmailQuotationEvidence;
+  attachmentVersionHistory?: QuotationAttachmentVersion[];
+  accessHistory?: QuotationAccessAuditEntry[];
+  clarifications?: QuotationClarificationMessage[];
+  supersededByRevision?: number;
+  financialYearId?: string;
+  financialYearCode?: string;
+  fySnapshot?: FinancialYearTransactionSnapshot;
 }
 
 export interface RfqExaminerFinding {
@@ -562,6 +601,8 @@ export interface PurchaseOrderHeader {
   branchCode: string;
   branchName: string;
   purchaseOrgId: string;
+  department?: string;
+  costCentre?: string;
   vendorId: string;
   vendorCode: string;
   vendorName: string;
@@ -577,12 +618,36 @@ export interface PurchaseOrderHeader {
   totalTaxValue: number;
   totalGrossValue: number;
   currency: string;
-  priceSourceMode: 'RFQ_AWARD' | 'PRICE_BOOK';
+  priceSourceMode: 'RFQ_AWARD' | 'PRICE_BOOK' | 'DIRECT_PO';
   status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'RELEASED' | 'CANCELLED';
   allocationProposals: PoVendorAllocationProposal[];
   hasOverride: boolean;
   overrideJustification?: string;
   lines: PurchaseOrderLine[];
+  // Part N: Direct Purchase Order Without RFQ & Policy Snapshot
+  isDirectPo?: boolean;
+  procurementPolicyRef?: string;
+  rfqPolicyVersionSnapshot?: Record<string, any>;
+  rfqRequirementStatus?: RfqRequirementStatusOnPo;
+  directPoReason?: DirectPoReasonCode;
+  directPoJustification?: string;
+  exemptionApprovalRef?: string;
+  exemptionApprovedBy?: string;
+  supplierEligibilityVerified?: boolean;
+  inventoryValidationSnapshot?: InventoryValidationSnapshot;
+  budgetValidationSnapshot?: BudgetValidationSnapshot;
+  supportingDocuments?: Array<{
+    id: string;
+    fileName: string;
+    uploadedAt: string;
+  }>;
+  amendmentVersion?: number;
+  financialYearId?: string;
+  financialYearCode?: string;
+  accountingPeriodId?: string;
+  accountingPeriodCode?: string;
+  accountingPostingDate?: string;
+  fySnapshot?: FinancialYearTransactionSnapshot;
   createdAt: string;
   updatedAt: string;
   approvedAt?: string;
@@ -602,6 +667,8 @@ export interface GoodsReceiptLine {
   convertedQtyInvUom: number; // receivedQtyPurchUom * conversionRatio
   acceptedQtyInvUom: number;
   rejectedQtyInvUom: number;
+  acceptedQtyPurchUom?: number;
+  rejectedQtyPurchUom?: number;
   warehouseCode: string;
   batchNumber?: string;
   remarks?: string;
@@ -621,8 +688,16 @@ export interface GoodsReceiptHeader {
   challanNumber: string;
   challanDate: string;
   receivedBy: string;
+  isPartialDelivery?: boolean;
+  isFinalDelivery?: boolean;
   lines: GoodsReceiptLine[];
   status: 'POSTED' | 'DRAFT';
+  financialYearId?: string;
+  financialYearCode?: string;
+  accountingPeriodId?: string;
+  accountingPeriodCode?: string;
+  accountingPostingDate?: string;
+  fySnapshot?: FinancialYearTransactionSnapshot;
   createdAt: string;
 }
 

@@ -1,14 +1,24 @@
-﻿import express from 'express';
+import express from 'express';
 import type { Express, ErrorRequestHandler } from 'express';
 import { checkDatabase } from './db/pool.js';
 import { createGstRouter } from './routes/gst.js';
 import type { GstRouterDependencies } from './routes/gst.js';
 import { createHealthRouter } from './routes/health.js';
 import { createItemsRouter } from './routes/items.js';
+import { createChargesRouter } from './routes/charges.js';
+import type { ChargeEngineBackendStore } from './services/chargeEngineBackend.js';
+import { createSecurityRouter } from './routes/security.js';
+import type { ZeroTrustSecurityBackendStore } from './services/zeroTrustSecurityBackend.js';
+import { createUomsRouter } from './routes/uoms.js';
+import { createItemGovernanceRouter } from './routes/itemGovernance.js';
+import { createBranchItemsRouter } from './routes/branchItems.js';
+import { createChangeHistoryRouter } from './routes/changeHistory.js';
 
 export function createApp(
   databaseCheck: () => Promise<void> = checkDatabase,
   gstDependencies: Partial<GstRouterDependencies> = {},
+  chargeStore?: ChargeEngineBackendStore,
+  securityStore?: ZeroTrustSecurityBackendStore,
 ): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -16,7 +26,13 @@ export function createApp(
 
   app.use('/api/health', createHealthRouter(databaseCheck));
   app.use('/api/items', createItemsRouter());
+  app.use('/api/items', createItemGovernanceRouter());
+  app.use('/api/branch-items', createBranchItemsRouter());
+  app.use('/api/change-history', createChangeHistoryRouter());
   app.use('/api/gst', createGstRouter(gstDependencies));
+  app.use('/api/charges', createChargesRouter(chargeStore));
+  app.use('/api/security', createSecurityRouter(securityStore));
+  app.use('/api/uoms', createUomsRouter());
 
   app.use((_req, res) => {
     res.status(404).json({

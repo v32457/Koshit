@@ -18,9 +18,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   };
 
   return (
-    <div className={`flex items-center gap-3 select-none ${className}`}>
+    <div className={`flex items-center gap-2 sm:gap-3 select-none min-w-0 ${className}`}>
       {/* Precision Industrial Emblem */}
-      <div className={`relative flex items-center justify-center rounded-lg bg-gradient-to-br from-[#0B192C] to-[#1E3E62] p-1.5 shadow-sm border border-[#005691]/40 ${iconSizes[size]}`}>
+      <div className={`relative flex items-center justify-center rounded-lg bg-gradient-to-br from-[#0B192C] to-[#1E3E62] p-1.5 shadow-sm border border-[#005691]/40 shrink-0 ${iconSizes[size]}`}>
         <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
           {/* Outer Precision Ring */}
           <circle cx="20" cy="20" r="17" stroke="#005691" strokeWidth="2" strokeDasharray="3 2" opacity="0.8" />
@@ -41,14 +41,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       </div>
 
       {showWordmark && (
-        <div className="flex flex-col leading-none">
-          <div className="flex items-center gap-1.5">
-            <span className="text-lg font-black tracking-wider text-white uppercase">KOSH</span>
-            <span className="text-xs font-bold tracking-widest text-[#E85C0D] uppercase px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200">
+        <div className="flex flex-col leading-none min-w-0">
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <span className="text-sm sm:text-lg font-black tracking-wider text-white uppercase">KOSH</span>
+            <span className="text-[10px] sm:text-xs font-bold tracking-widest text-[#E85C0D] uppercase px-1 sm:px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200 truncate">
               INNOVATIONS
             </span>
           </div>
-          <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase mt-0.5">
+          <span className="hidden sm:block text-[10px] font-semibold tracking-wider text-slate-400 uppercase mt-0.5 truncate">
             Global Master Governance
           </span>
         </div>

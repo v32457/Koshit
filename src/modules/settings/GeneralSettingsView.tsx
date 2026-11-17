@@ -45,6 +45,7 @@ import {
   ArrowLeft,
   UserIcon,
 } from 'lucide-react';
+import { WorkdayCalendarSuiteView } from '../calendar/WorkdayCalendarSuiteView';
 import {
   getGstVerificationMode,
   setGstVerificationMode,
@@ -64,8 +65,11 @@ import {
   clearApiUsageLogs,
   computeApiUsageMetrics,
 } from '../../services/apiProviderService';
-import { GSTVerificationMode, ApiProviderConfig, ApiUsageLogRecord, Company, Branch, User } from '../../types';
-import { INITIAL_COMPANIES, INITIAL_BRANCHES } from '../../data/seedData';
+import { GSTVerificationMode, ApiProviderConfig, ApiUsageLogRecord, Company, Branch, User, ComplianceGovernanceSettings } from '../../types';
+import { complianceGovernanceService } from '../../services/complianceGovernanceService';
+import { INITIAL_COMPANIES, INITIAL_BRANCHES, INITIAL_MODULE_REGISTRY, INITIAL_USERS } from '../../data/seedData';
+import { userRoleAdminService } from '../../services/userRoleAdminService';
+import { SecurityGovernanceCenter } from './security/SecurityGovernanceCenter';
 import { PurchaseRequisitionService } from '../../services/purchaseRequisitionService';
 import { BranchPRCleanupPolicy } from '../../types/purchaseRequisition';
 import { AgingParameterMasterView } from './AgingParameterMasterView';
@@ -75,6 +79,21 @@ import { WarehouseSetupView } from './WarehouseSetupView';
 import { OperatingContext } from '../../services/operatingContextService';
 import { BuyerManagementView } from './BuyerManagementView';
 import { RfqPolicyView } from '../procurement/RfqPolicyView';
+import { PrGovernanceConfigView } from './PrGovernanceConfigView';
+import { PrTypeMasterPanel } from './PrTypeMasterPanel';
+import { ChargeMasterConfigView } from './ChargeMasterConfigView';
+import { ChargeItemMappingView } from './ChargeItemMappingView';
+import { FinancialYearManagementView } from '../finance/FinancialYearManagementView';
+import { dataGridService } from '../../services/dataGridService';
+import {
+  rbacPermissionService,
+  ENTERPRISE_PERMISSION_CATALOG,
+  EnterprisePermissionKey,
+} from '../../services/rbacPermissionService';
+import { STANDARD_PAGE_SIZE_OPTIONS } from '../../types/dataGrid';
+import { UserRole } from '../../types';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export interface BranchItemPolicy {
   branchId: string;
@@ -121,7 +140,12 @@ interface GeneralSettingsViewProps {
     | 'supplier-module'
     | 'customer-module'
     | 'warehouse-module'
-    | 'rfq-module';
+    | 'rfq-module'
+    | 'fy-module'
+    | 'pr-type-master'
+    | 'charge-master-module'
+    | 'pr-charge-mapping-module'
+    | 'holiday-module';
   view?: 'dashboard' | 'full';
   onNavigate?: (route: string) => void;
   hideHeader?: boolean;
@@ -147,6 +171,15 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
   const [selectedModuleId, setSelectedModuleId] = useState<any>(initialTab || 'pr-module');
   const [isDashboardView, setIsDashboardView] = useState(view === 'dashboard');
 
+  const [gridSettings, setGridSettings] = useState(() => dataGridService.getGlobalGridSettings());
+  const [gridSettingsSavedMsg, setGridSettingsSavedMsg] = useState<string | null>(null);
+  const [rolePermsMap, setRolePermsMap] = useState(() =>
+    rbacPermissionService.getRolePermissionsMap()
+  );
+  const [selectedRbacRole, setSelectedRbacRole] = useState<UserRole>('PLATFORM_ADMIN');
+  const [rbacNotice, setRbacNotice] = useState<string | null>(null);
+  const [securitySubTab, setSecuritySubTab] = useState<'zero-trust' | 'legacy-rbac'>('zero-trust');
+
   React.useEffect(() => {
     if (initialTab) setSelectedModuleId(initialTab);
     setIsDashboardView(view === 'dashboard');
@@ -158,11 +191,16 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
     { id: 'aging-module', name: 'Aging Parameter', icon: Calendar },
     { id: 'finance-module', name: 'Budget', icon: Coins },
     { id: 'security-module', name: 'Security', icon: Shield },
-    { id: 'supplier-module', name: 'Supplier Management', icon: Building2 },
+    { id: 'supplier-module', name: 'Statutory Compliance & Supplier Master', icon: Building2 },
     { id: 'customer-module', name: 'Customer Management', icon: Building2 },
     { id: 'warehouse-module', name: 'Warehouse', icon: Database },
     { id: 'buyer-module', name: 'Buyer Management', icon: UserIcon },
     { id: 'rfq-module', name: 'RFQ', icon: Sliders },
+    { id: 'fy-module', name: 'Financial Year Management', icon: Calendar },
+    { id: 'pr-type-master', name: 'PR Type Master & Mapping', icon: Layers },
+    { id: 'charge-master-module', name: 'Procurement Configuration — Charge Master', icon: Coins },
+    { id: 'pr-charge-mapping-module', name: 'Purchase Requisition — Charge Item Mapping', icon: Layers },
+    { id: 'holiday-module', name: 'Holiday & Workday Calendar', icon: Calendar },
   ] as const;
 
   // Company and Branch loading from Master
@@ -194,6 +232,16 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       return bCompId === selectedPolicyCompanyId && b.lifecycleStatus !== 'INACTIVE';
     });
   }, [branches, selectedPolicyCompanyId]);
+
+  const branchItemPolicyGrid = useStandardDataGrid({
+    gridId: 'settings-branch-item-policies',
+    userId: currentUser?.id,
+    data: companyActiveBranches,
+    defaultSortField: 'portalBranchCode',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: selectedPolicyCompanyId,
+  });
 
   const [selectedPolicyBranchId, setSelectedPolicyBranchId] = useState<string>(companyActiveBranches[0]?.id || 'br-pond-01');
 
@@ -503,6 +551,20 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
   const [maxFailedLogins, setMaxFailedLogins] = useState(5);
   const [isSaved, setIsSaved] = useState(false);
 
+  // Statutory Compliance & Verification Governance state
+  const [complianceSettings, setComplianceSettings] = useState<ComplianceGovernanceSettings>(() =>
+    complianceGovernanceService.getComplianceSettings()
+  );
+  const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const handleSync = (e: any) => {
+      setComplianceSettings(e.detail || complianceGovernanceService.getComplianceSettings());
+    };
+    window.addEventListener('cip-compliance-settings-updated', handleSync);
+    return () => window.removeEventListener('cip-compliance-settings-updated', handleSync);
+  }, []);
+
   // Verification modes state
   const [gstMode, setGstModeState] = useState<GSTVerificationMode>(() => getGstVerificationMode());
   const [msmeMode, setMsmeMode] = useState<'AUTOMATIC' | 'MANUAL'>('AUTOMATIC');
@@ -787,7 +849,7 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6 text-xs max-w-6xl font-sans select-none">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-6 text-xs w-full max-w-none font-sans select-none">
       {!hideHeader && (
         <div className="border-b border-slate-100 pb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -803,16 +865,18 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       )}
 
       {/* Global Enterprise Scope Toolbar: Active Company & Branch Context */}
-      <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-4 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto min-w-0">
           {/* Company Selection Badge & Dropdown */}
-          <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg shadow-2xs">
-            <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
-            <span className="font-bold text-slate-300 text-xs">Enterprise Company:</span>
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg shadow-2xs w-full sm:w-auto min-w-0 max-w-full">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="font-bold text-slate-300 text-xs whitespace-nowrap">Enterprise Company:</span>
+            </div>
             <select
               value={selectedPolicyCompanyId}
               onChange={(e) => setSelectedPolicyCompanyId(e.target.value)}
-              className="bg-transparent font-extrabold text-white cursor-pointer focus:outline-hidden text-xs"
+              className="bg-transparent font-extrabold text-white cursor-pointer focus:outline-hidden text-xs min-w-0 flex-1 sm:flex-initial max-w-full truncate"
             >
               {activeCompanies.map((co) => (
                 <option key={co.id} value={co.id} className="bg-slate-900 text-white">
@@ -823,13 +887,15 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
           </div>
 
           {/* Branch Selection Badge & Dropdown */}
-          <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg shadow-2xs">
-            <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="font-bold text-slate-300 text-xs">Active Branch Scope:</span>
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg shadow-2xs w-full sm:w-auto min-w-0 max-w-full">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="font-bold text-slate-300 text-xs whitespace-nowrap">Active Branch Scope:</span>
+            </div>
             <select
               value={selectedPolicyBranchId}
               onChange={(e) => setSelectedPolicyBranchId(e.target.value)}
-              className="bg-transparent font-extrabold text-amber-300 cursor-pointer focus:outline-hidden text-xs"
+              className="bg-transparent font-extrabold text-amber-300 cursor-pointer focus:outline-hidden text-xs min-w-0 flex-1 sm:flex-initial max-w-full truncate"
             >
               {companyActiveBranches.length === 0 ? (
                 <option value="" className="bg-slate-900 text-white">No active branches found</option>
@@ -858,7 +924,8 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       {isDashboardView && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {SETTINGS_MODULES.map((m) => (
-            <div
+            <button
+              type="button"
               key={m.id}
               onClick={() => {
               const routeMap: Record<string, string> = {
@@ -871,11 +938,16 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
                 'customer-module': 'customer',
                 'warehouse-module': 'warehouse',
                 'buyer-module': 'buyer',
-                'rfq-module': 'rfq'
+                'rfq-module': 'rfq',
+                'fy-module': 'financial-year',
+                'pr-type-master': 'pr-type-master',
+                'charge-master-module': 'charge-master',
+                'pr-charge-mapping-module': 'pr-charge-mapping',
+                'holiday-module': 'holiday-calendar',
               };
               onNavigate && onNavigate(`/settings/general/${routeMap[m.id]}`);
             }}
-              className={`bg-white rounded-xl border p-5 shadow-xs cursor-pointer transition ${
+              className={`text-left w-full bg-white rounded-xl border p-5 shadow-xs cursor-pointer transition ${
                 selectedModuleId === m.id 
                   ? 'border-indigo-300 ring-1 ring-indigo-300 bg-indigo-50/50' 
                   : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
@@ -888,322 +960,60 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
                   <p className="text-slate-500 text-xs mt-0.5">Configure →</p>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* TAB 1: PURCHASE REQUISITION (PR) MODULE SETTINGS (BRANCH-WISE)    */}
+      {/* TAB 1: PURCHASE REQUISITION (PR) MASTER GOVERNANCE CONFIGURATION   */}
       {/* ------------------------------------------------------------------ */}
       {!isDashboardView && selectedModuleId === 'pr-module' && (
         <div className="space-y-5">
           <BackButton />
-          <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 gap-3">
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-600" />
-                Purchase Requisition
-              </h3>
-              <p className="text-slate-500 mt-0.5">
-                Configure stale age thresholds and advance warning periods per active company branch to automatically generate notifications.
-              </p>
-            </div>
+          <PrGovernanceConfigView
+            currentUser={currentUser}
+            companies={companies}
+            branches={branches}
+          />
+        </div>
+      )}
 
-            <div className="flex items-center gap-2">
-              {/* View Mode Toggle */}
-              <div className="flex bg-slate-100 p-1 rounded-lg">
-                <button
-                  onClick={() => setPrViewMode('single')}
-                  className={`px-3 py-1 rounded font-bold text-xs transition cursor-pointer ${
-                    prViewMode === 'single' ? 'bg-white text-amber-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Branch Editor
-                </button>
-                <button
-                  onClick={() => setPrViewMode('table')}
-                  className={`px-3 py-1 rounded font-bold text-xs transition cursor-pointer flex items-center gap-1 ${
-                    prViewMode === 'table' ? 'bg-white text-amber-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Table className="w-3 h-3" />
-                  <span>All Active Branches</span>
-                </button>
-              </div>
+      {!isDashboardView && selectedModuleId === 'pr-type-master' && (
+        <div className="space-y-5">
+          <BackButton />
+          <PrTypeMasterPanel
+            currentUser={currentUser}
+            companies={companies}
+            branches={branches}
+          />
+        </div>
+      )}
 
-              <button
-                onClick={handleRunEvaluation}
-                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
-              >
-                <Clock className="w-3.5 h-3.5" /> Run Evaluation
-              </button>
-            </div>
-          </div>
+      {!isDashboardView && selectedModuleId === 'charge-master-module' && (
+        <div className="space-y-5">
+          <BackButton />
+          <ChargeMasterConfigView currentUser={currentUser} />
+        </div>
+      )}
 
+      {!isDashboardView && selectedModuleId === 'pr-charge-mapping-module' && (
+        <div className="space-y-5">
+          <BackButton />
+          <ChargeItemMappingView
+            currentUser={currentUser}
+            companies={companies}
+            branches={branches}
+            initialCompanyId={selectedPolicyCompanyId}
+            initialBranchId={selectedPolicyBranchId}
+          />
+        </div>
+      )}
 
-
-          {evalResult && (
-            <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl font-bold flex items-center gap-2 text-xs">
-              <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>{evalResult}</span>
-            </div>
-          )}
-
-          {/* VIEW MODE 1: SINGLE BRANCH EDITOR */}
-          {prViewMode === 'single' && currentBranch && (
-            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div>
-                  <h4 className="font-bold text-slate-900 text-sm">
-                    Policy Configuration for {currentBranch.name} ({currentBranch.portalBranchCode || currentBranch.code})
-                  </h4>
-                  <p className="text-[10px] text-slate-500">
-                    City: {currentBranch.city}, State: {currentBranch.state} • Lifecycle Status: {currentBranch.lifecycleStatus}
-                  </p>
-                </div>
-                <button
-                  onClick={handleSaveBranchPolicy}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer transition flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" /> Save Branch Policy
-                </button>
-              </div>
-
-              {/* Enable / Disable Toggle Switch with Icon */}
-              <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <div className="flex items-center gap-2.5">
-                  {editingPolicy.isEnabled ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-slate-400" />
-                  )}
-                  <div>
-                    <span className="font-bold text-slate-900 text-xs">Branch Policy Status (Enable / Disable)</span>
-                    <span className="text-[10px] text-slate-500 block">
-                      {editingPolicy.isEnabled ? 'Policy is ACTIVE and enforcing age thresholds & automated warnings' : 'Policy is DISABLED for this branch'}
-                    </span>
-                  </div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingPolicy.isEnabled}
-                    onChange={(e) => setEditingPolicy({ ...editingPolicy, isEnabled: e.target.checked })}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
-                  <span className="ml-2 font-bold text-xs text-slate-700">{editingPolicy.isEnabled ? 'Enabled' : 'Disabled'}</span>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Age Threshold (Days) *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={editingPolicy.ageThresholdDays}
-                    onChange={(e) => setEditingPolicy({ ...editingPolicy, ageThresholdDays: Number(e.target.value) || 30 })}
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Unapproved draft PR lines older than this threshold are eligible for bulk cleanup.</p>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Advance Warning / Message Initiation Period (Days) *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={60}
-                    value={editingPolicy.advanceWarningDays}
-                    onChange={(e) => setEditingPolicy({ ...editingPolicy, advanceWarningDays: Number(e.target.value) || 5 })}
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Days before threshold to initiate automated warning messages to concerned users.</p>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <span className="font-bold text-slate-800 block">Automated Message & Notification Recipient Policies:</span>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <label className="flex items-center gap-2 p-3 bg-white rounded-lg border border-slate-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingPolicy.notifyRequesters}
-                      onChange={(e) => setEditingPolicy({ ...editingPolicy, notifyRequesters: e.target.checked })}
-                      className="rounded text-amber-600 w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-800 block text-xs">Notify Requesters</span>
-                      <span className="text-[10px] text-slate-400">Send reminder to PR creator</span>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-3 bg-white rounded-lg border border-slate-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingPolicy.notifyApprovers}
-                      onChange={(e) => setEditingPolicy({ ...editingPolicy, notifyApprovers: e.target.checked })}
-                      className="rounded text-amber-600 w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-800 block text-xs">Notify Approvers</span>
-                      <span className="text-[10px] text-slate-400">Send alert to L1/Manager</span>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-3 bg-white rounded-lg border border-slate-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editingPolicy.notifyBuyers}
-                      onChange={(e) => setEditingPolicy({ ...editingPolicy, notifyBuyers: e.target.checked })}
-                      className="rounded text-amber-600 w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-800 block text-xs">Notify Assigned Buyers</span>
-                      <span className="text-[10px] text-slate-400">Send alert to procurement buyer</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW MODE 2: ALL ACTIVE BRANCHES VIEW TABLE */}
-          {prViewMode === 'table' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-              <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
-                  <Table className="w-4 h-4 text-amber-600" />
-                  All Active Branches PR Policy Configuration ({companyActiveBranches.length} Branches)
-                </h4>
-                <span className="text-[10px] text-slate-500">Toggle Enable/Disable icon or click Edit to modify branch policy</span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 font-bold uppercase text-[10px]">
-                      <th className="p-3">Branch Name & Code</th>
-                      <th className="p-3 text-center">Policy Status</th>
-                      <th className="p-3 text-center">Age Threshold</th>
-                      <th className="p-3 text-center">Warning Period</th>
-                      <th className="p-3 text-center">Requesters</th>
-                      <th className="p-3 text-center">Approvers</th>
-                      <th className="p-3 text-center">Buyers</th>
-                      <th className="p-3">Last Updated</th>
-                      <th className="p-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {companyActiveBranches.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="p-6 text-center text-slate-400">
-                          No active branches found for the selected company.
-                        </td>
-                      </tr>
-                    ) : (
-                      companyActiveBranches.map((br) => {
-                        const pol = branchPolicies.find(p => p.branchId === br.id) || {
-                          branchId: br.id,
-                          branchCode: br.portalBranchCode || br.code,
-                          branchName: br.name,
-                          ageThresholdDays: 45,
-                          advanceWarningDays: 5,
-                          isEnabled: true,
-                          notifyRequesters: true,
-                          notifyApprovers: true,
-                          notifyBuyers: true,
-                          channels: ['IN_PORTAL'],
-                          updatedAt: new Date().toISOString(),
-                          updatedBy: 'Default Policy'
-                        };
-
-                        return (
-                          <tr key={br.id} className="hover:bg-slate-50 transition">
-                            <td className="p-3 font-bold text-slate-900">
-                              {br.name}
-                              <span className="block font-mono text-[10px] text-slate-500">
-                                Code: {br.portalBranchCode || br.code} • {br.city}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <button
-                                onClick={() => handleToggleBranchPolicyEnable(br.id, pol.isEnabled)}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition ${
-                                  pol.isEnabled
-                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
-                                    : 'bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200'
-                                }`}
-                                title="Click to toggle Enable/Disable"
-                              >
-                                {pol.isEnabled ? (
-                                  <>
-                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Enabled</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <XCircle className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Disabled</span>
-                                  </>
-                                )}
-                              </button>
-                            </td>
-                            <td className="p-3 text-center font-mono font-bold text-slate-800">
-                              {pol.ageThresholdDays} Days
-                            </td>
-                            <td className="p-3 text-center font-mono font-bold text-slate-800">
-                              {pol.advanceWarningDays} Days
-                            </td>
-                            <td className="p-3 text-center">
-                              {pol.notifyRequesters ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">Yes</span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">No</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-center">
-                              {pol.notifyApprovers ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">Yes</span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">No</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-center">
-                              {pol.notifyBuyers ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">Yes</span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px]">No</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-[10px] text-slate-600">
-                              <span className="font-bold block">{pol.updatedBy}</span>
-                              <span className="text-slate-400">{new Date(pol.updatedAt).toLocaleDateString()}</span>
-                            </td>
-                            <td className="p-3 text-right">
-                              <button
-                                onClick={() => {
-                                  setSelectedPolicyBranchId(br.id);
-                                  setPrViewMode('single');
-                                }}
-                                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-indigo-600 border border-slate-300 rounded font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer transition shadow-2xs"
-                              >
-                                <Edit className="w-3 h-3" />
-                                <span>Edit</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+      {!isDashboardView && selectedModuleId === 'holiday-module' && (
+        <div className="space-y-5">
+          <BackButton />
+          <WorkdayCalendarSuiteView currentUser={currentUser} />
         </div>
       )}
 
@@ -1579,14 +1389,14 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {companyActiveBranches.length === 0 ? (
+                    {branchItemPolicyGrid.pagedData.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-6 text-center text-slate-400">
                           No active branches found for the selected company.
                         </td>
                       </tr>
                     ) : (
-                      companyActiveBranches.map((br) => {
+                      branchItemPolicyGrid.pagedData.map((br) => {
                         const pol = branchItemPolicies.find(p => p.branchId === br.id) || {
                           branchId: br.id,
                           branchCode: br.portalBranchCode || br.code,
@@ -1666,6 +1476,18 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
                   </tbody>
                 </table>
               </div>
+              <div className="p-3 bg-slate-50 border-t border-slate-200">
+                <DataGridFooter
+                  currentPage={branchItemPolicyGrid.currentPage}
+                  totalPages={branchItemPolicyGrid.totalPages}
+                  pageSize={branchItemPolicyGrid.pageSize}
+                  totalRecords={branchItemPolicyGrid.totalRecords}
+                  onPageChange={branchItemPolicyGrid.setCurrentPage}
+                  onPageSizeChange={branchItemPolicyGrid.setPageSize}
+                  pageSizeOptions={branchItemPolicyGrid.pageSizeOptions}
+                  defaultSortNotice="Sorted Newest / Highest Code First"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -1679,7 +1501,7 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       {!isDashboardView && selectedModuleId === 'aging-module' && (
         <div className="space-y-5">
           <BackButton />
-        <AgingParameterMasterView embedded={true} />
+          <AgingParameterMasterView embedded={true} currentUser={currentUser} />
         </div>
       )}
 
@@ -1689,7 +1511,7 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       {!isDashboardView && selectedModuleId === 'finance-module' && (
         <div className="space-y-5">
           <BackButton />
-        <FinanceBudgetView companyId={selectedPolicyCompanyId} branchId={selectedPolicyBranchId} />
+          <FinanceBudgetView companyId={selectedPolicyCompanyId} branchId={selectedPolicyBranchId} currentUser={currentUser} />
         </div>
       )}
 
@@ -1699,6 +1521,54 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
       {!isDashboardView && selectedModuleId === 'security-module' && (
         <div className="space-y-5">
           <BackButton />
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 p-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="security-tab-zero-trust"
+                onClick={() => setSecuritySubTab('zero-trust')}
+                className={`px-3.5 py-2 rounded-lg font-bold cursor-pointer transition-colors ${
+                  securitySubTab === 'zero-trust'
+                    ? 'bg-[#0B192C] text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Zero-Trust Visual &amp; Data Protection Governance
+              </button>
+              <button
+                type="button"
+                data-testid="security-tab-legacy-rbac"
+                onClick={() => setSecuritySubTab('legacy-rbac')}
+                className={`px-3.5 py-2 rounded-lg font-bold cursor-pointer transition-colors ${
+                  securitySubTab === 'legacy-rbac'
+                    ? 'bg-[#0B192C] text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Session Lockout, Data Grid &amp; RBAC Matrix
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-500 px-2">
+              Governance &amp; System Settings → Security Governance
+            </span>
+          </div>
+
+          {securitySubTab === 'zero-trust' ? (
+            <SecurityGovernanceCenter
+              currentUser={currentUser || INITIAL_USERS[0]}
+              companies={companies}
+              branches={branches}
+              users={userRoleAdminService.getUsers()}
+              modules={(() => {
+                try {
+                  const saved = localStorage.getItem('kosh_module_registry');
+                  return saved ? JSON.parse(saved) : INITIAL_MODULE_REGISTRY;
+                } catch {
+                  return INITIAL_MODULE_REGISTRY;
+                }
+              })()}
+            />
+          ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -1758,16 +1628,579 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
                 <p className="text-[10px] text-slate-400 mt-1">Locks user access after consecutive failed password or 2FA attempts.</p>
               </div>
             </div>
+
+            {/* GLOBAL DATA GRID & EXPORT STANDARD GOVERNANCE */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                    <Table className="w-4 h-4 text-indigo-600" />
+                    <span>Global Data Grid & Export Standard (Application-Wide)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Standard Page Sizes [10, 20, 25, 50, 100, 200] • Default 20 • Hard Cap 200 • Default Sort DESC (Newest First).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      currentUser &&
+                      !rbacPermissionService.hasPermission(currentUser, 'GRID_SETTINGS_MANAGE')
+                    ) {
+                      setGridSettingsSavedMsg('RBAC Denied: GRID_SETTINGS_MANAGE permission required.');
+                      return;
+                    }
+                    const saved = dataGridService.saveGlobalGridSettings(
+                      gridSettings,
+                      currentUser?.fullName || 'Platform Admin'
+                    );
+                    setGridSettings(saved);
+                    setGridSettingsSavedMsg(
+                      `Saved Global Data Grid settings (Default ${saved.defaultPageSize}/page, Max Cap ${saved.maxPageSize}, Export Cap ${saved.maxExportRecords.toLocaleString()}).`
+                    );
+                  }}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" /> Save Grid Settings
+                </button>
+              </div>
+
+              {gridSettingsSavedMsg && (
+                <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold text-[11px]">
+                  {gridSettingsSavedMsg}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Default Rows Per Page</label>
+                  <select
+                    value={gridSettings.defaultPageSize}
+                    onChange={(e) =>
+                      setGridSettings({ ...gridSettings, defaultPageSize: Number(e.target.value) || 20 })
+                    }
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                  >
+                    {STANDARD_PAGE_SIZE_OPTIONS.map((sz) => (
+                      <option key={sz} value={sz}>
+                        {sz} rows {sz === 20 ? '(Standard Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Max Page Size Hard Cap</label>
+                  <input
+                    type="number"
+                    min={20}
+                    max={200}
+                    value={gridSettings.maxPageSize}
+                    onChange={(e) =>
+                      setGridSettings({
+                        ...gridSettings,
+                        maxPageSize: Math.min(200, Math.max(20, Number(e.target.value) || 200)),
+                      })
+                    }
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Max Export Records Cap</label>
+                  <input
+                    type="number"
+                    min={100}
+                    max={100000}
+                    value={gridSettings.maxExportRecords}
+                    onChange={(e) =>
+                      setGridSettings({
+                        ...gridSettings,
+                        maxExportRecords: Number(e.target.value) || 50000,
+                      })
+                    }
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Max Export File Size (MB)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={Math.round(gridSettings.maxExportFileSizeBytes / (1024 * 1024))}
+                    onChange={(e) =>
+                      setGridSettings({
+                        ...gridSettings,
+                        maxExportFileSizeBytes: (Number(e.target.value) || 15) * 1024 * 1024,
+                      })
+                    }
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* RBAC INVENTORY, AGING & GRID PERMISSIONS MATRIX */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-emerald-600" />
+                    <span>RBAC Inventory, Cross-Branch, Dual Aging & Grid Permissions Matrix (13 Permissions)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Non-admin roles are never auto-granted sensitive inventory, cross-branch, override, or full-dataset export rights.
+                  </p>
+                </div>
+                <select
+                  value={selectedRbacRole}
+                  onChange={(e) => setSelectedRbacRole(e.target.value as UserRole)}
+                  className="p-2 bg-slate-50 border border-slate-300 rounded-lg font-bold text-xs"
+                >
+                  {(Object.keys(rolePermsMap) as UserRole[]).map((r) => (
+                    <option key={r} value={r}>
+                      Role: {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {rbacNotice && (
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[11px]">
+                  {rbacNotice}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {ENTERPRISE_PERMISSION_CATALOG.map((perm) => {
+                  const granted = (rolePermsMap[selectedRbacRole] || []).includes(perm.key);
+                  return (
+                    <label
+                      key={perm.key}
+                      className={`p-2.5 rounded-lg border flex items-start justify-between gap-2 cursor-pointer ${
+                        granted ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono font-bold text-[11px] text-slate-900">{perm.key}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              perm.sensitivity === 'CRITICAL'
+                                ? 'bg-rose-100 text-rose-800'
+                                : perm.sensitivity === 'HIGH'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {perm.sensitivity}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{perm.description}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={granted}
+                        onChange={(e) => {
+                          const actor = {
+                            id: currentUser?.id || 'usr-admin',
+                            name: currentUser?.fullName || 'Platform Admin',
+                          };
+                          if (e.target.checked) {
+                            rbacPermissionService.grantRolePermission(
+                              selectedRbacRole,
+                              perm.key as EnterprisePermissionKey,
+                              actor
+                            );
+                            setRbacNotice(`Granted ${perm.key} to ${selectedRbacRole}.`);
+                          } else {
+                            rbacPermissionService.revokeRolePermission(
+                              selectedRbacRole,
+                              perm.key as EnterprisePermissionKey,
+                              actor
+                            );
+                            setRbacNotice(`Revoked ${perm.key} from ${selectedRbacRole}.`);
+                          }
+                          setRolePermsMap(rbacPermissionService.getRolePermissionsMap());
+                        }}
+                        className="w-4 h-4 accent-emerald-600 mt-0.5 shrink-0"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           </div>
+          )}
         </div>
       )}
 
       {!isDashboardView && selectedModuleId === 'supplier-module' && (
         <div className="space-y-5">
           <BackButton />
-          <div className="bg-white p-6 rounded-xl border border-slate-200">
-            <h3 className="font-bold text-lg text-slate-900">Supplier Management Configuration</h3>
-            <p className="text-slate-500 mt-2">Supplier management module configuration is currently being initialized for the selected enterprise scope.</p>
+          <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-5">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                  <span>Statutory Compliance & Verification Governance (GST & MSME)</span>
+                </h3>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Configure whether GST and MSME/Udyam validations require mandatory online gateway verification or manual entry with certificate document uploads and manual validation during Business Partner and Enterprise Company onboarding.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const reset = complianceGovernanceService.resetComplianceSettings(currentUser?.fullName);
+                    setComplianceSettings(reset);
+                    setComplianceNotice('Statutory compliance settings reset to enterprise defaults (Validation: Enabled).');
+                    setTimeout(() => setComplianceNotice(null), 4000);
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-xs cursor-pointer"
+                >
+                  Reset Defaults
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    complianceGovernanceService.saveComplianceSettings(
+                      complianceSettings,
+                      currentUser?.fullName
+                    );
+                    setComplianceNotice('Statutory compliance settings successfully saved.');
+                    setTimeout(() => setComplianceNotice(null), 4000);
+                  }}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Check className="w-3.5 h-3.5" /> Save Settings
+                </button>
+              </div>
+            </div>
+
+            {complianceNotice && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl font-bold text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{complianceNotice}</span>
+              </div>
+            )}
+
+            {/* 1. GST VALIDATION GOVERNANCE CARD */}
+            <div className={`p-4 rounded-xl border transition ${
+              complianceSettings.gstValidationEnabled
+                ? 'bg-indigo-50/40 border-indigo-200'
+                : 'bg-amber-50/40 border-amber-200'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-lg ${
+                    complianceSettings.gstValidationEnabled
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">GST Validation Governance</h4>
+                    <p className="text-[11px] text-slate-500">
+                      Governs GSTIN validation during Business Partner creation and Enterprise Company creation.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold font-mono border ${
+                    complianceSettings.gstValidationEnabled
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}>
+                    {complianceSettings.gstValidationEnabled ? '● ONLINE VERIFICATION ENABLED' : '● MANUAL ENTRY & FILE UPLOAD'}
+                  </span>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label="Toggle GST Validation Policy"
+                      checked={complianceSettings.gstValidationEnabled}
+                      onChange={(e) => {
+                        const updated = complianceGovernanceService.saveComplianceSettings(
+                          { gstValidationEnabled: e.target.checked },
+                          currentUser?.fullName
+                        );
+                        setComplianceSettings(updated);
+                        setComplianceNotice(
+                          `GST Validation is now ${e.target.checked ? 'ENABLED (Online Verification required)' : 'DISABLED (Manual entry with file upload & manual validation)'}.`
+                        );
+                        setTimeout(() => setComplianceNotice(null), 4000);
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* GST Explanatory Banner */}
+              {complianceSettings.gstValidationEnabled ? (
+                <div className="p-3 bg-white rounded-lg border border-indigo-200 space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Online Verification Policy Enforced:</span>
+                  </div>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    When GST Validation is <strong>Enabled</strong>, live verification against official tax gateways (ClearTax API or Govt GSTN CAPTCHA) is strictly enforced during Business Partner creation and Company creation. Legal Name and Trade Name are locked to official taxpayer registry records, and only ACTIVE GST registrations can be saved.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px]">
+                    <span className="text-slate-500">Active Verification Mode:</span>
+                    <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="gstVerificationMode"
+                        checked={gstMode === 'PAID_API'}
+                        onChange={() => {
+                          setGstModeState('PAID_API');
+                          setGstVerificationMode('PAID_API');
+                        }}
+                        className="text-indigo-600"
+                      />
+                      <span>Paid B2B API Gateway</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="gstVerificationMode"
+                        checked={gstMode === 'MANUAL_CAPTCHA'}
+                        onChange={() => {
+                          setGstModeState('MANUAL_CAPTCHA');
+                          setGstVerificationMode('MANUAL_CAPTCHA');
+                        }}
+                        className="text-indigo-600"
+                      />
+                      <span>Official Portal CAPTCHA Challenge</span>
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2.5 text-xs">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Manual Entry & Document Upload Policy Active:</span>
+                  </div>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    When GST Validation is <strong>Disabled</strong>, live gateway verification is bypassed. Users type the GSTIN number directly. Supporting documentation (official GST Registration Certificate) is uploaded as a file, and compliance officers manually validate the registration before or after onboarding.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-100 text-[11px]">
+                    <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={complianceSettings.gstRequireDocumentUpload}
+                        onChange={(e) => {
+                          const updated = complianceGovernanceService.saveComplianceSettings(
+                            { gstRequireDocumentUpload: e.target.checked },
+                            currentUser?.fullName
+                          );
+                          setComplianceSettings(updated);
+                        }}
+                        className="w-4 h-4 text-indigo-600 rounded"
+                      />
+                      <span>Require GST Certificate File Upload on Creation</span>
+                    </label>
+                    <div>
+                      <span className="text-slate-500 block mb-0.5">Initial Compliance Status:</span>
+                      <select
+                        value={complianceSettings.gstDefaultStatusOnUpload}
+                        onChange={(e) => {
+                          const updated = complianceGovernanceService.saveComplianceSettings(
+                            { gstDefaultStatusOnUpload: e.target.value as any },
+                            currentUser?.fullName
+                          );
+                          setComplianceSettings(updated);
+                        }}
+                        className="p-1.5 bg-slate-50 border border-slate-300 rounded font-bold text-xs"
+                      >
+                        <option value="PENDING_MANUAL_VALIDATION">Pending Manual Verification (Recommended)</option>
+                        <option value="MANUALLY_VERIFIED">Pre-Approved / Self-Attested</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. MSME / UDYAM VALIDATION GOVERNANCE CARD */}
+            <div className={`p-4 rounded-xl border transition ${
+              complianceSettings.msmeValidationEnabled
+                ? 'bg-indigo-50/40 border-indigo-200'
+                : 'bg-amber-50/40 border-amber-200'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-lg ${
+                    complianceSettings.msmeValidationEnabled
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}>
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">MSME / Udyam Validation Governance</h4>
+                    <p className="text-[11px] text-slate-500">
+                      Governs Udyam registration number verification during Business Partner and Company creation.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold font-mono border ${
+                    complianceSettings.msmeValidationEnabled
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}>
+                    {complianceSettings.msmeValidationEnabled ? '● ONLINE REGISTRY LOOKUP ENABLED' : '● MANUAL ENTRY & FILE UPLOAD'}
+                  </span>
+
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label="Toggle MSME Validation Policy"
+                      checked={complianceSettings.msmeValidationEnabled}
+                      onChange={(e) => {
+                        const updated = complianceGovernanceService.saveComplianceSettings(
+                          { msmeValidationEnabled: e.target.checked },
+                          currentUser?.fullName
+                        );
+                        setComplianceSettings(updated);
+                        setComplianceNotice(
+                          `MSME Validation is now ${e.target.checked ? 'ENABLED (Official Udyam lookup required)' : 'DISABLED (Manual entry with file upload & manual validation)'}.`
+                        );
+                        setTimeout(() => setComplianceNotice(null), 4000);
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* MSME Explanatory Banner */}
+              {complianceSettings.msmeValidationEnabled ? (
+                <div className="p-3 bg-white rounded-lg border border-indigo-200 space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Online Udyam Verification Policy Enforced:</span>
+                  </div>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    When MSME Validation is <strong>Enabled</strong>, Udyam registration is validated against official Udyam registries. Enterprise classification (Micro, Small, Medium), major activity type (Manufacturing, Services, Both), and registered unit locations are automatically fetched and verified.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2.5 text-xs">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Manual Entry & Document Upload Policy Active:</span>
+                  </div>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    When MSME Validation is <strong>Disabled</strong>, users type the Udyam Registration Number directly and select their classification and activity type. Users upload the official Udyam Registration Certificate file, which is then manually reviewed and validated by compliance officers.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-100 text-[11px]">
+                    <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={complianceSettings.msmeRequireDocumentUpload}
+                        onChange={(e) => {
+                          const updated = complianceGovernanceService.saveComplianceSettings(
+                            { msmeRequireDocumentUpload: e.target.checked },
+                            currentUser?.fullName
+                          );
+                          setComplianceSettings(updated);
+                        }}
+                        className="w-4 h-4 text-indigo-600 rounded"
+                      />
+                      <span>Require Udyam Certificate File Upload on Creation</span>
+                    </label>
+                    <div>
+                      <span className="text-slate-500 block mb-0.5">Initial Compliance Status:</span>
+                      <select
+                        value={complianceSettings.msmeDefaultStatusOnUpload}
+                        onChange={(e) => {
+                          const updated = complianceGovernanceService.saveComplianceSettings(
+                            { msmeDefaultStatusOnUpload: e.target.value as any },
+                            currentUser?.fullName
+                          );
+                          setComplianceSettings(updated);
+                        }}
+                        className="p-1.5 bg-slate-50 border border-slate-300 rounded font-bold text-xs"
+                      >
+                        <option value="PENDING_MANUAL_VALIDATION">Pending Manual Verification (Recommended)</option>
+                        <option value="MANUALLY_VERIFIED">Pre-Approved / Self-Attested</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. CROSS-MODULE ENFORCEMENT SUMMARY MATRIX */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                <Table className="w-4 h-4 text-indigo-600" />
+                <span>Active Policy Enforcement Across System Creation Modules</span>
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1.5">
+                  <div className="font-bold text-slate-900 flex items-center justify-between">
+                    <span>Business Partner Creation</span>
+                    <span className="text-[10px] text-indigo-600 font-mono">/business-partners</span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-1">
+                    <div>
+                      • GST Verification:{' '}
+                      <strong className={complianceSettings.gstValidationEnabled ? 'text-indigo-700' : 'text-amber-700'}>
+                        {complianceSettings.gstValidationEnabled
+                          ? 'Online Gateway (Paid API / CAPTCHA)'
+                          : 'Manual Entry + File Upload + Manual Validation'}
+                      </strong>
+                    </div>
+                    <div>
+                      • MSME Verification:{' '}
+                      <strong className={complianceSettings.msmeValidationEnabled ? 'text-indigo-700' : 'text-amber-700'}>
+                        {complianceSettings.msmeValidationEnabled
+                          ? 'Online Udyam API Lookup'
+                          : 'Manual Entry + Certificate Upload + Manual Validation'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1.5">
+                  <div className="font-bold text-slate-900 flex items-center justify-between">
+                    <span>Enterprise Company Creation</span>
+                    <span className="text-[10px] text-indigo-600 font-mono">/organizations</span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-1">
+                    <div>
+                      • GST Verification:{' '}
+                      <strong className={complianceSettings.gstValidationEnabled ? 'text-indigo-700' : 'text-amber-700'}>
+                        {complianceSettings.gstValidationEnabled
+                          ? 'Online Gateway (Paid API / CAPTCHA)'
+                          : 'Manual Entry + File Upload + Manual Validation'}
+                      </strong>
+                    </div>
+                    <div>
+                      • MSME Verification:{' '}
+                      <strong className={complianceSettings.msmeValidationEnabled ? 'text-indigo-700' : 'text-amber-700'}>
+                        {complianceSettings.msmeValidationEnabled
+                          ? 'Online Udyam API Lookup'
+                          : 'Manual Entry + Certificate Upload + Manual Validation'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1805,6 +2238,19 @@ export const GeneralSettingsView: React.FC<GeneralSettingsViewProps> = ({
             branches={branches}
             onNavigate={onNavigate}
             hideHeader={false}
+          />
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* TAB: FINANCIAL YEAR & ACCOUNTING PERIOD MANAGEMENT                 */}
+      {/* ------------------------------------------------------------------ */}
+      {!isDashboardView && selectedModuleId === 'fy-module' && (
+        <div className="space-y-5">
+          <BackButton />
+          <FinancialYearManagementView
+            companyId={selectedPolicyCompanyId}
+            currentUser={currentUser}
           />
         </div>
       )}

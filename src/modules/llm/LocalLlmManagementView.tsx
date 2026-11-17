@@ -35,6 +35,8 @@ import {
   FullLlmAuditSummary,
   LlmAuditTaskReportItem,
 } from '../../types/rfqSourcing';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface LocalLlmManagementViewProps {
   currentUser: User;
@@ -69,6 +71,15 @@ export const LocalLlmManagementView: React.FC<LocalLlmManagementViewProps> = ({ 
 
   // Download Authorization Dialog State
   const [authDownloadModel, setAuthDownloadModel] = useState<LocalLlmModelCatalogueItem | null>(null);
+
+  const auditReportGrid = useStandardDataGrid({
+    gridId: 'llm-audit-report-tasks',
+    userId: currentUser?.id,
+    data: auditSummary.tasksReport,
+    defaultSortField: 'latencyMs',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'taskKey',
+  });
 
   const handleRunFullAudit = () => {
     setIsAuditing(true);
@@ -326,8 +337,8 @@ export const LocalLlmManagementView: React.FC<LocalLlmManagementViewProps> = ({ 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
-                  {auditSummary.tasksReport.map((row: LlmAuditTaskReportItem, idx: number) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition">
+                  {auditReportGrid.pagedData.map((row: LlmAuditTaskReportItem, idx: number) => (
+                    <tr key={row.taskKey || idx} className="hover:bg-slate-50 transition">
                       <td className="p-3 font-bold text-slate-900 border-r border-slate-100">
                         {row.applicationTask}
                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">{row.taskKey}</div>
@@ -374,6 +385,17 @@ export const LocalLlmManagementView: React.FC<LocalLlmManagementViewProps> = ({ 
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-200">
+              <DataGridFooter
+                currentPage={auditReportGrid.currentPage}
+                totalPages={auditReportGrid.totalPages}
+                pageSize={auditReportGrid.pageSize}
+                totalRecords={auditReportGrid.totalRecords}
+                onPageChange={auditReportGrid.setCurrentPage}
+                onPageSizeChange={auditReportGrid.setPageSize}
+                pageSizeOptions={auditReportGrid.pageSizeOptions}
+              />
             </div>
           </div>
         </div>

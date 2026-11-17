@@ -1,0 +1,1266 @@
+# CIPPLATFORM – USER & ROLE ADMINISTRATION
+## ENTERPRISE IDENTITY, ACCESS CONTROL, RBAC, PERMISSION GOVERNANCE & AUTOMATIC MODULE-FEATURE REGISTRATION
+
+**Development Location:** Organization Governance → User & Role Administration
+
+**Priority:** Critical – Core Platform Security Module
+
+**Implementation Requirement:** Complete end-to-end functionality, integrated with every existing and future CIPPlatform module.
+
+---
+
+# 1. PRIMARY OBJECTIVE
+
+Develop the complete User & Role Administration module for CIPPlatform.
+
+This module must become the centralized authority for managing:
+
+1. User Accounts.
+2. Employee and User Identity.
+3. Role Management.
+4. Role Hierarchy.
+5. Permission Management.
+6. Module Access.
+7. Submodule Access.
+8. Feature Access.
+9. Action-Level Permissions.
+10. Company-Level Access.
+11. Branch-Level Access.
+12. Business Unit Access.
+13. Department-Level Access.
+14. Purchase Organization Access.
+15. Sales Organization Access.
+16. Warehouse and Location Access.
+17. Data-Level Authorization.
+18. Approval Authority.
+19. User Assignment and Delegation.
+20. Temporary Access.
+21. Access Requests and Approvals.
+22. User Lifecycle Management.
+23. Security Policies.
+24. Login and Session Management.
+25. Security Audit and Access History.
+26. Permission Change History.
+27. Access Reviews.
+28. Future Module and Feature Permission Registration.
+
+This must be a centralized platform service.
+
+Every existing and future CIPPlatform module must use this same authorization architecture.
+
+Do not develop separate user, role or permission mechanisms inside individual business modules.
+
+# 2. FIRST – EXISTING APPLICATION AUDIT
+
+Before modifying code, inspect:
+
+- Existing authentication implementation.
+- Existing login and logout.
+- User Master.
+- Employee Master.
+- Company and Branch Master.
+- Organization Management.
+- Purchase Organization.
+- Sales Organization.
+- Module Management.
+- Field and Rule Configurations.
+- Existing RBAC implementation.
+- Approval Workflow Manager.
+- Email and notification services.
+- Existing email 2FA.
+- Session management.
+- Audit Logs.
+- Rule Version History.
+- Existing database entities.
+- Existing APIs.
+- Existing frontend components.
+
+Determine what is already implemented, partially implemented or missing.
+
+Reuse existing functionality wherever possible.
+
+Do not create duplicate authentication, user, role, permission or audit services.
+
+Preserve existing working login and security functionality.
+
+Prepare the implementation gap report, then proceed with development for the verified requirements. If an existing business rule conflicts with this specification, stop and request clarification before making changes.
+
+# 3. USER INTERFACE AND NAVIGATION
+
+Maintain the existing CIPPlatform visual design, navigation, header, typography, icons and responsive design.
+
+Develop the selected User & Role Administration workspace.
+
+Provide these functional sections:
+
+1. User Dashboard.
+2. User Management.
+3. Role Management.
+4. Permission Management.
+5. Module & Feature Access Registry.
+6. Organizational Access.
+7. User Role Assignments.
+8. Access Requests.
+9. Temporary Access.
+10. Delegation Management.
+11. Security Policies.
+12. Login and Session Management.
+13. Access Review.
+14. Security Audit.
+15. Permission Change History.
+16. Access Reports.
+17. System Security Settings.
+
+Use tabs, sub-navigation or appropriately organized screens according to the existing design system.
+
+Do not overcrowd the interface.
+
+Every button, filter, action, tab, search and configuration control must work.
+
+# 4. USER DASHBOARD
+
+Provide centralized security and user statistics.
+
+KPIs:
+
+- Total Users.
+- Active Users.
+- Inactive Users.
+- Locked Users.
+- Suspended Users.
+- Pending User Approvals.
+- Users Without Assigned Roles.
+- Users With Expiring Access.
+- Active Roles.
+- Total Registered Permissions.
+- Pending Access Requests.
+- Temporary Access Expiring.
+- Users With Multiple Organizational Assignments.
+- Recent Login Failures.
+- Security Alerts.
+
+Dashboard filters:
+
+- Company.
+- Branch.
+- Department.
+- Purchase Organization.
+- Role.
+- User Status.
+- Date Range.
+
+All statistics must use actual database records.
+
+Do not use fabricated or static dashboard numbers.
+
+# 5. USER MANAGEMENT
+
+## 5.1 User Master
+
+Provide complete user creation and management.
+
+Fields:
+
+- User ID – system generated.
+- Username – unique.
+- First Name.
+- Middle Name.
+- Last Name.
+- Display Name.
+- Employee ID – optional or mandatory according to user type.
+- Email Address.
+- Mobile Number.
+- Profile Photo.
+- User Type.
+- Authentication Method.
+- Default Company.
+- Default Branch.
+- Department.
+- Designation.
+- Manager.
+- User Status.
+- Effective From.
+- Effective To.
+- Created By.
+- Created Date.
+- Last Modified By.
+- Last Modified Date.
+
+User types:
+
+- Employee.
+- Administrator.
+- External User.
+- Supplier User.
+- Customer User.
+- Service Account.
+- Other authorized categories.
+
+Do not assume external users should have internal employee permissions.
+
+## 5.2 User Lifecycle
+
+Support:
+
+- Create User.
+- Edit User.
+- Activate User.
+- Deactivate User.
+- Suspend User.
+- Lock User.
+- Unlock User.
+- Reset Password.
+- Force Password Change.
+- Resend Invitation.
+- Expire User.
+- Terminate User Access.
+- Archive User.
+- View User History.
+
+When an employee leaves the organization:
+
+- Disable access according to the termination process.
+- Revoke active sessions.
+- Remove or expire applicable access assignments.
+- Preserve historical transactions and approvals.
+- Preserve audit records.
+- Do not delete the employee's historical business references.
+
+## 5.3 User Creation Workflow
+
+Support:
+
+1. Manual user creation.
+2. Employee-linked user creation.
+3. Approved bulk user import.
+4. User invitation through email.
+5. Account activation.
+6. Initial password or secure activation process.
+7. Mandatory password setup where applicable.
+8. MFA enrollment according to security policy.
+9. Initial role assignment through authorization.
+
+Do not automatically grant administrator privileges to newly created users.
+
+# 6. ROLE MANAGEMENT
+
+## 6.1 Role Master
+
+Provide:
+
+- Role ID.
+- Role Code.
+- Role Name.
+- Description.
+- Role Category.
+- Role Type.
+- Parent Role.
+- Role Status.
+- Effective From.
+- Effective To.
+- Created By.
+- Approved By.
+- Version.
+
+Role categories:
+
+- System Role.
+- Administrator Role.
+- Functional Role.
+- Department Role.
+- Operational Role.
+- Read-Only Role.
+- Approval Role.
+- Custom Role.
+- External User Role.
+
+Examples:
+
+- Platform Super Administrator.
+- Company Administrator.
+- Branch Administrator.
+- Finance Manager.
+- Finance Executive.
+- Purchase Manager.
+- Buyer.
+- Warehouse Manager.
+- Inventory Executive.
+- HR Manager.
+- Auditor.
+- Read-Only User.
+
+These are illustrative role templates. Verify existing roles before creating duplicates.
+
+## 6.2 Role Operations
+
+Support:
+
+- Create Role.
+- Edit Role.
+- Clone Role.
+- Assign Permissions.
+- Remove Permissions.
+- Compare Roles.
+- Activate Role.
+- Deactivate Role.
+- Expire Role.
+- Version Role.
+- View Role History.
+- Export Role Definition.
+
+Protect critical system roles from unauthorized modification or deletion.
+
+## 6.3 Role Hierarchy
+
+Support controlled role inheritance where appropriate.
+
+Rules:
+
+- Parent role permissions may be inherited by child roles.
+- Explicit restrictions must be respected.
+- Circular role inheritance must be prevented.
+- Effective permissions must be calculated and displayed.
+- Role inheritance changes must be audited.
+- Critical system roles must not be overridden by ordinary custom roles.
+
+Do not assume role hierarchy automatically grants organizational data access.
+
+# 7. PERMISSION MANAGEMENT
+
+Develop a centralized permission engine.
+
+Permission granularity must support:
+
+**Module → Submodule → Feature → Action → Data Scope.**
+
+Examples:
+
+| Module | Feature | Action |
+|---|---|---|
+| Procurement | Purchase Requisition | View |
+| Procurement | Purchase Requisition | Create |
+| Procurement | Purchase Requisition | Edit |
+| Procurement | Purchase Requisition | Submit |
+| Procurement | Purchase Requisition | Approve |
+| Procurement | Purchase Requisition | Reject |
+| Procurement | Purchase Requisition | Cancel |
+| Procurement | Purchase Requisition | Export |
+| Finance | General Ledger | View |
+| Finance | Journal Entry | Create |
+| Finance | Journal Entry | Post |
+| Finance | Accounting Period | Close |
+| User Administration | User Master | Create |
+| User Administration | Role Management | Assign Permissions |
+
+Support permission types:
+
+- View.
+- Create.
+- Edit.
+- Delete, only where permitted.
+- Submit.
+- Approve.
+- Reject.
+- Cancel.
+- Release.
+- Post.
+- Export.
+- Import.
+- Print.
+- Configure.
+- Assign.
+- Delegate.
+- Close.
+- Reopen.
+- Administrative Override.
+
+Not every action applies to every feature. Register only valid operations.
+
+## 7.1 Permission Conditions
+
+Support:
+
+- Own Records.
+- Assigned Records.
+- Department Records.
+- Branch Records.
+- Purchase Organization Records.
+- Company Records.
+- All Authorized Records.
+- Read-Only Records.
+
+Apply permissions at the backend.
+
+Frontend menu visibility is not a substitute for backend authorization.
+
+## 7.2 Permission Evaluation
+
+Implement a centralized authorization service.
+
+Every protected operation must evaluate:
+
+1. Is the user authenticated?
+2. Is the account active?
+3. Is the session valid?
+4. Is the permission registered?
+5. Does the user have the permission?
+6. Is the role assignment active?
+7. Is the organizational scope valid?
+8. Is the requested record within the user's scope?
+9. Are additional business policies satisfied?
+10. Is approval or maker-checker authorization required?
+
+Use deny-by-default behavior.
+
+An unregistered or unassigned permission must never be treated as authorized.
+
+# 8. ORGANIZATIONAL ACCESS CONTROL
+
+This is a critical requirement.
+
+Integrate with existing:
+
+- Company Master.
+- Branch Master.
+- Business Unit.
+- Department.
+- Purchase Organization.
+- Purchase Group.
+- Sales Organization.
+- Warehouse.
+- Location.
+- Cost Centre.
+- Project.
+- Employee Master.
+
+Support:
+
+- One user assigned to one company.
+- One user assigned to multiple companies.
+- One user assigned to multiple branches.
+- Department-specific access.
+- Purchase Organization-specific access.
+- Multiple role assignments with different organizational scopes.
+- Default organization selection.
+- Effective-dated assignments.
+
+Example:
+
+User: Rajesh Sharma
+
+Company: Kosh Innovations Pvt Ltd.
+
+Assignments:
+- Pondicherry Main Plant – Purchase Organization PO-01 – Buyer.
+- Chennai Hub – Read-Only Inventory.
+- Corporate Office – Procurement Manager.
+
+The above assignments must be independently controlled.
+
+Do not allow a role assigned to one branch to grant unintended access to another branch.
+
+Organizational scope must be enforced in backend queries and API operations, not merely through frontend filters.
+
+# 9. USER-ROLE ASSIGNMENT
+
+Provide a dedicated assignment interface.
+
+Allow authorized administrators to:
+
+- Assign multiple roles to a user.
+- Assign organizational scope to each role assignment.
+- Define effective dates.
+- Set default role and organization context.
+- Remove or expire assignments.
+- View effective permissions.
+- Compare assigned roles.
+- Detect conflicting assignments.
+
+Every assignment must retain:
+
+- User ID.
+- Role ID.
+- Company ID.
+- Branch ID where applicable.
+- Organizational scope.
+- Assignment date.
+- Effective date.
+- Expiry date.
+- Assigned By.
+- Approved By.
+- Assignment status.
+- Reason.
+
+Use approval workflow for sensitive assignments.
+
+# 10. MODULE, SUBMODULE AND FEATURE REGISTRY – CRITICAL FUTURE INTEGRATION
+
+This is a mandatory permanent architecture requirement.
+
+Whenever a new module, submodule, feature, screen or business action is developed in CIPPlatform, it must be registered in the centralized Module & Feature Access Registry.
+
+The registry must not depend on manually remembering to update permissions.
+
+## 10.1 Module Registry
+
+Maintain:
+
+- Module ID.
+- Module Code.
+- Module Name.
+- Parent Module.
+- Description.
+- Route or Navigation Reference.
+- API Namespace.
+- Module Owner.
+- Module Status.
+- Version.
+
+## 10.2 Feature Registry
+
+Maintain:
+
+- Feature ID.
+- Feature Code.
+- Feature Name.
+- Parent Module ID.
+- Parent Submodule ID.
+- Description.
+- Related API.
+- Related Service.
+- Required Permissions.
+- Feature Status.
+- Version.
+
+## 10.3 Automatic Permission Registration
+
+Whenever a developer adds:
+
+- A new module.
+- A new submodule.
+- A new feature.
+- A new screen.
+- A new API operation.
+- A new protected business action.
+
+The development process must register the applicable permission definitions.
+
+Example:
+
+A new module is created:
+
+Supplier Management.
+
+Features:
+
+- Supplier List.
+- Create Supplier.
+- Edit Supplier.
+- Supplier Approval.
+- Supplier Bank Details.
+- Supplier Deactivation.
+
+The permission registry must identify the corresponding valid actions.
+
+Example permission codes:
+
+SUPPLIER.VIEW
+SUPPLIER.CREATE
+SUPPLIER.EDIT
+SUPPLIER.APPROVE
+SUPPLIER.BANK_DETAILS.VIEW
+SUPPLIER.BANK_DETAILS.EDIT
+SUPPLIER.DEACTIVATE
+
+Permission codes must be stable and unique.
+
+## 10.4 Mandatory Permission Synchronization
+
+Implement a controlled registration and synchronization mechanism.
+
+It must:
+
+1. Identify newly introduced modules and features.
+2. Identify newly introduced protected actions.
+3. Register missing permission definitions.
+4. Detect duplicate permission codes.
+5. Detect orphaned permission definitions.
+6. Identify removed or deprecated features.
+7. Identify APIs without permission enforcement.
+8. Identify frontend actions without matching backend permissions.
+9. Identify backend protected operations without registry entries.
+10. Generate an integration report.
+
+Use explicit module/feature permission metadata or a centralized registration mechanism.
+
+Do not rely solely on scraping frontend menus or automatically guessing permission names.
+
+## 10.5 IMPORTANT – NO AUTOMATIC PERMISSION GRANTING
+
+Automatic permission registration does not mean automatic access granting.
+
+When a new feature is added:
+
+- Register its permission definitions.
+- Identify roles that may require the permission.
+- Produce a proposed role-impact report.
+- Require authorized approval before granting access.
+- Default to deny until explicitly assigned.
+
+Existing users must not unexpectedly receive new privileges.
+
+## 10.6 DEVELOPMENT AND CI INTEGRATION
+
+Integrate permission registry validation into the existing development workflow.
+
+Where practical, add automated checks that fail when:
+
+- A protected API lacks permission enforcement.
+- A new permission code is duplicated.
+- A protected feature is missing from the registry.
+- A registered permission references a nonexistent feature.
+- A role grants a deprecated permission.
+- An unprotected administrative operation is detected.
+
+Every new module or feature must update the Module Register, Feature Register, Permission Registry and relevant governance documentation.
+
+# 11. ACCESS REQUEST AND APPROVAL MANAGEMENT
+
+Provide a complete access request workflow.
+
+Users may request:
+
+- New role.
+- Additional permission.
+- Additional company access.
+- Branch access.
+- Purchase Organization access.
+- Temporary access.
+- Elevated access.
+
+Workflow:
+
+Request → Manager Approval → Data Owner Approval → Security/Admin Approval where required → Access Assignment → Notification.
+
+Rules:
+
+- Maker-checker segregation.
+- No self-approval where prohibited.
+- Configurable approval hierarchy.
+- Rejection with mandatory reason.
+- Resubmission.
+- Escalation.
+- Delegation.
+- Full audit history.
+
+Reuse the existing Approval Workflow Manager.
+
+Do not create an independent approval engine.
+
+# 12. TEMPORARY ACCESS AND DELEGATION
+
+Support:
+
+- Temporary role assignment.
+- Temporary permission assignment.
+- Temporary company or branch access.
+- Temporary elevated privileges.
+- Approval delegation.
+- Absence delegation.
+- Effective-from and expiry dates.
+- Automatic expiration.
+- Expiry reminders.
+- Revocation.
+
+Temporary access must automatically expire.
+
+Do not depend on an administrator remembering to remove expired access.
+
+Delegation must not silently transfer permissions beyond the delegator's authorized scope.
+
+# 13. SEGREGATION OF DUTIES – SOD
+
+Implement configurable segregation-of-duties rules.
+
+Examples:
+
+- User cannot approve their own PR where maker-checker is mandatory.
+- User cannot create and approve the same supplier bank change.
+- User cannot create and approve the same payment where segregation is required.
+- User cannot change their own administrative role.
+- User cannot approve their own permission elevation.
+
+Support:
+
+- Preventive controls.
+- Warning controls.
+- Authorized exception approvals.
+- Conflict detection.
+- Risk classification.
+- Exception history.
+
+Provide a role-conflict matrix and user-level conflict report.
+
+Do not automatically label a conflict as fraud.
+
+# 14. AUTHENTICATION AND SECURITY POLICIES
+
+Integrate with the existing authentication system.
+
+Do not replace the existing login implementation unnecessarily.
+
+Support configurable:
+
+- Password complexity.
+- Minimum password length.
+- Password history.
+- Password expiration where required.
+- Account lockout.
+- Failed login threshold.
+- Session timeout.
+- Concurrent session policy.
+- MFA requirement.
+- Email OTP.
+- Authenticator-based MFA where supported.
+- Recovery codes.
+- Secure password reset.
+- Login notification.
+- Suspicious login alerts.
+
+Preserve the existing Email 2FA functionality shown in the application header.
+
+Do not introduce an additional authentication provider without approval.
+
+Store passwords using an approved modern password hashing algorithm.
+
+Never store plaintext passwords or OTP values.
+
+# 15. SESSION AND LOGIN MANAGEMENT
+
+Provide:
+
+- Active Sessions.
+- Login History.
+- Logout History.
+- Failed Login Attempts.
+- Device Information.
+- Session Creation Time.
+- Last Activity.
+- IP Address where available and appropriate.
+- Session Expiry.
+- Force Logout.
+- Revoke All Sessions.
+- Suspicious Login Review.
+
+Allow authorized administrators to revoke sessions.
+
+Session revocation must be enforced by the backend.
+
+# 16. SYSTEM ROLE AND ADMINISTRATOR PROTECTION
+
+Establish a protected Platform Super Administrator role.
+
+Rules:
+
+- Critical system roles cannot be deleted by ordinary administrators.
+- Prevent accidental removal of the last authorized super administrator.
+- Changes to super administrator privileges require additional authorization.
+- Administrative actions must be audited.
+- No user may silently elevate their own privileges.
+- Bootstrap the initial administrator safely using the existing deployment/security process.
+- Never hardcode default passwords or secret credentials.
+
+Provide a controlled emergency access process with mandatory reason, restricted duration and audit history.
+
+# 17. AUDIT AND SECURITY HISTORY
+
+Integrate with the centralized Audit Log service.
+
+Record:
+
+- User creation.
+- User modification.
+- Activation and deactivation.
+- Password reset events.
+- Role creation.
+- Role modification.
+- Permission changes.
+- Role assignments.
+- Organizational scope changes.
+- Access requests.
+- Approvals and rejections.
+- Temporary access.
+- Delegation.
+- Login and logout.
+- Failed authentication.
+- Session revocation.
+- Security configuration changes.
+- Administrative overrides.
+- Permission registry changes.
+
+Capture:
+
+- Actor.
+- Target user or role.
+- Action.
+- Previous value.
+- New value.
+- Company and organizational scope.
+- Timestamp.
+- Reason.
+- Approval reference.
+- Source transaction.
+- Relevant configuration version.
+
+Audit records must be protected from unauthorized modification and deletion.
+
+# 18. ACCESS REVIEW AND CERTIFICATION
+
+Provide periodic access reviews.
+
+Support:
+
+- User-wise access review.
+- Role-wise permission review.
+- Company-wise review.
+- Branch-wise review.
+- Purchase Organization review.
+- Dormant account review.
+- Excessive privilege review.
+- Temporary access review.
+- Segregation-of-duties review.
+
+Allow authorized reviewers to:
+
+- Confirm access.
+- Revoke access.
+- Modify access.
+- Request clarification.
+- Record justification.
+
+Maintain review date, reviewer, result and evidence.
+
+# 19. NOTIFICATION INTEGRATION
+
+Reuse the centralized Communication & Notification Hub.
+
+Notifications should include:
+
+- User invitation.
+- Account activation.
+- Password reset.
+- Account locked.
+- Access request submitted.
+- Approval pending.
+- Access approved.
+- Access rejected.
+- Role assignment changed.
+- Permission changed.
+- Temporary access expiring.
+- Temporary access expired.
+- Suspicious login.
+- Account deactivated.
+- Access review pending.
+
+Use configured notification templates and channels.
+
+# 20. IMPORT AND EXPORT
+
+Support controlled:
+
+- User import.
+- User export.
+- Role export.
+- Permission matrix export.
+- User-role assignment export.
+- Access review export.
+- Security audit export.
+
+Validate imports before processing.
+
+Provide:
+
+- Preview.
+- Validation errors.
+- Duplicate detection.
+- Approval where required.
+- Import result report.
+- Audit history.
+
+Never allow bulk imports to bypass permission or organizational scope validation.
+
+# 21. REPORTING
+
+Provide:
+
+1. User Master Report.
+2. Active and Inactive User Report.
+3. User Without Role Report.
+4. User Role Assignment Report.
+5. Role Permission Matrix.
+6. Effective User Permission Report.
+7. Module Access Report.
+8. Company and Branch Access Report.
+9. Purchase Organization Access Report.
+10. Temporary Access Report.
+11. Expired Access Report.
+12. Access Request Report.
+13. Role Conflict Report.
+14. Segregation of Duties Report.
+15. Login History Report.
+16. Failed Login Report.
+17. Active Session Report.
+18. Privileged User Report.
+19. Dormant Account Report.
+20. Permission Change History.
+21. Security Audit Report.
+22. Access Review Report.
+23. Module and Feature Permission Registration Report.
+
+Reports must use actual data and respect authorization.
+
+# 22. DATABASE AND TECHNICAL ARCHITECTURE
+
+First inspect existing database architecture.
+
+Reuse existing entities wherever possible.
+
+Potential logical entities to verify or implement only if missing:
+
+- users
+- employee_user_links
+- roles
+- role_hierarchy
+- permissions
+- modules
+- submodules
+- features
+- module_permissions
+- role_permissions
+- user_role_assignments
+- user_organization_scopes
+- access_requests
+- access_approvals
+- temporary_access
+- delegations
+- security_policies
+- user_sessions
+- login_history
+- access_reviews
+- sod_rules
+- permission_registry_versions
+- security_audit_events
+
+These are logical requirements, not instructions to create all these tables blindly.
+
+Use existing naming conventions and data models.
+
+Define correct:
+
+- Primary keys.
+- Foreign keys.
+- Unique constraints.
+- Effective dates.
+- Status controls.
+- Referential integrity.
+- Company scope.
+- Branch scope.
+- Transaction safety.
+- Audit references.
+
+Use the existing backend framework and service architecture.
+
+Avoid duplicate permission engines and authorization implementations.
+
+# 23. API AND SERVICE REQUIREMENTS
+
+Provide or reuse backend services for:
+
+- User Management.
+- Role Management.
+- Permission Management.
+- Authorization Evaluation.
+- Organizational Scope Evaluation.
+- Role Assignment.
+- Access Requests.
+- Delegation.
+- Temporary Access.
+- Session Management.
+- Login History.
+- Access Review.
+- Permission Registry.
+- Security Audit.
+
+Every protected API must enforce authorization server-side.
+
+Prevent:
+
+- Direct API privilege escalation.
+- Unauthorized company switching.
+- Unauthorized branch access.
+- Unauthorized role assignment.
+- Self-approval.
+- Duplicate assignment.
+- Expired permission usage.
+- Access after account deactivation.
+- Access after session revocation.
+
+Use transaction-safe operations and idempotency where required.
+
+# 24. PERFORMANCE AND RELIABILITY
+
+The permission engine must be efficient.
+
+Implement appropriate:
+
+- Permission caching.
+- Cache invalidation.
+- Role assignment invalidation.
+- Session invalidation.
+- Database indexing.
+- Pagination.
+- Bulk authorization evaluation.
+- Concurrency controls.
+
+Permission changes must take effect according to a documented and tested invalidation strategy.
+
+Do not allow stale caches to retain revoked privileges.
+
+Do not use unrestricted queries that expose unauthorized organizational data.
+
+# 25. FRONTEND AND RESPONSIVE DESIGN
+
+The module must work on:
+
+- Desktop.
+- Tablet.
+- Mobile.
+
+Requirements:
+
+- Full-width desktop workspace.
+- Responsive tablet layout.
+- Mobile navigation.
+- No horizontal scrollbar on tablet or mobile.
+- Responsive data tables.
+- Mobile record cards where required.
+- Responsive dialogs and forms.
+- Search and filters.
+- Saved user-specific layouts.
+- Accessible controls.
+- Clear permission-denied messages.
+
+Do not merely hide horizontal overflow to create the appearance of responsiveness.
+
+Preserve the existing CIPPlatform design system.
+
+# 26. DEVELOPMENT AND FUTURE MODULE INTEGRATION RULE
+
+This is a permanent requirement.
+
+Whenever a future CIPPlatform development task introduces a module, submodule, feature, screen or protected action:
+
+1. Read the Module Register.
+2. Read the Feature Register.
+3. Read the Policy Register.
+4. Read the Permission Registry.
+5. Read the Cross-Module Dependency Matrix.
+6. Identify existing permission patterns.
+7. Register the new module and feature.
+8. Register all applicable permission definitions.
+9. Identify affected existing roles.
+10. Generate a role-impact report.
+11. Ask for approval before granting new permissions.
+12. Implement backend authorization.
+13. Implement frontend visibility based on effective permissions.
+14. Add authorization tests.
+15. Update documentation and change history.
+
+If a new feature conflicts with an existing permission or policy, STOP and ask the project owner before development.
+
+No future module or feature may bypass this mechanism.
+
+# 27. MANDATORY TESTING
+
+Create comprehensive tests covering:
+
+### User Management
+- Create user.
+- Duplicate username rejection.
+- Duplicate email handling.
+- Activate/deactivate.
+- Suspend/lock/unlock.
+- Employee linkage.
+- Termination.
+- Historical transaction preservation.
+
+### Role Management
+- Create role.
+- Edit role.
+- Clone role.
+- Assign permission.
+- Remove permission.
+- Role inheritance.
+- Circular inheritance rejection.
+- Protected system role.
+- Role expiration.
+
+### Authorization
+- Authorized access.
+- Unauthorized access.
+- Deny-by-default.
+- Direct API access.
+- Cross-company access rejection.
+- Cross-branch access rejection.
+- Organizational scope enforcement.
+- Expired assignment rejection.
+- Revoked permission rejection.
+
+### Permission Registry
+- New module registration.
+- New feature registration.
+- New action registration.
+- Duplicate permission detection.
+- Missing permission detection.
+- Orphan permission detection.
+- Deprecated feature detection.
+- Backend endpoint enforcement.
+- New permission not automatically granted.
+- Existing role impact report.
+
+### Access Governance
+- Access request.
+- Approval.
+- Rejection.
+- Self-approval prevention.
+- Temporary access.
+- Automatic expiration.
+- Delegation.
+- Revocation.
+- Segregation-of-duties detection.
+
+### Security
+- Password policy.
+- Email 2FA.
+- MFA where enabled.
+- Failed login lockout.
+- Session timeout.
+- Session revocation.
+- Privilege escalation prevention.
+- Emergency access audit.
+
+### Integration
+- Company integration.
+- Branch integration.
+- Purchase Organization integration.
+- Employee integration.
+- Module Management integration.
+- Approval Workflow integration.
+- Audit integration.
+- Notification integration.
+
+### Regression
+- Existing login.
+- Existing navigation.
+- Existing modules.
+- Existing role assignments.
+- Existing approvals.
+- Existing user data.
+
+All critical tests must pass before declaring the module complete.
+
+# 28. IMPLEMENTATION PHASES
+
+Phase 1 – Existing architecture and security audit.
+
+Phase 2 – User and authentication integration.
+
+Phase 3 – User Master and lifecycle.
+
+Phase 4 – Role Management.
+
+Phase 5 – Permission Registry and Authorization Engine.
+
+Phase 6 – Organizational Scope Management.
+
+Phase 7 – User-Role Assignment.
+
+Phase 8 – Access Request and Approval.
+
+Phase 9 – Temporary Access, Delegation and SOD.
+
+Phase 10 – Session and Security Management.
+
+Phase 11 – Module and Feature Automatic Permission Registration.
+
+Phase 12 – Audit, History and Access Reviews.
+
+Phase 13 – Reports and Notifications.
+
+Phase 14 – API, Database and Security Verification.
+
+Phase 15 – Cross-Module Integration and Regression Testing.
+
+Do not mark the module complete while mandatory phases remain incomplete.
+
+# 29. ACCEPTANCE CRITERIA
+
+The module is accepted only when:
+
+1. Administrators can create and manage users.
+2. Administrators can create and manage roles.
+3. Permissions can be assigned at module, feature and action level.
+4. Company and branch access is correctly restricted.
+5. Purchase Organization access is correctly enforced.
+6. Multiple role assignments work correctly.
+7. Backend authorization is enforced.
+8. Unauthorized API calls are rejected.
+9. Access requests follow approved workflows.
+10. Temporary access expires automatically.
+11. Segregation-of-duties rules are enforced.
+12. Existing authentication and Email 2FA continue working.
+13. Login and security activities are audited.
+14. New modules and features are registered in the permission registry.
+15. New permissions are not automatically granted.
+16. Role impact is reported before permission grants.
+17. Existing modules use the centralized authorization service.
+18. Security and regression tests pass.
+19. Documentation and project memory are updated.
+20. No critical unresolved security or integration gaps remain.
+
+# 30. NON-NEGOTIABLE DEVELOPMENT GOVERNANCE
+
+Before implementation:
+
+- Read permanent CIPPlatform project memory.
+- Read Module, Feature and Policy Registers.
+- Read Business Decisions Register.
+- Inspect the actual source code.
+- Identify all shared services.
+- Identify overlapping implementations.
+- Identify all integration dependencies.
+- Identify logic violations and security risks.
+
+If any ambiguity, policy conflict, duplicate implementation or security concern is detected, stop and ask the project owner before proceeding.
+
+Do not silently assume.
+
+Do not bypass existing policies.
+
+Do not create duplicate architecture.
+
+Do not remove existing functionality.
+
+Do not claim completion without actual test evidence.
+
+# FINAL DIRECTIVE
+
+Develop User & Role Administration as the centralized security and access-governance foundation of CIPPlatform.
+
+Every existing and future module, feature, screen, API and business action must be governed through this centralized permission architecture.
+
+Whenever CIPPlatform grows, its Module Registry, Feature Registry and Permission Registry must grow with it.
+
+**No new feature without permission registration. No new permission without authorization control. No access without organizational scope validation. No privilege escalation without approval. No silent bypass.**
+
+First perform the existing implementation audit and identify the exact gaps. Then implement the complete approved functionality using the existing architecture, preserving all working features.

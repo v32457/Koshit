@@ -38,6 +38,8 @@ import {
   computeApiUsageMetrics,
 } from '../../services/apiProviderService';
 import { GSTVerificationMode, ApiProviderConfig } from '../../types';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 export const ApiProvidersView: React.FC = () => {
   // Verification modes state
@@ -103,6 +105,15 @@ export const ApiProvidersView: React.FC = () => {
   const metrics = useMemo(() => {
     return computeApiUsageMetrics();
   }, [refreshTrigger]);
+
+  const usageLogsGrid = useStandardDataGrid({
+    gridId: 'settings-api-usage-logs',
+    data: filteredLogs,
+    defaultSortField: 'timestamp',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: `${logServiceFilter}|${logStatusFilter}|${logSearch}`,
+  });
 
   // Handlers
   const handleSaveVerificationModes = () => {
@@ -719,14 +730,14 @@ export const ApiProvidersView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                {filteredLogs.length === 0 ? (
+                {usageLogsGrid.pagedData.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-6 text-center text-slate-400 font-sans">
                       No API execution logs found matching filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredLogs.map((log) => (
+                  usageLogsGrid.pagedData.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50 transition">
                       <td className="p-3 text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</td>
                       <td className="p-3 font-sans">
@@ -755,6 +766,18 @@ export const ApiProvidersView: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="p-3 bg-slate-50 border-t border-slate-200">
+            <DataGridFooter
+              currentPage={usageLogsGrid.currentPage}
+              totalPages={usageLogsGrid.totalPages}
+              pageSize={usageLogsGrid.pageSize}
+              totalRecords={usageLogsGrid.totalRecords}
+              onPageChange={usageLogsGrid.setCurrentPage}
+              onPageSizeChange={usageLogsGrid.setPageSize}
+              pageSizeOptions={usageLogsGrid.pageSizeOptions}
+              defaultSortNotice="Sorted Newest First (Timestamp DESC)"
+            />
           </div>
         </div>
       </div>

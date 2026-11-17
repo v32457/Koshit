@@ -10,6 +10,7 @@ import {
   INITIAL_CUSTOM_SPECIFICATIONS,
   INITIAL_CUSTOMER_PART_MODEL_REFS,
 } from '../../data/seedData';
+import { customSpecificationsService } from '../../services/customSpecificationsService';
 import {
   SlidersHorizontal,
   Search,
@@ -29,6 +30,8 @@ import {
   X,
   Boxes,
 } from 'lucide-react';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface CustomSpecificationsViewProps {
   currentUser: User;
@@ -41,12 +44,12 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
 }) => {
   const [activeTab, setActiveTab] = useState<'cmb' | 'part_model'>('cmb');
 
-  // Master State
-  const [cmbList, setCmbList] = useState<CustomerManufacturerBrandMaster[]>(
-    INITIAL_CUSTOM_SPECIFICATIONS
+  // Master State from customSpecificationsService
+  const [cmbList, setCmbList] = useState<CustomerManufacturerBrandMaster[]>(() =>
+    customSpecificationsService.getCmbList()
   );
-  const [partModelList, setPartModelList] = useState<CustomerPartModelReference[]>(
-    INITIAL_CUSTOMER_PART_MODEL_REFS
+  const [partModelList, setPartModelList] = useState<CustomerPartModelReference[]>(() =>
+    customSpecificationsService.getPartModelList()
   );
 
   // CMB Filters
@@ -108,61 +111,27 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
       return;
     }
 
-    if (editingCmb) {
-      setCmbList((prev) =>
-        prev.map((c) =>
-          c.id === editingCmb.id
-            ? {
-                ...c,
-                code: cmbForm.code.toUpperCase().trim(),
-                name: cmbForm.name.toUpperCase().trim(),
-                entityType: cmbForm.entityType,
-                displayLabel: `${cmbForm.name.toUpperCase().trim()} (${cmbForm.code.toUpperCase().trim()})`,
-                description: cmbForm.description,
-                updatedAt: new Date().toISOString(),
-                updatedBy: currentUser.fullName,
-              }
-            : c
-        )
+    try {
+      const updated = customSpecificationsService.upsertCmb(
+        {
+          id: editingCmb ? editingCmb.id : undefined,
+          code: cmbForm.code,
+          name: cmbForm.name,
+          entityType: cmbForm.entityType,
+          description: cmbForm.description,
+        },
+        currentUser
       );
-    } else {
-      // Duplicate check
-      if (cmbList.some((c) => c.code.toLowerCase() === cmbForm.code.trim().toLowerCase())) {
-        setErrorMsg(`Code "${cmbForm.code}" already exists in Master.`);
-        return;
-      }
-
-      const newRecord: CustomerManufacturerBrandMaster = {
-        id: `cmb-${Date.now()}`,
-        code: cmbForm.code.toUpperCase().trim(),
-        name: cmbForm.name.toUpperCase().trim(),
-        entityType: cmbForm.entityType,
-        displayLabel: `${cmbForm.name.toUpperCase().trim()} (${cmbForm.code.toUpperCase().trim()})`,
-        description: cmbForm.description,
-        isActive: true,
-        referencedItemCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUser.fullName,
-      };
-      setCmbList([newRecord, ...cmbList]);
+      setCmbList(updated);
+      setIsCmbModalOpen(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save master record.');
     }
-
-    setIsCmbModalOpen(false);
   };
 
   const handleToggleCmbStatus = (id: string) => {
-    setCmbList((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          if (c.isActive && c.referencedItemCount > 0) {
-            alert(`Note: Deactivating master record with ${c.referencedItemCount} referenced items. Soft deactivation protects existing item references.`);
-          }
-          return { ...c, isActive: !c.isActive, updatedAt: new Date().toISOString() };
-        }
-        return c;
-      })
-    );
+    const updated = customSpecificationsService.toggleCmbStatus(id);
+    setCmbList(updated);
   };
 
   // Part Model Handlers
@@ -197,8 +166,6 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
     }
 
     const matchedCust = cmbList.find((c) => c.id === partForm.customerId);
-    const matchedMfg = cmbList.find((c) => c.id === partForm.manufacturerBrandId);
-    const matchedItem = globalItems.find((i) => i.id === partForm.globalItemId);
 
     // Business key validation (customer + customerPartNumber)
     const duplicate = partModelList.some(
@@ -213,52 +180,30 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
       return;
     }
 
-    if (editingPart) {
-      setPartModelList((prev) =>
-        prev.map((p) =>
-          p.id === editingPart.id
-            ? {
-                ...p,
-                customerPartNumber: partForm.customerPartNumber.trim().toUpperCase(),
-                customerId: partForm.customerId,
-                customerName: matchedCust?.name,
-                manufacturerBrandId: partForm.manufacturerBrandId,
-                manufacturerBrandName: matchedMfg?.name,
-                globalItemId: partForm.globalItemId,
-                globalItemCode: matchedItem?.globalItemCode,
-                description: partForm.description,
-                updatedAt: new Date().toISOString(),
-                updatedBy: currentUser.fullName,
-              }
-            : p
-        )
+    try {
+      const updated = customSpecificationsService.upsertPartModel(
+        {
+          id: editingPart ? editingPart.id : undefined,
+          customerPartNumber: partForm.customerPartNumber,
+          customerId: partForm.customerId,
+          manufacturerBrandId: partForm.manufacturerBrandId,
+          globalItemId: partForm.globalItemId,
+          description: partForm.description,
+        },
+        currentUser,
+        cmbList,
+        globalItems
       );
-    } else {
-      const newRef: CustomerPartModelReference = {
-        id: `cpm-${Date.now()}`,
-        customerPartNumber: partForm.customerPartNumber.trim().toUpperCase(),
-        customerId: partForm.customerId,
-        customerName: matchedCust?.name,
-        manufacturerBrandId: partForm.manufacturerBrandId,
-        manufacturerBrandName: matchedMfg?.name,
-        globalItemId: partForm.globalItemId,
-        globalItemCode: matchedItem?.globalItemCode,
-        description: partForm.description,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUser.fullName,
-      };
-      setPartModelList([newRef, ...partModelList]);
+      setPartModelList(updated);
+      setIsPartModalOpen(false);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save part reference.');
     }
-
-    setIsPartModalOpen(false);
   };
 
   const handleTogglePartStatus = (id: string) => {
-    setPartModelList((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, isActive: !p.isActive, updatedAt: new Date().toISOString() } : p))
-    );
+    const updated = customSpecificationsService.togglePartModelStatus(id);
+    setPartModelList(updated);
   };
 
   // Filtered lists
@@ -283,6 +228,28 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
       (p.globalItemCode && p.globalItemCode.toLowerCase().includes(partSearch.toLowerCase())) ||
       (p.description && p.description.toLowerCase().includes(partSearch.toLowerCase()));
     return matchesStatus && matchesSearch;
+  });
+
+  const cmbGrid = useStandardDataGrid<CustomerManufacturerBrandMaster>({
+    gridId: 'custom-specifications-cmb',
+    userId: currentUser?.id,
+    data: filteredCmbList,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'code',
+    filterSignature: `${cmbSearch}|${cmbTypeFilter}|${cmbStatusFilter}`,
+    getRowId: (c) => c.code || c.id,
+  });
+
+  const partGrid = useStandardDataGrid<CustomerPartModelReference>({
+    gridId: 'custom-specifications-parts',
+    userId: currentUser?.id,
+    data: filteredPartList,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'customerPartNumber',
+    filterSignature: `${partSearch}|${partStatusFilter}`,
+    getRowId: (p) => p.customerPartNumber || p.id,
   });
 
   return (
@@ -395,7 +362,7 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                     </td>
                   </tr>
                 ) : (
-                  filteredCmbList.map((item) => (
+                  cmbGrid.pagedData.map((item) => (
                     <tr
                       key={item.id}
                       className="hover:bg-indigo-50/50 transition cursor-pointer"
@@ -467,6 +434,16 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={cmbGrid.currentPage}
+            totalPages={cmbGrid.totalPages}
+            pageSize={cmbGrid.pageSize}
+            totalRecords={cmbGrid.totalRecords}
+            pageSizeOptions={cmbGrid.pageSizeOptions}
+            onPageChange={cmbGrid.setCurrentPage}
+            onPageSizeChange={cmbGrid.setPageSize}
+            defaultSortNotice="Default Sort: Updated Date (Newest First)"
+          />
         </div>
       )}
 
@@ -527,7 +504,7 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
                     </td>
                   </tr>
                 ) : (
-                  filteredPartList.map((ref) => (
+                  partGrid.pagedData.map((ref) => (
                     <tr
                       key={ref.id}
                       className="hover:bg-indigo-50/50 transition cursor-pointer"
@@ -585,6 +562,16 @@ export const CustomSpecificationsView: React.FC<CustomSpecificationsViewProps> =
               </tbody>
             </table>
           </div>
+          <DataGridFooter
+            currentPage={partGrid.currentPage}
+            totalPages={partGrid.totalPages}
+            pageSize={partGrid.pageSize}
+            totalRecords={partGrid.totalRecords}
+            pageSizeOptions={partGrid.pageSizeOptions}
+            onPageChange={partGrid.setCurrentPage}
+            onPageSizeChange={partGrid.setPageSize}
+            defaultSortNotice="Default Sort: Updated Date (Newest First)"
+          />
         </div>
       )}
 

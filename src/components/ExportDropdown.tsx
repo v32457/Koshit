@@ -1,22 +1,51 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, ChevronDown, FileText, FileSpreadsheet, Check, Loader2 } from 'lucide-react';
-import { executeExport, ExportTableData } from '../services/exportService';
+import { Download, ChevronDown, FileText, FileSpreadsheet, Loader2, ShieldAlert } from 'lucide-react';
+import { executeExport, executeScopedExport, ExportTableData } from '../services/exportService';
+import { getGlobalGridSettings } from '../services/dataGridService';
 
 interface ExportDropdownProps {
-  getData: () => ExportTableData;
+  getData?: () => ExportTableData;
+  getCurrentPageData?: () => ExportTableData;
+  headers?: string[];
+  rows?: (string | number)[][];
+  currentPageRows?: (string | number)[][];
+  filenamePrefix?: string;
+  title?: string;
+  subtitle?: string;
+  allowAllFilteredExport?: boolean;
   label?: string;
   className?: string;
   onExportSuccess?: (format: string, filename: string) => void;
+  onExportBlocked?: (message: string) => void;
 }
 
 export const ExportDropdown: React.FC<ExportDropdownProps> = ({
-  getData,
+  getData: propGetData,
+  getCurrentPageData: propGetCurrentPageData,
+  headers = [],
+  rows = [],
+  currentPageRows,
+  filenamePrefix = 'export_data',
+  title = 'Export Report',
+  subtitle,
+  allowAllFilteredExport = true,
   label = 'Export',
   className = '',
   onExportSuccess,
+  onExportBlocked,
 }) => {
+  const getData = propGetData || (() => ({ title, subtitle, headers, rows, filenamePrefix }));
+  const getCurrentPageData =
+    propGetCurrentPageData ||
+    (currentPageRows
+      ? () => ({ title, subtitle, headers, rows: currentPageRows, filenamePrefix })
+      : undefined);
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [exportScope, setExportScope] = useState<'CURRENT_PAGE' | 'ALL_FILTERED'>(
+    getCurrentPageData ? 'CURRENT_PAGE' : 'ALL_FILTERED'
+  );
+  const [blockMessage, setBlockMessage] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close when clicking outside
@@ -31,10 +60,42 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
   }, []);
 
   const handleSelectFormat = async (format: 'pdf' | 'excel' | 'word' | 'csv') => {
+    setBlockMessage(null);
+    const effectiveScope =
+      getCurrentPageData && exportScope === 'CURRENT_PAGE' ? 'CURRENT_PAGE' : 'ALL_FILTERED';
+
+    if (effectiveScope === 'ALL_FILTERED' && !allowAllFilteredExport) {
+      const msg = 'All-Filtered export requires EXPORT_ALL_FILTERED permission. Only Current Page export is permitted.';
+      setBlockMessage(msg);
+      onExportBlocked?.(msg);
+      return;
+    }
+
     try {
       setIsExporting(format);
-      const data = getData();
-      await executeExport(format, data);
+      const data =
+        effectiveScope === 'CURRENT_PAGE' && getCurrentPageData
+          ? getCurrentPageData()
+          : getData();
+      const settings = getGlobalGridSettings();
+
+      if (getCurrentPageData) {
+        const res = await executeScopedExport({
+          ...data,
+          format,
+          exportScope: effectiveScope,
+          maxRecordsLimit: settings.maxExportRecords,
+          maxSizeBytesLimit: settings.maxExportFileSizeBytes,
+        });
+        if (!res.success) {
+          setBlockMessage(res.message);
+          onExportBlocked?.(res.message);
+          return;
+        }
+      } else {
+        await executeExport(format, data);
+      }
+
       setIsOpen(false);
       if (onExportSuccess) {
         onExportSuccess(format.toUpperCase(), data.filenamePrefix);
@@ -64,7 +125,47 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs font-semibold animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute right-0 mt-1.5 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs font-semibold animate-in fade-in slide-in-from-top-1 duration-150">
+          {getCurrentPageData && (
+            <div className="px-3 py-2 border-b border-slate-100 space-y-1.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Export Scope
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setExportScope('CURRENT_PAGE')}
+                  className={`px-2 py-1 rounded text-[11px] font-bold border transition cursor-pointer ${
+                    exportScope === 'CURRENT_PAGE'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  Current Page
+                </button>
+                <button
+                  type="button"
+                  disabled={!allowAllFilteredExport}
+                  onClick={() => setExportScope('ALL_FILTERED')}
+                  className={`px-2 py-1 rounded text-[11px] font-bold border transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                    exportScope === 'ALL_FILTERED'
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  All Filtered
+                </button>
+              </div>
+            </div>
+          )}
+
+          {blockMessage && (
+            <div className="mx-2 my-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[10px] flex items-start gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{blockMessage}</span>
+            </div>
+          )}
+
           <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
             Choose Export Format
           </div>

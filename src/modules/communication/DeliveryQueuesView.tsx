@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DetailedDeliveryQueueItem, DeliveryStatus } from '../../types/communication';
 import { INITIAL_DETAILED_DELIVERY_QUEUE } from '../../data/communicationExtendedSeed';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Layers,
   Mail,
@@ -35,26 +37,39 @@ export const DeliveryQueuesView: React.FC<DeliveryQueuesViewProps> = ({
   const [selectedItemForInspect, setSelectedItemForInspect] = useState<DetailedDeliveryQueueItem | null>(null);
   const [actionSuccessNotice, setActionSuccessNotice] = useState<string | null>(null);
 
-  const filteredItems = queueItems.filter((item) => {
-    if (channelTab === 'DEAD_LETTER') {
-      if (item.status !== 'DEAD_LETTER' && item.status !== 'FAILED') return false;
-    } else if (channelTab !== 'ALL') {
-      if (item.channel !== channelTab) return false;
-    }
+  const filteredItems = useMemo(
+    () =>
+      queueItems.filter((item) => {
+        if (channelTab === 'DEAD_LETTER') {
+          if (item.status !== 'DEAD_LETTER' && item.status !== 'FAILED') return false;
+        } else if (channelTab !== 'ALL') {
+          if (item.channel !== channelTab) return false;
+        }
 
-    if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;
+        if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;
 
-    if (
-      searchQuery &&
-      !item.recipient.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !item.recipientName.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !item.correlationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !item.subject.toLowerCase().includes(searchQuery.toLowerCase())
-    ) {
-      return false;
-    }
+        if (
+          searchQuery &&
+          !item.recipient.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !item.recipientName.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !item.correlationId.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !item.subject.toLowerCase().includes(searchQuery.toLowerCase())
+        ) {
+          return false;
+        }
 
-    return true;
+        return true;
+      }),
+    [queueItems, channelTab, statusFilter, searchQuery]
+  );
+
+  const queueGrid = useStandardDataGrid({
+    gridId: 'comm-delivery-queues',
+    data: filteredItems,
+    defaultSortField: 'createdAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: `${channelTab}|${statusFilter}|${searchQuery}`,
   });
 
   const handleManualRetry = (id: string) => {
@@ -220,14 +235,14 @@ export const DeliveryQueuesView: React.FC<DeliveryQueuesViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.length === 0 ? (
+              {queueGrid.pagedData.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-500">
                     No delivery jobs match the selected filters.
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
+                queueGrid.pagedData.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50 transition">
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-2">
@@ -339,6 +354,17 @@ export const DeliveryQueuesView: React.FC<DeliveryQueuesViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+        <div className="p-3 border-t border-slate-100">
+          <DataGridFooter
+            currentPage={queueGrid.currentPage}
+            totalPages={queueGrid.totalPages}
+            pageSize={queueGrid.pageSize}
+            totalRecords={queueGrid.totalRecords}
+            onPageChange={queueGrid.setCurrentPage}
+            onPageSizeChange={queueGrid.setPageSize}
+            pageSizeOptions={queueGrid.pageSizeOptions}
+          />
         </div>
       </div>
 

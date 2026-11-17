@@ -1,0 +1,1452 @@
+# MASTER DEVELOPMENT PROMPT
+# KOSH INNOVATIONS
+## ENTERPRISE ZERO-TRUST VISUAL DATA PROTECTION & LEAKAGE PREVENTION ENGINE
+### Google AI Studio — Full Application Development, Integration, Testing and Production Deployment
+
+---
+
+# 1. YOUR ROLE
+
+Act as the Principal Enterprise Security Architect, Zero-Trust Security Engineer, Full-Stack Application Architect, Backend Engineer, Frontend Engineer, AI/Computer Vision Engineer, Database Architect, DevSecOps Engineer, Application Security Tester and Production Deployment Engineer for KOSH Innovations.
+
+You are responsible for examining the existing KOSH application and implementing a complete enterprise-grade Zero-Trust Visual Data Protection and Leakage Prevention Engine.
+
+This is an actual software development and production implementation assignment.
+
+You must not limit your work to:
+- UI designs.
+- Mockups.
+- Static pages.
+- Demonstration screens.
+- Architecture diagrams.
+- Sample code.
+- Simulated AI detection.
+- Fake API responses.
+- Placeholder database records.
+- Non-functional controls.
+- Sandbox-only functionality.
+
+The objective is to deliver a fully integrated, operational and tested security engine within the existing KOSH application.
+
+You must work with the actual repository, existing database, authentication system, RBAC, company master, branch master, module registry and deployment architecture.
+
+Do not create an unrelated application.
+
+Do not replace the existing KOSH application.
+
+Do not damage or unnecessarily modify existing business functionality.
+
+---
+
+# 2. PRIMARY BUSINESS OBJECTIVE
+
+Develop a centralized security engine to protect confidential information displayed and processed inside KOSH.
+
+The engine must address:
+
+1. Unauthorized screen photography.
+2. Unauthorized screen recording and capture, to the extent technically enforceable.
+3. Unauthorized clipboard copying.
+4. Unauthorized data extraction.
+5. Unauthorized access to sensitive screens.
+6. Unauthorized API access.
+7. Unauthorized document downloads and exports.
+8. Unauthorized cross-company and cross-branch access.
+9. Suspicious recording-device visibility.
+10. Unsupported or non-compliant browser access.
+11. Unauthorized policy modification.
+12. Session compromise and suspicious activity.
+
+The solution must combine:
+
+- Browser-level security controls.
+- Application-level visual deterrence.
+- Dynamic forensic watermarking.
+- Clipboard restrictions.
+- Sensitive-content protection.
+- Backend zero-trust authorization.
+- Session monitoring.
+- Local webcam-based computer vision.
+- Security event tracking.
+- Policy inheritance and governance.
+- Endpoint security integration where required.
+
+All controls must be configurable and auditable.
+
+---
+
+# 3. NON-NEGOTIABLE DEVELOPMENT RULES
+
+## 3.1 Work on the existing KOSH application
+
+Before writing code:
+
+1. Inspect the existing repository.
+2. Identify the frontend framework.
+3. Identify the backend framework.
+4. Identify the database.
+5. Identify the existing authentication implementation.
+6. Identify the existing RBAC implementation.
+7. Identify company and branch masters.
+8. Identify module and page routing.
+9. Identify the existing audit system.
+10. Identify deployment architecture.
+11. Identify current dependencies and versions.
+12. Identify existing testing tools.
+
+Never assume that a particular framework, database, folder or API exists.
+
+Use the existing architecture unless a documented technical reason requires an extension.
+
+## 3.2 No mock implementation
+
+Every feature must have:
+
+- Actual frontend implementation.
+- Actual backend implementation where required.
+- Actual database integration where required.
+- Actual authorization.
+- Actual configuration persistence.
+- Actual operational behavior.
+- Actual testing evidence.
+
+Never create buttons that do nothing.
+
+Never display success messages when the corresponding backend operation failed.
+
+Never simulate webcam detection.
+
+Never use hardcoded security policies as a replacement for the policy engine.
+
+Never represent an unimplemented feature as complete.
+
+## 3.3 Automatic dependency installation
+
+When supporting software, libraries, packages, browser components, inference runtimes or AI models are required:
+
+1. Identify the exact dependency.
+2. Check whether it is already installed.
+3. Verify the supported version.
+4. Verify compatibility with the existing KOSH architecture.
+5. Verify official download source.
+6. Verify licence and commercial-use rights.
+7. Check known vulnerabilities.
+8. Download the required component.
+9. Verify checksum or signature where available.
+10. Install it using reproducible commands.
+11. Configure it.
+12. Integrate it with KOSH.
+13. Execute tests.
+14. Record its installed version and verification status.
+
+Do not install arbitrary or unverified software.
+
+Do not silently introduce paid APIs, commercial subscriptions or external data-processing services.
+
+Prefer open-source and locally hosted solutions when suitable.
+
+Obtain explicit approval before purchasing licences or using paid services.
+
+If your execution environment cannot download, install or configure a dependency, identify the exact blocker and provide the complete reproducible installation procedure.
+
+## 3.4 Production implementation
+
+The final objective is production deployment, not a development preview.
+
+Use development and staging environments for testing where appropriate, but do not present them as production.
+
+The production implementation must include:
+
+- Database migrations.
+- Backend deployment.
+- Frontend deployment.
+- Dependency installation.
+- Model installation where applicable.
+- Security configuration.
+- TLS verification.
+- Monitoring.
+- Logging.
+- Backup.
+- Rollback.
+- Functional testing.
+- Security testing.
+- Performance testing.
+- Production verification.
+
+Do not claim deployment is successful unless the actual production environment has been accessed and verified.
+
+---
+
+# 4. SECURITY GOVERNANCE HIERARCHY
+
+The security engine must support the following configuration hierarchy.
+
+## 4.1 Mandatory configuration levels
+
+The following levels are mandatory:
+
+1. Global / Enterprise.
+2. Company.
+3. Branch.
+4. Module.
+
+<GLOBAL / ENTERPRISE>
+        |
+        v
+<COMPANY>
+        |
+        v
+<BRANCH>
+        |
+        v
+<MODULE>
+
+Every company, branch and module must support security policy evaluation.
+
+The system must support multiple companies, multiple branches and multiple modules.
+
+## 4.2 Optional configuration levels
+
+The following are optional extensions:
+
+5. Page / Screen.
+6. Individual User.
+
+<OPTIONAL PAGE / SCREEN>
+<OPTIONAL INDIVIDUAL USER>
+
+Page/Screen configuration must be independently configurable.
+
+Individual User configuration must be independently configurable.
+
+Neither optional feature may be a prerequisite for normal operation.
+
+If both optional features are disabled, the security engine must operate fully using the effective Module policy.
+
+If only Page/Screen configuration is enabled, User configuration remains optional.
+
+If only User configuration is enabled, Page/Screen configuration remains optional.
+
+If neither is configured, the system must continue to work without errors or missing-policy failures.
+
+Do not force administrators to configure every page or every user.
+
+## 4.3 Effective policy hierarchy
+
+Evaluate the policy in this order:
+
+Global → Company → Branch → Module → Page/Screen (optional) → Individual User (optional).
+
+The server must calculate the effective policy.
+
+The frontend must consume and enforce the effective policy.
+
+The backend must independently enforce authorization for sensitive operations.
+
+## 4.4 Policy inheritance
+
+Each security control must support an appropriate configuration state:
+
+- INHERIT.
+- ENABLED.
+- DISABLED, where permitted.
+- MANDATORY.
+- OPTIONAL.
+- NOT_APPLICABLE.
+- AUTHORIZED_EXCEPTION, where supported.
+
+Do not interpret an unconfigured value as disabled.
+
+Do not use simplistic last-write-wins policy evaluation.
+
+Mandatory restrictions cannot be weakened by lower-level configuration.
+
+For each effective setting, display:
+
+- Effective value.
+- Source level.
+- Source configuration.
+- Mandatory status.
+- Override status.
+- Exception status.
+- Policy version.
+
+## 4.5 Policy exceptions
+
+Authorized exceptions must require:
+
+- Authorized approver.
+- Reason.
+- Scope.
+- Start date.
+- Expiry date.
+- Audit history.
+
+An expired exception must automatically stop applying.
+
+A user must not be allowed to modify their own security policy.
+
+---
+
+# 5. CENTRAL SECURITY CONTROL CENTER
+
+Implement a new security workspace within the existing KOSH application.
+
+Suggested navigation:
+
+General Settings
+  └── Security Governance
+       ├── Security Dashboard
+       ├── Security Policy Master
+       ├── Company Security Configuration
+       ├── Branch Security Configuration
+       ├── Module Security Configuration
+       ├── Page / Screen Security Configuration (Optional)
+       ├── User Security Configuration (Optional)
+       ├── Browser Governance
+       ├── Visual Protection
+       ├── Webcam & AI Detection
+       ├── Clipboard & Screen Protection
+       ├── Session Security
+       ├── Security Event Monitor
+       ├── Security Incident Management
+       ├── Software & Model Registry
+       ├── Policy Simulator
+       ├── Security Audit History
+       └── System Health
+
+Reuse the existing KOSH navigation, design system and authorization structure.
+
+Do not create a duplicate administration portal.
+
+## 5.1 Security dashboard
+
+Display:
+
+- Total companies configured.
+- Total branches configured.
+- Total modules covered.
+- Active security policies.
+- Optional page-level configurations.
+- Optional user-level configurations.
+- Active protected sessions.
+- Suspended sessions.
+- Browser compliance status.
+- Security incidents.
+- Critical security events.
+- Webcam detection engine health.
+- Model installation status.
+- Dependency health.
+- Last security audit.
+- Policy version information.
+
+Use real database and service data.
+
+Do not use static demonstration figures.
+
+## 5.2 Configuration interface
+
+Provide:
+
+- Create policy.
+- Edit policy.
+- View policy.
+- Activate policy.
+- Deactivate policy where permitted.
+- Configure inheritance.
+- View effective policy.
+- View policy source.
+- Configure optional extensions.
+- Configure exceptions.
+- Approve or reject exceptions.
+- View policy history.
+- Compare policy versions.
+
+Use existing KOSH UI conventions.
+
+---
+
+# 6. APPROVED BROWSER GOVERNANCE
+
+Implement approved-browser enforcement.
+
+Initial approved browsers:
+
+- Microsoft Edge.
+- Google Chrome.
+
+Other browsers must be unsupported until formally tested and approved.
+
+Requirements:
+
+1. Identify browser family.
+2. Identify browser version where possible.
+3. Verify required browser capabilities.
+4. Detect unsupported browser environments.
+5. Check secure context.
+6. Check required permissions.
+7. Record browser compliance.
+8. Apply the configured access decision.
+9. Display an appropriate warning for unsupported browsers.
+10. Prevent access to sensitive content when mandatory requirements are not met.
+
+Important technical limitation:
+
+User-agent detection can be spoofed.
+
+A web application cannot prove that an unmanaged browser is centrally managed using user-agent information alone.
+
+Do not claim browser detection is cryptographic verification.
+
+For managed-browser enforcement, evaluate:
+
+- Microsoft Edge enterprise policies.
+- Chrome Enterprise policies.
+- Managed browser configuration.
+- Endpoint management integration.
+
+Only implement controls supported by the actual customer environment.
+
+---
+
+# 7. DYNAMIC FORENSIC WATERMARK ENGINE
+
+Implement configurable dynamic watermarking.
+
+Watermark information may include:
+
+- Authenticated username.
+- Employee identifier, if authorized.
+- Company.
+- Branch.
+- Date.
+- Time.
+- Session reference.
+- Confidentiality classification.
+- Document or screen reference.
+
+Do not expose credentials, authentication tokens or secrets.
+
+## 7.1 Watermark configuration
+
+Support:
+
+- Position.
+- Opacity.
+- Font size.
+- Rotation.
+- Density.
+- Font style.
+- Color.
+- Refresh interval.
+- Watermark pattern.
+- Screen-specific layout.
+- Confidentiality classification.
+
+## 7.2 Dynamic behavior
+
+The watermark must update when:
+
+- User changes.
+- Company changes.
+- Branch changes.
+- Session changes.
+- Security policy changes.
+- Protected screen changes.
+
+The watermark must be based on authenticated server-side identity and validated context.
+
+Watermarking must not be the only protection mechanism.
+
+Watermarks provide deterrence and attribution, not guaranteed prevention of photography.
+
+---
+
+# 8. VISUAL DATA PROTECTION
+
+Implement application-level protection for sensitive information.
+
+## 8.1 Screen protection
+
+Support configurable:
+
+- Sensitive-content blur.
+- Sensitive-field masking.
+- Protected-screen locking.
+- Focus-loss response.
+- Visibility-change response.
+- Session suspension.
+- Re-authentication.
+- Security warning overlays.
+
+## 8.2 Focus and visibility monitoring
+
+Use supported browser events:
+
+- visibilitychange.
+- blur.
+- focus.
+- pagehide.
+
+Apply configured behavior:
+
+- Warning.
+- Blur.
+- Hide confidential values.
+- Lock the current screen.
+- Suspend sensitive operations.
+- Require re-authentication.
+
+Do not claim these events detect every screenshot or recording operation.
+
+## 8.3 Photography deterrence
+
+Evaluate:
+
+- Dynamic watermark patterns.
+- Visual deterrence patterns.
+- Screen overlays.
+- Confidentiality indicators.
+- Content masking.
+- Session monitoring.
+
+Do not claim that moiré patterns or visual overlays prevent smartphone photography.
+
+Test the effect on readability and accessibility before deployment.
+
+---
+
+# 9. CLIPBOARD PROTECTION ENGINE
+
+Implement configurable clipboard controls.
+
+Support:
+
+- Copy.
+- Cut.
+- Paste.
+- Clipboard read.
+- Clipboard write.
+- Context-menu copy.
+- Sensitive-field copy.
+- Application-controlled copy functions.
+
+Use supported browser events and Clipboard API permissions.
+
+Apply rules based on effective security policy.
+
+Allow authorized business workflows where configured.
+
+Record relevant violations.
+
+Do not break legitimate data-entry operations unnecessarily.
+
+Important limitation:
+
+A normal browser application cannot universally control or replace the operating-system clipboard.
+
+Do not claim complete OS-level clipboard protection through JavaScript alone.
+
+For stronger enforcement, evaluate managed browser, endpoint DLP or VDI controls.
+
+---
+
+# 10. SCREENSHOT AND SCREEN-RECORDING PROTECTION
+
+Implement every supported application-level deterrence mechanism.
+
+Evaluate:
+
+- Print shortcut restrictions.
+- Context-menu restrictions.
+- Selection restrictions.
+- Application-level capture restrictions.
+- Watermarking.
+- Sensitive-content masking.
+- Visibility monitoring.
+- Session protection.
+
+Do not claim that blocking PrintScreen or keyboard shortcuts prevents screenshots.
+
+Do not claim that browser JavaScript can universally block operating-system capture tools.
+
+For stronger protection, evaluate:
+
+- Endpoint DLP.
+- Managed operating-system policies.
+- Enterprise browser controls.
+- VDI or remote application delivery.
+- Endpoint security software.
+
+Clearly identify which controls are application-level and which require endpoint-level enforcement.
+
+---
+
+# 11. WEBCAM-BASED LOCAL AI DETECTION ENGINE
+
+Implement optional local computer vision to identify visible recording devices around the workstation.
+
+The system must use real model inference.
+
+It must not simulate detection.
+
+## 11.1 Technology evaluation
+
+Evaluate suitable production-supported technologies, including:
+
+- ONNX Runtime Web.
+- WebGPU.
+- WASM fallback.
+- Verified object-detection models.
+- Local model storage.
+- Browser MediaDevices API.
+
+Choose the actual technology after evaluating:
+
+- Commercial-use licence.
+- Model provenance.
+- Model accuracy.
+- Model size.
+- Browser compatibility.
+- Hardware compatibility.
+- Performance.
+- Memory usage.
+- CPU/GPU utilization.
+- Security.
+
+Do not choose a model merely because it is popular.
+
+Do not download unverified models.
+
+## 11.2 Detection targets
+
+Evaluate detection of:
+
+- Mobile phones.
+- Visible cameras.
+- Recording devices.
+- Suspicious device presence.
+- Repeated device visibility.
+
+Where the model supports it, evaluate device orientation and proximity.
+
+Do not claim that the model can determine that a photograph is actually being taken merely because a phone is visible.
+
+## 11.3 Privacy requirements
+
+Default configuration:
+
+- Local webcam processing.
+- No webcam frame upload.
+- No webcam video recording.
+- No continuous video retention.
+- No facial recognition.
+- No biometric identification.
+- No identity inference.
+- Only necessary detection metadata is transmitted.
+
+Camera access must require valid user permission.
+
+Display an explicit camera-active indicator.
+
+Stop the camera when monitoring is no longer required.
+
+If camera permission is denied, apply the configured security policy. Do not silently bypass the requirement.
+
+## 11.4 Detection workflow
+
+1. Verify that webcam monitoring is enabled by policy.
+2. Obtain browser permission.
+3. Initialize the local inference runtime.
+4. Load the verified model.
+5. Process frames locally.
+6. Detect supported object classes.
+7. Evaluate confidence.
+8. Apply persistence and false-positive suppression.
+9. Generate an event.
+10. Send minimum required event metadata to the backend.
+11. Evaluate risk.
+12. Execute the configured response.
+13. Record the event.
+
+## 11.5 Risk classification
+
+Support:
+
+- Informational.
+- Low.
+- Medium.
+- High.
+- Critical.
+
+Configure:
+
+- Confidence threshold.
+- Detection persistence.
+- Escalation window.
+- False-positive suppression.
+- Response action.
+
+Do not automatically terminate a user's session based solely on one unverified low-confidence detection.
+
+## 11.6 Performance
+
+Measure:
+
+- Inference latency.
+- CPU usage.
+- GPU usage where applicable.
+- Memory usage.
+- Detection accuracy.
+- False-positive rate.
+- False-negative rate.
+
+Provide a configurable frame-processing frequency.
+
+Avoid unnecessary continuous full-resolution inference.
+
+---
+
+# 12. SECURITY BLACKOUT ENGINE
+
+Implement a centralized protection and blackout engine.
+
+Possible triggers:
+
+- Critical detection event.
+- Unsupported browser.
+- Policy violation.
+- Suspicious session activity.
+- Unauthorized API access.
+- Security administrator action.
+- Session expiry.
+- Policy version invalidation.
+- Required protection initialization failure.
+
+Possible responses:
+
+1. Warning.
+2. Blur sensitive content.
+3. Hide sensitive fields.
+4. Lock current screen.
+5. Suspend sensitive API operations.
+6. Require re-authentication.
+7. Terminate the session where justified.
+
+Frontend blackout alone is insufficient.
+
+The backend must enforce suspension and authorization independently.
+
+Support:
+
+- Configurable duration.
+- Recovery.
+- Re-authentication.
+- Incident reference.
+- Event timestamp.
+- Administrator override.
+- Audit history.
+
+---
+
+# 13. BACKEND ZERO-TRUST SECURITY
+
+The backend must be the authoritative enforcement layer.
+
+Implement:
+
+- Authentication validation.
+- RBAC validation.
+- Company authorization.
+- Branch authorization.
+- Module authorization.
+- Optional page/screen authorization.
+- Optional user-specific policy evaluation.
+- Session validation.
+- Policy evaluation.
+- Sensitive API authorization.
+- Rate limiting.
+- Session suspension.
+- Security event ingestion.
+- Audit logging.
+
+Never trust the frontend alone.
+
+Never trust company, branch or user context supplied without server-side validation.
+
+Prevent:
+
+- IDOR.
+- Broken access control.
+- Privilege escalation.
+- Cross-company data leakage.
+- Cross-branch data leakage.
+- Unauthorized API requests.
+- Session replay.
+- Token misuse.
+- Unauthorized exports.
+- Unauthorized downloads.
+- Unauthorized policy modification.
+
+Every sensitive API must independently verify authorization.
+
+Page-level restrictions must not be treated as a substitute for API authorization.
+
+---
+
+# 14. POLICY EVALUATION AND SESSION MANAGEMENT
+
+The backend must calculate the effective policy.
+
+The evaluation context must include:
+
+- Authenticated user.
+- Company.
+- Branch.
+- Module.
+- Page/screen when optional configuration is enabled.
+- User policy when optional configuration is enabled.
+- Role and existing permissions.
+- Authorized exceptions.
+- Policy version.
+
+If optional Page/Screen and User configuration are not enabled, use the effective Module policy.
+
+For protected screen navigation:
+
+1. Identify the target resource.
+2. Retrieve the effective policy.
+3. Validate required controls.
+4. Initialize the protection mechanisms.
+5. Render protected content only after successful validation.
+
+Implement policy cache invalidation.
+
+Cache keys must include the relevant security context and policy version.
+
+Critical policy changes must trigger active-session revalidation or suspension according to policy.
+
+Record the policy version associated with important security events.
+
+---
+
+# 15. SECURITY EVENT AND INCIDENT MANAGEMENT
+
+Create a real security event processing engine.
+
+Capture:
+
+- Unsupported browser.
+- Browser compliance failure.
+- Clipboard violation.
+- Suspicious visual detection.
+- Webcam permission failure.
+- AI model failure.
+- Required security initialization failure.
+- Focus/visibility event.
+- Session suspension.
+- Re-authentication.
+- Unauthorized API request.
+- Cross-company access attempt.
+- Cross-branch access attempt.
+- Policy modification.
+- Policy exception.
+- Unauthorized download.
+- Unauthorized export.
+
+Each event should contain:
+
+- Event ID.
+- Event type.
+- Severity.
+- User reference.
+- Company.
+- Branch.
+- Module.
+- Optional page/screen.
+- Session reference.
+- Policy version.
+- Timestamp.
+- Detection source.
+- Action taken.
+- Resolution status.
+
+Do not record passwords, authentication tokens, webcam frames or unnecessary personal data.
+
+Provide incident:
+
+- Creation.
+- Classification.
+- Assignment.
+- Investigation.
+- Acknowledgement.
+- Resolution.
+- Closure.
+- Audit history.
+
+Retention must follow an explicitly configured security and legal policy.
+
+---
+
+# 16. DATABASE DESIGN
+
+Inspect the actual database before adding tables.
+
+Reuse existing:
+
+- User master.
+- Company master.
+- Branch master.
+- Module master.
+- Role master.
+- Permission master.
+- Session records.
+- Audit records.
+
+Create only required new security entities.
+
+The logical data model must support:
+
+1. Security policy definitions.
+2. Company policy configuration.
+3. Branch policy configuration.
+4. Module policy configuration.
+5. Optional page/screen policy configuration.
+6. Optional user policy configuration.
+7. Policy versions.
+8. Policy exceptions.
+9. Exception approvals.
+10. Effective policy evaluation evidence.
+11. Security events.
+12. Security incidents.
+13. Session protection state.
+14. Browser compliance.
+15. Software registry.
+16. Model registry.
+17. Deployment health.
+18. Administrative audit history.
+
+Use:
+
+- Primary keys.
+- Foreign keys.
+- Unique constraints.
+- Indexes.
+- Referential integrity.
+- Tenant isolation.
+- Transactions.
+- Migration versioning.
+- Rollback procedures.
+
+Do not duplicate existing master data.
+
+---
+
+# 17. SOFTWARE AND MODEL REGISTRY
+
+Implement a dependency and model registry.
+
+Record:
+
+- Component name.
+- Category.
+- Version.
+- Official source.
+- Download source.
+- Licence.
+- Commercial-use permission.
+- Integrity verification.
+- Installation status.
+- Integration status.
+- Configuration status.
+- Test status.
+- Vulnerability status.
+- Last verification timestamp.
+
+Automatically install approved dependencies when the execution environment permits.
+
+Use pinned versions and reproducible lockfiles.
+
+Perform vulnerability scanning.
+
+Do not automatically upgrade production dependencies without testing.
+
+Do not install unnecessary software.
+
+Do not introduce unapproved paid services.
+
+---
+
+# 18. SECURITY CONTROL CONFIGURATION MATRIX
+
+Every control must be configurable by its applicable governance scope.
+
+| Security control | Company | Branch | Module | Page/Screen | User |
+|---|---|---|---|---|---|
+| Browser restriction | Mandatory scope | Yes | Yes | Optional | Optional |
+| Watermark | Yes | Yes | Yes | Optional | Optional |
+| Clipboard control | Yes | Yes | Yes | Optional | Optional |
+| Focus protection | Yes | Yes | Yes | Optional | Optional |
+| Webcam monitoring | Yes | Yes | Yes | Optional | Optional |
+| Blackout response | Yes | Yes | Yes | Optional | Optional |
+| Session timeout | Yes | Yes | Yes | Optional | Optional |
+| Sensitive-field masking | Yes | Yes | Yes | Optional | Optional |
+| Screen access restriction | Yes | Yes | Yes | Optional | Optional |
+| Security event monitoring | Yes | Yes | Yes | Optional | Optional |
+| Export restrictions | Yes | Yes | Yes | Optional | Optional |
+| Exception approval | Yes | Yes | Yes | Optional | Optional |
+
+The table defines available configuration scopes, not an obligation to create every possible override.
+
+Mandatory enterprise controls must always remain enforceable.
+
+---
+
+# 19. TESTING AND VERIFICATION
+
+Testing must be executed against the actual implementation.
+
+Do not mark a test as passed unless it was executed.
+
+## 19.1 Unit tests
+
+Test:
+
+- Policy inheritance.
+- Policy precedence.
+- Mandatory settings.
+- Optional configuration.
+- Missing page configuration.
+- Missing user configuration.
+- Exception expiry.
+- Policy versioning.
+- Session validation.
+- Risk classification.
+
+## 19.2 Integration tests
+
+Test:
+
+- Company configuration.
+- Branch configuration.
+- Module configuration.
+- Optional Page/Screen configuration.
+- Optional User configuration.
+- Effective policy evaluation.
+- Backend enforcement.
+- Frontend enforcement.
+- Session revalidation.
+- Security event recording.
+- Incident management.
+
+## 19.3 Mandatory optional-level tests
+
+Test all of these scenarios:
+
+**Scenario A:** Page and User options both disabled.
+
+Expected: All security features operate using Module policy.
+
+**Scenario B:** Page enabled, User disabled.
+
+Expected: Page policy is applied when configured. Missing page configuration inherits Module policy.
+
+**Scenario C:** Page disabled, User enabled.
+
+Expected: User policy is applied when configured, subject to mandatory parent restrictions.
+
+**Scenario D:** Page and User both enabled.
+
+Expected: Effective policy includes both optional scopes and follows deterministic conflict rules.
+
+**Scenario E:** Optional configuration removed.
+
+Expected: The system safely returns to the applicable parent policy.
+
+## 19.4 Browser tests
+
+Test:
+
+- Approved browser.
+- Unsupported browser.
+- Browser version compatibility.
+- Watermark.
+- Clipboard.
+- Focus and visibility.
+- Protected screen navigation.
+- Webcam permissions.
+- WebGPU support.
+- WASM fallback.
+
+## 19.5 AI model tests
+
+Test:
+
+- Actual model loading.
+- Actual inference.
+- Object detection.
+- Detection confidence.
+- False-positive rate.
+- False-negative rate.
+- Inference latency.
+- CPU and memory usage.
+- Poor lighting.
+- Different camera angles.
+- Browser fallback.
+
+## 19.6 Security tests
+
+Test:
+
+- Authentication bypass.
+- Authorization bypass.
+- IDOR.
+- Privilege escalation.
+- Cross-company access.
+- Cross-branch access.
+- Direct API access.
+- Unauthorized downloads.
+- Unauthorized exports.
+- Session replay.
+- Token expiry.
+- Policy tampering.
+- Audit integrity.
+- Dependency vulnerabilities.
+
+## 19.7 Regression tests
+
+Verify that existing KOSH business modules continue to work.
+
+Do not break:
+
+- Existing login.
+- Existing navigation.
+- Existing RBAC.
+- Company selection.
+- Branch selection.
+- Purchase Requisition.
+- RFQ.
+- Purchase Order.
+- Supplier Management.
+- Existing reporting.
+- Existing business workflows.
+
+Test all affected modules.
+
+---
+
+# 20. PERFORMANCE AND RELIABILITY
+
+Measure actual system performance.
+
+Record:
+
+- Initial application load time.
+- Policy retrieval latency.
+- Policy evaluation latency.
+- Watermark rendering overhead.
+- Webcam inference latency.
+- API response time.
+- CPU utilization.
+- GPU utilization where applicable.
+- Memory utilization.
+- Database performance.
+- Concurrent user behavior.
+
+Establish acceptance thresholds from actual KOSH baseline measurements and expected production workloads.
+
+Do not invent results.
+
+Implement:
+
+- Error handling.
+- Service health checks.
+- Structured logging.
+- Dependency health monitoring.
+- Model health monitoring.
+- Policy service health.
+- Recovery procedures.
+
+---
+
+# 21. PRODUCTION DEPLOYMENT
+
+The final deployment target is the actual KOSH production environment.
+
+Before deployment:
+
+1. Verify repository state.
+2. Verify the target branch and release commit.
+3. Back up affected application components.
+4. Back up the database.
+5. Verify backup integrity.
+6. Install approved dependencies.
+7. Apply tested database migrations.
+8. Deploy backend.
+9. Deploy frontend.
+10. Install and configure models where applicable.
+11. Configure security policies.
+12. Configure monitoring.
+13. Verify TLS.
+14. Execute production health checks.
+15. Execute security tests.
+16. Verify existing business functionality.
+17. Verify rollback procedure.
+
+Never deploy an untested migration directly into production.
+
+Never remove existing security controls to make deployment succeed.
+
+Never expose development credentials or debugging endpoints.
+
+If production access is unavailable, prepare the complete deployment package and exact commands, but clearly report that production deployment has not been performed.
+
+---
+
+# 22. PRODUCTION ACCEPTANCE CRITERIA
+
+The project is complete only when all applicable mandatory acceptance criteria pass.
+
+| Area | Required result |
+|---|---|
+| Existing application | No unacceptable business regression |
+| Global policy | Implemented |
+| Company policy | Implemented |
+| Branch policy | Implemented |
+| Module policy | Implemented |
+| Page/Screen policy | Optional and operational when enabled |
+| User policy | Optional and operational when enabled |
+| Inheritance | Deterministic |
+| Exceptions | Authorized, time-limited and audited |
+| Browser governance | Tested |
+| Watermark | Real authenticated identity |
+| Clipboard | Actual enforcement within browser limitations |
+| Visual protection | Actual configured behavior |
+| Webcam AI | Actual local inference when enabled |
+| Blackout | Frontend and backend enforcement |
+| API security | Independently enforced |
+| Multi-company | Isolation verified |
+| Multi-branch | Isolation verified |
+| Event management | Operational |
+| Dependencies | Installed and verified |
+| Security testing | Mandatory tests passed |
+| Performance | Meets approved thresholds |
+| Deployment | Actual production deployment verified |
+| Recovery | Backup and rollback tested |
+
+The release target is 100% pass of the approved mandatory acceptance tests.
+
+This is not a claim of absolute protection against every possible attack.
+
+Any failed mandatory test blocks production acceptance.
+
+Any unavailable endpoint-level control must be identified and must not be falsely represented as implemented.
+
+---
+
+# 23. REQUIRED DELIVERABLES
+
+Deliver actual implementation artifacts:
+
+1. Existing application architecture audit.
+2. Security architecture.
+3. Threat model.
+4. Policy hierarchy specification.
+5. Database schema and migrations.
+6. Backend implementation.
+7. Frontend implementation.
+8. Security policy engine.
+9. Browser governance.
+10. Watermark engine.
+11. Clipboard protection.
+12. Visual protection.
+13. Local AI integration.
+14. Security blackout engine.
+15. Event and incident management.
+16. Software and model registry.
+17. Automated test suite.
+18. Actual test execution report.
+19. Vulnerability scan report.
+20. Performance test report.
+21. Production deployment package.
+22. Deployment procedure.
+23. Backup and rollback procedure.
+24. Administrator guide.
+25. Production acceptance report.
+26. Known limitations and risk register.
+
+For every feature, identify:
+
+- Source-code location.
+- Database objects.
+- Backend API.
+- Frontend component.
+- Dependencies.
+- Configuration.
+- Test cases.
+- Actual results.
+- Remaining risks.
+
+---
+
+# 24. EXECUTION PHASES
+
+Execute the project in this exact sequence.
+
+## PHASE 0 — EXISTING SYSTEM AUDIT
+
+Inspect the repository, runtime, database, authentication, RBAC and deployment.
+
+Do not modify code before the audit is complete.
+
+## PHASE 1 — ARCHITECTURE AND THREAT MODEL
+
+Produce the security architecture, policy model, dependency list and threat model.
+
+## PHASE 2 — DEPENDENCY INSTALLATION
+
+Download, verify, install and configure approved software and models.
+
+## PHASE 3 — DATABASE AND POLICY ENGINE
+
+Implement the mandatory Global, Company, Branch and Module policy hierarchy.
+
+Implement optional Page/Screen and User configuration.
+
+## PHASE 4 — BACKEND ENFORCEMENT
+
+Implement authorization, effective policy evaluation, API security, session control and event processing.
+
+## PHASE 5 — FRONTEND SECURITY
+
+Implement approved-browser enforcement, watermarking, clipboard restrictions, visual protection and secure navigation.
+
+## PHASE 6 — LOCAL COMPUTER VISION
+
+Install the selected inference runtime and model.
+
+Implement webcam permission, local processing, detection and event escalation.
+
+## PHASE 7 — SECURITY CONTROL CENTER
+
+Implement the real administration interfaces, monitoring, configuration and incident management.
+
+## PHASE 8 — TESTING AND HARDENING
+
+Execute unit, integration, browser, AI model, security, performance and regression tests.
+
+## PHASE 9 — PRODUCTION DEPLOYMENT
+
+Deploy the verified implementation into the actual production environment.
+
+## PHASE 10 — PRODUCTION ACCEPTANCE
+
+Execute mandatory acceptance tests and provide evidence.
+
+Do not skip phases.
+
+Do not mark a phase complete based on generated code alone.
+
+---
+
+# 25. IMPLEMENTATION STATUS REPORT
+
+Maintain a live implementation tracker.
+
+Use these statuses:
+
+- NOT STARTED.
+- AUDITING.
+- BLOCKED.
+- IMPLEMENTING.
+- INSTALLED.
+- INTEGRATED.
+- TESTING.
+- PASSED.
+- FAILED.
+- DEPLOYED.
+- PRODUCTION VERIFIED.
+
+Every BLOCKED item must contain:
+
+- Exact blocker.
+- Required action.
+- Required permission or licence.
+- Production impact.
+- Resolution procedure.
+
+Every PASSED item must contain actual test evidence.
+
+Every DEPLOYED item must contain deployment evidence.
+
+Every PRODUCTION VERIFIED item must contain actual production verification evidence.
+
+Never claim an unexecuted operation was completed.
+
+---
+
+# 26. FIRST ACTION — START NOW
+
+Start with PHASE 0.
+
+Inspect the existing KOSH project.
+
+Do not immediately create a new UI or replace existing application files.
+
+First report:
+
+1. Detected application architecture.
+2. Frontend framework and version.
+3. Backend framework and version.
+4. Database and version.
+5. Authentication and RBAC implementation.
+6. Existing company and branch masters.
+7. Existing module registry.
+8. Existing audit implementation.
+9. Deployment architecture.
+10. Existing test framework.
+11. Required additional dependencies.
+12. Required AI models and inference runtime.
+13. Required installation permissions.
+14. Production deployment requirements.
+15. Identified technical limitations.
+
+Then produce the phased implementation plan.
+
+After the audit, proceed with actual implementation.
+
+If you cannot access the repository, ask for repository access or the project files. Do not invent an architecture.
+
+If you cannot access the database, identify the exact information required.
+
+If you cannot access production infrastructure, prepare the deployment artifacts and explicitly state that production deployment remains blocked.
+
+---
+
+# FINAL DIRECTIVE
+
+Build this as a real enterprise security subsystem of KOSH Innovations.
+
+Mandatory policy configuration must operate at:
+
+- Global / Enterprise.
+- Company.
+- Branch.
+- Module.
+
+Optional policy configuration must operate at:
+
+- Page / Screen.
+- Individual User.
+
+The application must work correctly even when both optional levels are disabled.
+
+Automatically download, verify, install and integrate approved supporting software and AI models whenever required and authorized.
+
+Implement real backend enforcement, real frontend protection, real database integration, real local AI inference where enabled, real security monitoring and real testing.
+
+Do not deliver a mockup, trial, demonstration, placeholder, simulated feature or sandbox-only implementation as the final result.
+
+**The final acceptance requirement is a fully integrated, tested, hardened and production-verified KOSH Zero-Trust Visual Data Protection & Leakage Prevention Engine, with 100% pass of all approved mandatory acceptance tests.**
+
+Do not claim success without execution evidence.

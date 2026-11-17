@@ -14,21 +14,96 @@ export type UserRole =
   | 'INTEGRATION_SERVICE_ACCOUNT'
   | 'READ_ONLY_USER';
 
+import type {
+  ManagedUserType,
+  ManagedUserStatus,
+  AuthenticationMethod,
+  EmployeeAssociationStatus,
+  MobileNumberType,
+  MobileVerificationStatus,
+  PersonalConsentStatus,
+  CommunicationPurpose,
+} from './userRoleAdmin';
+import type {
+  UomConversionDefinition,
+  GlobalItemAttachment,
+  GlobalChangeHistoryEntry,
+  RuleAuditResultStatus,
+  ItemRuleScope,
+  ItemRuleLifecycleStatus,
+} from './itemMasterGovernance';
+
+export * from './itemMasterGovernance';
+
 export interface User {
   id: string;
+  username?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  displayName?: string;
   email: string;
   fullName: string;
   employeeId?: string;
   designation?: string;
   department?: string;
-  status?: 'ACTIVE' | 'INACTIVE';
+  departmentId?: string;
+  managerId?: string;
+  managerName?: string;
+  userType?: ManagedUserType;
+  authMethod?: AuthenticationMethod;
+  status?: ManagedUserStatus;
+  employeeAssociationStatus?: EmployeeAssociationStatus;
+  associationStartDate?: string;
+  associationEndDate?: string;
+  associationReason?: string;
+  associationUpdatedAt?: string;
+  associationUpdatedBy?: string;
+  reassociatedAt?: string;
+  reassociatedBy?: string;
+  reassociationApprovalRef?: string;
   phone?: string;
+  countryCode?: string;
+  mobilePhone?: string;
+  mobileNumberType?: MobileNumberType;
+  mobileVerificationStatus?: MobileVerificationStatus;
+  mobileVerifiedAt?: string;
+  mobileConsentStatus?: PersonalConsentStatus;
+  mobileConsentVersion?: string;
+  mobileConsentMethod?: 'EMPLOYEE_CONFIRMATION';
+  mobileConsentPurposes?: CommunicationPurpose[];
+  mobileConsentTimestamp?: string;
+  mobileConsentRequestedAt?: string;
+  mobileConsentRequestChannel?: 'PORTAL_AND_EMAIL' | 'PORTAL_ONLY' | 'OFFLINE_LIMITED';
+  mobileConsentEvidenceId?: string;
   role: UserRole;
   orgId: string;
+  defaultCompanyId?: string;
+  defaultBranchId?: string;
   allowedBranchIds: string[]; // empty means all branches if global
   isGlobalScope: boolean;
   twoFactorEnabled: boolean;
+  authenticatorMfaEnabled?: boolean;
+  recoveryCodes?: string[];
   avatarUrl?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  passwordHash?: string;
+  passwordHistoryHashes?: string[];
+  passwordUpdatedAt?: string;
+  passwordExpiresAt?: string;
+  mustChangePassword?: boolean;
+  failedLoginAttempts?: number;
+  lockedUntil?: string;
+  invitationStatus?: 'NOT_SENT' | 'SENT' | 'ACCEPTED';
+  lastInvitedAt?: string;
+  invitationSentAt?: string;
+  lastLoginAt?: string;
+  archivedAt?: string;
+  createdAt?: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface Company {
@@ -51,9 +126,61 @@ export interface Company {
   msmeInfo?: MSMEInfo;
   msmeVerificationDetails?: MSMEVerificationDetails;
   gstVerificationDetails?: GSTVerificationDetails;
+  gstVerificationMode?: 'AUTOMATED' | 'MANUAL_DOCUMENT';
+  gstCertificateDocument?: ComplianceDocumentAttachment;
+  gstManualValidation?: ManualComplianceValidation;
+  msmeVerificationMode?: 'AUTOMATED' | 'MANUAL_DOCUMENT';
+  msmeCertificateDocument?: ComplianceDocumentAttachment;
+  msmeManualValidation?: ManualComplianceValidation;
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface ComplianceDocumentAttachment {
+  id: string;
+  fileName: string;
+  fileSizeBytes: number;
+  fileSize?: number;
+  uploadedAt: string;
+  uploadedBy: string;
+  fileType: string;
+  documentType?: 'GST_CERTIFICATE' | 'MSME_CERTIFICATE' | 'OTHER' | string;
+  fileDataUrl?: string;
+  notes?: string;
+}
+
+export interface ManualComplianceValidation {
+  status: 'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED' | 'REJECTED';
+  validatedBy?: string;
+  validatedAt?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  notes?: string;
+  rejectionReason?: string;
+}
+
+export interface ComplianceGovernanceSettings {
+  gstValidationEnabled: boolean;
+  gstRequireDocumentUpload: boolean;
+  gstDefaultStatusOnUpload: 'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED';
+  gstAllowedFileTypes: string[];
+  gstMaxFileSizeBytes: number;
+
+  msmeValidationEnabled: boolean;
+  msmeRequireDocumentUpload: boolean;
+  msmeDefaultStatusOnUpload: 'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED';
+  msmeAllowedFileTypes: string[];
+  msmeMaxFileSizeBytes: number;
+
+  requireDocumentUploadIfDisabled?: boolean;
+  defaultManualValidationStatus?: 'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED';
+
+  updatedAt: string;
+  updatedBy: string;
+  remarks?: string;
+}
+
+export type { PurchaseRequisitionHeader as PurchaseRequisition } from './purchaseRequisition';
 
 export interface Organization {
   id: string;
@@ -236,12 +363,36 @@ export type BranchLifecycleStatus =
   | 'ACTIVE'
   | 'INACTIVE';
 
+export type WarehouseType =
+  | 'MAIN_PLANT_STORE'
+  | 'RAW_MATERIAL'
+  | 'FINISHED_GOODS'
+  | 'CONSUMABLES'
+  | 'MRO_SPARES'
+  | 'SPARES_MAINTENANCE'
+  | 'GENERAL'
+  | 'WIP'
+  | 'QC_QUARANTINE'
+  | 'QUARANTINE_QC'
+  | 'REJECTED'
+  | 'TRANSIT'
+  | 'EXTERNAL_3PL'
+  | 'SCRAP';
+
 export interface Warehouse {
   id: string;
   branchId: string;
   warehouseCode: string; // e.g. 'HSR-FG', 'HSR-STR'
   warehouseName: string; // e.g. 'Hosur-Finished Goods'
   locationCode?: string;
+  warehouseType?: WarehouseType;
+  warehousePriority?: number; // Lower number = higher priority (1 = primary)
+  storageLocations?: string[]; // Bins / Bays / Racks
+  isAvailableForValidation?: boolean; // Whether stock here counts toward PR availability validation
+  isCrossBranchVisible?: boolean; // Whether same-company other branches may view stock here
+  isCrossBranchTransferEligible?: boolean; // Whether stock here can be requested for inter-branch transfer
+  restrictedItemCategories?: string[]; // Empty/undefined = all categories allowed; otherwise allowlist
+  restrictedItemCodes?: string[]; // Optional item allowlist
   isInactive?: boolean;
   isDropShip?: boolean;
   isNettable?: boolean;
@@ -385,25 +536,42 @@ export interface ItemCodeComponentConfig {
 export interface ItemCodeRule {
   id: string;
   name: string;
-  categoryCode?: string; // null means default
+  categoryCode?: string; // legacy optional reference; new global code rules must not require category
+  itemTypeScope?: string;
+  ruleScope?: ItemRuleScope;
+  lifecycleStatus?: ItemRuleLifecycleStatus;
   components: ItemCodeComponentConfig[];
   separator: string;
-  sequenceScope: 'GLOBAL' | 'CATEGORY' | 'BRANCH';
+  sequenceScope: 'GLOBAL' | 'CATEGORY' | 'BRANCH' | 'ITEM_TYPE';
+  maxLength?: number;
+  effectiveFrom?: string;
+  effectiveUntil?: string;
   version: number;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+  approvedBy?: string;
+  approvedAt?: string;
   updatedAt: string;
   updatedBy: string;
 }
 
 export interface ItemDescriptionRule {
   id: string;
-  categoryCode: string;
+  categoryCode?: string; // legacy compatibility
+  itemTypeScope?: string; // global item type scope (e.g., ALL, M, A, L, E)
+  ruleScope?: ItemRuleScope;
+  lifecycleStatus?: ItemRuleLifecycleStatus;
+  ruleName?: string;
   templatePattern: string;
   separator: string;
   maxLength: number;
+  effectiveFrom?: string;
+  effectiveUntil?: string;
   version: number;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+  approvedBy?: string;
+  approvedAt?: string;
   updatedAt: string;
+  updatedBy?: string;
 }
 
 export type ItemStatus =
@@ -415,15 +583,35 @@ export type ItemStatus =
   | 'REJECTED'
   | 'SAP_PENDING'
   | 'SAP_CREATED'
-  | 'SAP_FAILED';
+  | 'SAP_FAILED'
+  | 'MERGED';
+
+export interface GlobalItemCustomerPartRef {
+  id?: string;
+  customerId?: string;
+  customerName?: string;
+  partNumber: string;
+  modelNumber?: string;
+}
 
 export interface GlobalItem {
   id: string;
   globalItemCode: string;
   isProvisionalCode: boolean;
-  categoryCode: string;
+  /** @deprecated Legacy snapshot only — Category belongs exclusively to Branch Item Availability */
+  categoryCode?: string;
   description: string;
+  itemTypeCode?: string;
+  defaultPurchaseUom?: string;
+  defaultInventoryUom?: string;
+  /** @deprecated Use defaultInventoryUom or BranchItemAvailability.effectiveInventoryUom */
   inventoryUom?: string;
+  defaultUomConversion?: UomConversionDefinition;
+  conversionFactor?: number;
+  conversionNumerator?: number;
+  conversionDenominator?: number;
+  conversionPrecision?: number;
+  roundingRule?: string;
   status: ItemStatus;
   attributes: {
     material?: string;
@@ -432,24 +620,45 @@ export interface GlobalItem {
     process?: string;
     colour?: string;
     manufacturer?: string;
+    manufacturerName?: string;
+    brand?: string;
+    brandName?: string;
     dimensions?: string;
     partModelNumber?: string;
     ratingSize?: string;
     specification?: string;
+    technicalSpecs?: Record<string, string>;
+    [key: string]: any;
   };
+  manufacturerRefId?: string;
+  manufacturerName?: string;
+  brandRefId?: string;
+  brandName?: string;
+  customerPartRefs?: GlobalItemCustomerPartRef[];
+  globalAttachments?: GlobalItemAttachment[];
+  globalChangeHistory?: GlobalChangeHistoryEntry[];
+  lastAuditReportId?: string;
+  lastAuditStatus?: RuleAuditResultStatus;
+  isMerged?: boolean;
+  mergedIntoItemId?: string;
+  mergedIntoItemCode?: string;
+  /** @deprecated Legacy migration source only — Shelf-Life belongs exclusively to Branch Item Availability */
   shelfLifeControl?: {
     isApplicable: boolean;
     durationDays?: number;
     minRemainingShelfLifeDays?: number;
   };
+  /** @deprecated Legacy migration source only — Serial Tracking belongs exclusively to Branch Item Availability */
   serialNumberControl?: {
     isApplicable: boolean;
   };
+  /** @deprecated Legacy migration source only — Warranty belongs exclusively to Branch Item Availability */
   warrantyPolicy?: {
     isApplicable: boolean;
     standardDurationMonths?: number;
     terms?: string;
   };
+  /** @deprecated Legacy migration source only — MOQ / Order Multiple belong exclusively to Branch Item Availability */
   procurementControls?: {
     moq?: number;
     orderMultiple?: number;
@@ -457,12 +666,14 @@ export interface GlobalItem {
     isServiceItem?: boolean;
   };
   createdBy: string;
+  createdByName?: string;
   createdAt: string;
   updatedAt: string;
   codeRuleVersion: number;
   descRuleVersion: number;
   approvalHistory: ApprovalActionRecord[];
-  branchAvailability: BranchAvailabilitySetting[];
+  /** @deprecated Legacy compatibility cache — authoritative records live in BranchItemAvailabilityRecord */
+  branchAvailability?: BranchAvailabilitySetting[];
   sapSyncInfo?: {
     sapItemCode?: string;
     companyDb?: string;
@@ -625,8 +836,15 @@ export interface BusinessPartner {
   gstRegisteredEmail?: string;
   gstRegisteredMobile?: string;
   gstVerificationDetails?: GSTVerificationDetails;
+  gstVerificationMode?: 'AUTOMATED' | 'MANUAL_DOCUMENT';
+  gstCertificateDocument?: ComplianceDocumentAttachment;
+  gstManualValidation?: ManualComplianceValidation;
+  gstVerification?: any;
   msmeInfo?: MSMEInfo;
   msmeVerificationDetails?: MSMEVerificationDetails;
+  msmeVerificationMode?: 'AUTOMATED' | 'MANUAL_DOCUMENT';
+  msmeCertificateDocument?: ComplianceDocumentAttachment;
+  msmeManualValidation?: ManualComplianceValidation;
   phone: string;
   email: string;
   website?: string;
@@ -634,14 +852,14 @@ export interface BusinessPartner {
   city: string;
   district?: string;
   state: string;
-  country: string;
+  country?: string;
   postalCode?: string;
   streetAddress?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'LOCKED' | 'PENDING_APPROVAL';
   sapSyncStatus?: 'SYNCED' | 'PENDING' | 'FAILED';
   sapBpCode?: string;
-  contacts: BPContactPerson[];
-  addresses: BPAddress[];
+  contacts?: BPContactPerson[];
+  addresses?: BPAddress[];
   paymentTerms?: BPPaymentTerms;
   accounting?: BPAccounting;
   properties?: string[];
@@ -923,7 +1141,7 @@ export interface DataSourceDefinition {
 // SECTION 6: COMMUNICATION & NOTIFICATION
 // ==========================================
 
-export type NotificationChannel = 'IN_PORTAL' | 'EMAIL' | 'WHATSAPP';
+export type NotificationChannel = 'IN_PORTAL' | 'EMAIL' | 'WHATSAPP' | 'SMS';
 export type CommunicationPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface CommunicationTemplate {
@@ -1150,6 +1368,7 @@ export * from './communication';
 export * from './moduleRegistry';
 export * from './approvalWorkflow';
 export * from './rfqSourcing';
+export * from './userRoleAdmin';
 
 export interface CertificateConfig {
   id: string;

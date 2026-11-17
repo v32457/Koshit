@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { WebhookEventRecord } from '../../types/communication';
 import { INITIAL_WEBHOOK_EVENTS } from '../../data/communicationExtendedSeed';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 import {
   Server,
   Zap,
@@ -19,6 +21,14 @@ export const WebhooksHealthView: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<WebhookEventRecord | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationNotice, setSimulationNotice] = useState<string | null>(null);
+
+  const eventsGrid = useStandardDataGrid({
+    gridId: 'comm-webhooks-events',
+    data: events,
+    defaultSortField: 'timestamp',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
 
   // Trigger test webhook
   const handleSimulateWebhook = (type: 'message.delivered' | 'message.read' | 'message.bounced') => {
@@ -170,7 +180,7 @@ export const WebhooksHealthView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {events.map((evt) => (
+              {eventsGrid.pagedData.map((evt) => (
                 <tr key={evt.id} className="hover:bg-slate-50 transition">
                   <td className="px-4 py-3.5 text-slate-500 font-mono text-[11px]">
                     {new Date(evt.timestamp).toLocaleTimeString()}
@@ -216,6 +226,17 @@ export const WebhooksHealthView: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="p-3 border-t border-slate-100">
+          <DataGridFooter
+            currentPage={eventsGrid.currentPage}
+            totalPages={eventsGrid.totalPages}
+            pageSize={eventsGrid.pageSize}
+            totalRecords={eventsGrid.totalRecords}
+            onPageChange={eventsGrid.setCurrentPage}
+            onPageSizeChange={eventsGrid.setPageSize}
+            pageSizeOptions={eventsGrid.pageSizeOptions}
+          />
         </div>
       </div>
 

@@ -23,6 +23,8 @@ import { User, Company, Branch } from '../../types';
 import { rfqPolicyService } from '../../services/rfqPolicyService';
 import { RfqPolicyConfig, RfqPolicyMode } from '../../types/rfqSourcing';
 import { INITIAL_COMPANIES, INITIAL_BRANCHES } from '../../data/seedData';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface RfqPolicyViewProps {
   currentUser?: User;
@@ -50,6 +52,15 @@ export const RfqPolicyView: React.FC<RfqPolicyViewProps> = ({
 
   const [formState, setFormState] = useState<RfqPolicyConfig>(activePolicy);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+
+  const policyAuditGrid = useStandardDataGrid({
+    gridId: 'rfq-policy-audit-register',
+    userId: currentUser?.id,
+    data: policies,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
 
   const companyBranches = branches.filter((b) => b.companyId === selectedCompanyId);
   const selectedCompany = companies.find((c) => c.id === selectedCompanyId) || companies[0];
@@ -643,7 +654,7 @@ export const RfqPolicyView: React.FC<RfqPolicyViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {policies.map((pol) => (
+              {policyAuditGrid.pagedData.map((pol) => (
                 <tr
                   key={pol.id}
                   className={`hover:bg-slate-50/80 transition ${
@@ -702,6 +713,16 @@ export const RfqPolicyView: React.FC<RfqPolicyViewProps> = ({
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          currentPage={policyAuditGrid.currentPage}
+          totalPages={policyAuditGrid.totalPages}
+          pageSize={policyAuditGrid.pageSize}
+          totalRecords={policyAuditGrid.totalRecords}
+          onPageChange={policyAuditGrid.setCurrentPage}
+          onPageSizeChange={policyAuditGrid.setPageSize}
+          pageSizeOptions={policyAuditGrid.pageSizeOptions}
+          defaultSortNotice="Sorted Newest First (Updated Timestamp DESC)"
+        />
       </div>
     </div>
   );

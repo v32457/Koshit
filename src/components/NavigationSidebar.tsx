@@ -42,6 +42,7 @@ import {
   Wrench,
   Coins,
   UserCheck,
+  CalendarDays,
 } from 'lucide-react';
 
 interface NavigationSidebarProps {
@@ -50,6 +51,8 @@ interface NavigationSidebarProps {
   userRole: UserRole;
   moduleRegistry?: ModuleRegistryItem[];
   isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onCloseMobile?: () => void;
 }
 
 export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
@@ -58,6 +61,8 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   userRole,
   moduleRegistry,
   isCollapsed = false,
+  onToggleCollapse,
+  onCloseMobile,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -88,7 +93,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
 
   const itemClass = (route: string, isNested = false) => `
     flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer select-none
-    ${isNested ? 'ml-5 text-[11px]' : ''}
+    ${isNested && !isCollapsed ? 'ml-5 text-[11px]' : ''}
     ${
       isCurrent(route)
         ? 'bg-indigo-600 text-white font-semibold shadow-xs'
@@ -104,11 +109,47 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
 
   return (
     <aside
-      className={`bg-[#0B192C] border-r border-slate-800 text-slate-300 flex flex-col shrink-0 select-none transition-all duration-200 overflow-y-auto ${
-        isCollapsed ? 'w-16' : 'w-72'
+      aria-label="Primary Application Navigation"
+      className={`bg-[#0B192C] border-r border-slate-800 text-slate-300 flex flex-col shrink-0 select-none transition-all duration-200 overflow-y-auto overflow-x-hidden ${
+        isCollapsed ? 'w-16' : 'w-72 max-w-[85vw]'
       }`}
-      style={{ height: 'calc(100vh - 54px)' }}
+      style={{ height: onCloseMobile ? '100vh' : 'calc(100vh - 50px)' }}
     >
+      {/* Mobile Drawer Top Bar with Brand & Close Button */}
+      {onCloseMobile && (
+        <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-[#0B192C] sticky top-0 z-20 md:hidden">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-black tracking-wider text-white uppercase">KOSH</span>
+            <span className="text-[10px] font-bold tracking-widest text-[#E85C0D] uppercase px-1.5 py-0.5 rounded bg-orange-50">
+              INNOVATIONS
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            aria-label="Close Navigation Drawer"
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Collapsed Sidebar Expand Button (Tablet/Desktop) */}
+      {isCollapsed && onToggleCollapse && (
+        <div className="p-2 border-b border-slate-800/80 flex justify-center sticky top-0 bg-[#0B192C] z-10">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title="Expand Navigation Sidebar"
+            aria-label="Expand Navigation Sidebar"
+            className="p-2 rounded-lg bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white cursor-pointer transition"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Prominent Menu Search Field */}
       {!isCollapsed && (
         <div className="p-3 border-b border-slate-800/80 sticky top-0 bg-[#0B192C] z-10">
@@ -125,7 +166,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
         </div>
       )}
 
-      <div className="p-3 space-y-1">
+      <div className={`p-2.5 space-y-1 ${isCollapsed ? 'hidden' : 'block'}`}>
         {/* Item Section (Gated by ITEM_MASTER Module State) */}
         {isItemMasterEnabled && (
           <div>
@@ -206,16 +247,9 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           </button>
         )}
 
-        {/* Purchase Requisitions & Buyer Management (Phase 1) */}
+        {/* Buyer Workload & Queue */}
         {isPrModuleEnabled && (
           <div className="space-y-0.5">
-            {matchesSearch('Purchase Requisitions') && (
-              <button onClick={() => onNavigate('/purchasing/requisitions')} className={`w-full ${itemClass('/purchasing/requisitions')}`}>
-                <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
-                <span className="truncate">Purchase Requisitions</span>
-              </button>
-            )}
-
             {matchesSearch('Buyer & Procurement Queue') && (
               <button onClick={() => onNavigate('/purchasing/buyer-management')} className={`w-full ${itemClass('/purchasing/buyer-management')}`}>
                 <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -248,33 +282,46 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                     <span>Sourcing</span>
                   </div>
 
-                  {matchesSearch('Purchase Request') && (
+                  {isPrModuleEnabled && (matchesSearch('Purchase Requisitions') || matchesSearch('Purchase Request')) && (
                     <button
-                      onClick={() => onNavigate('/procurement/sourcing/purchase-requests')}
-                      className={`w-full ${itemClass('/procurement/sourcing/purchase-requests', true)}`}
+                      onClick={() => onNavigate('/purchasing/requisitions')}
+                      className={`w-full ${itemClass(
+                        currentRoute === '/procurement/sourcing/purchase-requests' || currentRoute === '/purchasing/requisitions/cleanup'
+                          ? currentRoute
+                          : '/purchasing/requisitions',
+                        true
+                      )}`}
                     >
                       <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                      <span className="truncate">Purchase Request</span>
+                      <span className="truncate">Purchase Requisitions</span>
                     </button>
                   )}
+                </div>
 
-                  {(matchesSearch('Future RFQ Floating') || matchesSearch('Sourcing Demand Pipeline')) && (
+                {/* 2. RFQ SUBGROUP */}
+                <div className="ml-2 pt-1 border-t border-slate-800/40">
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                    <Layers className="w-3 h-3 text-purple-400" />
+                    <span>RFQ</span>
+                  </div>
+
+                  {(matchesSearch('Future RFQ') || matchesSearch('Future RFQ Floating') || matchesSearch('Sourcing Demand Pipeline')) && (
                     <button
                       onClick={() => onNavigate('/procurement/future-floating')}
                       className={`w-full ${itemClass('/procurement/future-floating', true)}`}
                     >
                       <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                      <span className="truncate">Future RFQ Floating – Sourcing Demand Pipeline</span>
+                      <span className="truncate">Future RFQ</span>
                     </button>
                   )}
 
-                  {matchesSearch('RFQ') && (
+                  {(matchesSearch('Sourcing') || matchesSearch('RFQ')) && (
                     <button
                       onClick={() => onNavigate('/procurement/rfq')}
-                      className={`w-full ${itemClass('/procurement/rfq', true)}`}
+                      className={`w-full ${itemClass(currentRoute === '/procurement/rfqs' ? '/procurement/rfqs' : '/procurement/rfq', true)}`}
                     >
                       <Layers className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                      <span className="truncate">RFQ</span>
+                      <span className="truncate">Sourcing</span>
                     </button>
                   )}
 
@@ -294,20 +341,20 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                   )}
                 </div>
 
-                {/* 2. PRICE BOOKS SUBGROUP */}
+                {/* 3. PRICE BOOKS SUBGROUP */}
                 <div className="ml-2 pt-1 border-t border-slate-800/40">
                   <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1.5">
                     <Warehouse className="w-3 h-3 text-teal-400" />
                     <span>Price Books</span>
                   </div>
 
-                  {(matchesSearch('Approved Vendor Item Price Register') || matchesSearch('Price Register')) && (
+                  {(matchesSearch('Vendor Item Price') || matchesSearch('Approved Vendor Item Price Register') || matchesSearch('Price Register')) && (
                     <button
                       onClick={() => onNavigate('/procurement/price-register')}
                       className={`w-full ${itemClass('/procurement/price-register', true)}`}
                     >
                       <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                      <span className="truncate">Approved Vendor Item Price Register</span>
+                      <span className="truncate">Vendor Item Price</span>
                     </button>
                   )}
 
@@ -322,7 +369,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                   )}
                 </div>
 
-                {/* 3. ORDERS & GOVERNANCE SUBGROUP */}
+                {/* 4. ORDERS & GOVERNANCE SUBGROUP */}
                 <div className="ml-2 pt-1 border-t border-slate-800/40">
                   <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
                     <Box className="w-3 h-3 text-rose-400" />
@@ -345,7 +392,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                       className={`w-full ${itemClass('/procurement/goods-receipt', true)}`}
                     >
                       <FileCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">Goods Receipt & UOM</span>
+                      <span className="truncate">Goods Receipt</span>
                     </button>
                   )}
 
@@ -356,6 +403,16 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                     >
                       <Activity className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
                       <span className="truncate">Procurement Dashboard</span>
+                    </button>
+                  )}
+
+                  {(matchesSearch('Charge') || matchesSearch('Landed Cost')) && (
+                    <button
+                      onClick={() => onNavigate('/procurement/charges')}
+                      className={`w-full ${itemClass('/procurement/charges', true)}`}
+                    >
+                      <Layers className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="truncate">Charges & Landed Cost</span>
                     </button>
                   )}
                 </div>
@@ -472,6 +529,15 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 </button>
               )}
 
+              {(matchesSearch('Security Governance') || matchesSearch('Zero-Trust Security') || matchesSearch('Data Protection')) && (
+                <button onClick={() => onNavigate('/settings/general/security')} className={`w-full ${itemClass('/settings/general/security', true)}`}>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate">Security Governance</span>
+                </button>
+              )}
+
+
+
               {(matchesSearch('API Providers') || matchesSearch('API Providers & Usage') || matchesSearch('Verification')) && (
                 <button onClick={() => onNavigate('/settings/api-providers')} className={`w-full ${itemClass('/settings/api-providers', true)}`}>
                   <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -548,7 +614,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                   {logsExpanded ? <ChevronDown className="w-3 h-3 text-slate-500" /> : <ChevronRight className="w-3 h-3 text-slate-500" />}
                 </button>
 
-                {logsExpanded && (
+                { logsExpanded && (
                   <div className="ml-4 space-y-0.5">
                     {matchesSearch('Rule Version History') && (
                       <button onClick={() => onNavigate('/settings/rule-history')} className={`w-full ${itemClass('/settings/rule-history', true)}`}>
@@ -570,6 +636,82 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           )}
         </div>
       </div>
+
+      {/* Compact Icon Rail when Sidebar is Collapsed on Tablet / Desktop */}
+      {isCollapsed && (
+        <div className="flex flex-col items-center py-3 space-y-2">
+          <button
+            type="button"
+            onClick={() => onNavigate('/dashboard')}
+            title="Corporate Dashboard"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              isCurrent('/dashboard') ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/items')}
+            title="Global Item Master"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              currentRoute.startsWith('/items') ? 'bg-indigo-600 text-white' : 'text-amber-400 hover:bg-slate-800'
+            }`}
+          >
+            <Boxes className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/purchasing/requisitions')}
+            title="Purchase Requisitions (PR)"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              currentRoute.includes('requisition') ? 'bg-indigo-600 text-white' : 'text-indigo-400 hover:bg-slate-800'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/procurement/rfq')}
+            title="RFQ & Sourcing"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              currentRoute.startsWith('/procurement') ? 'bg-indigo-600 text-white' : 'text-purple-400 hover:bg-slate-800'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/approvals')}
+            title="Approval Inbox"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              isCurrent('/approvals') ? 'bg-indigo-600 text-white' : 'text-emerald-400 hover:bg-slate-800'
+            }`}
+          >
+            <Inbox className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/calendar/workday')}
+            title="Holiday & Workday Calendar"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              currentRoute.startsWith('/calendar') ? 'bg-indigo-600 text-white' : 'text-emerald-400 hover:bg-slate-800'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/settings/general')}
+            title="General Settings"
+            className={`p-2.5 rounded-lg transition cursor-pointer ${
+              currentRoute.startsWith('/settings') ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

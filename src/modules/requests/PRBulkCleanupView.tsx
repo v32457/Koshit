@@ -8,6 +8,8 @@ import { User } from '../../types';
 import { PRCleanupConfig, PRArchiveLog } from '../../types/purchaseRequisition';
 import { PurchaseRequisitionService } from '../../services/purchaseRequisitionService';
 import { Trash2, ShieldAlert, RefreshCw, CheckCircle2, ArrowLeft, Archive, Search } from 'lucide-react';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface PRBulkCleanupViewProps {
   currentUser: User;
@@ -46,6 +48,24 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
         });
       }
     }
+  });
+
+  const candidatesGrid = useStandardDataGrid({
+    data: candidates,
+    gridId: 'pr-bulk-cleanup-candidates',
+    userId: currentUser?.id || 'usr-default',
+    primarySortField: 'prNumber',
+    tieBreakerField: 'lineId',
+    filterSignature: `${previewDays}`,
+  });
+
+  const archivesGrid = useStandardDataGrid({
+    data: archives,
+    gridId: 'pr-bulk-cleanup-archives',
+    userId: currentUser?.id || 'usr-default',
+    primarySortField: 'archivedAt',
+    tieBreakerField: 'id',
+    filterSignature: `${archives.length}`,
   });
 
   const handleRunCleanup = () => {
@@ -157,8 +177,8 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {candidates.map((c, i) => (
-                <tr key={i} className="hover:bg-slate-50">
+              {candidatesGrid.pagedData.map((c, i) => (
+                <tr key={`${c.prId}-${c.lineId}-${i}`} className="hover:bg-slate-50">
                   <td className="p-3 font-mono font-bold text-indigo-700">{c.prNumber}</td>
                   <td className="p-3 font-mono text-slate-800">{c.itemCode}</td>
                   <td className="p-3 font-medium text-slate-800">{c.requesterName}</td>
@@ -167,7 +187,7 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
                   <td className="p-3 text-slate-600 font-medium">Soft Archive (Retain Audit)</td>
                 </tr>
               ))}
-              {candidates.length === 0 && (
+              {candidatesGrid.pagedData.length === 0 && (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-400 italic">
                     No stale unapproved lines found exceeding {previewDays} days threshold.
@@ -177,6 +197,16 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          totalRecords={candidatesGrid.totalRecords}
+          currentPage={candidatesGrid.currentPage}
+          pageSize={candidatesGrid.pageSize}
+          totalPages={candidatesGrid.totalPages}
+          onPageChange={candidatesGrid.onPageChange}
+          onPageSizeChange={candidatesGrid.onPageSizeChange}
+          entityLabel="cleanup candidates"
+          sortNotice="Sorted newest PR first"
+        />
       </div>
 
       {/* Archive Logs Section */}
@@ -198,7 +228,7 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {archives.map((a) => (
+              {archivesGrid.pagedData.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50">
                   <td className="p-3 font-mono font-bold text-slate-800">{a.prNumber}</td>
                   <td className="p-3 font-mono text-indigo-700">{a.itemCode}</td>
@@ -207,7 +237,7 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
                   <td className="p-3 text-slate-600">{a.reason}</td>
                 </tr>
               ))}
-              {archives.length === 0 && (
+              {archivesGrid.pagedData.length === 0 && (
                 <tr>
                   <td colSpan={5} className="p-8 text-center text-slate-400 italic">
                     No archived records in audit log.
@@ -217,6 +247,16 @@ export const PRBulkCleanupView: React.FC<PRBulkCleanupViewProps> = ({ currentUse
             </tbody>
           </table>
         </div>
+        <DataGridFooter
+          totalRecords={archivesGrid.totalRecords}
+          currentPage={archivesGrid.currentPage}
+          pageSize={archivesGrid.pageSize}
+          totalPages={archivesGrid.totalPages}
+          onPageChange={archivesGrid.onPageChange}
+          onPageSizeChange={archivesGrid.onPageSizeChange}
+          entityLabel="archive logs"
+          sortNotice="Sorted newest archived first"
+        />
       </div>
     </div>
   );

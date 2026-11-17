@@ -1,4 +1,10 @@
 import { UserRole, NotificationChannel, CommunicationPriority } from './index';
+import type {
+  CommunicationPurpose,
+  MobileNumberType,
+  MobileVerificationStatus,
+  PersonalConsentStatus,
+} from './userRoleAdmin';
 
 export type EmailProviderType = 'SMTP' | 'AWS_SES' | 'SENDGRID' | 'RESEND' | 'MAILGUN';
 export type EmailTlsMode = 'STARTTLS' | 'IMPLICIT_TLS' | 'PLAIN';
@@ -87,7 +93,9 @@ export interface NotificationRule {
     email: boolean;
     whatsApp: boolean;
     inPortal: boolean;
+    sms?: boolean;
   };
+  purpose?: CommunicationPurpose;
   emailTemplateId?: string;
   whatsAppTemplateId?: string;
   isEnabled: boolean;
@@ -145,6 +153,12 @@ export interface RecipientConsentRecord {
   name: string;
   email: string;
   phoneNumber: string;
+  mobileNumberType?: MobileNumberType;
+  verificationStatus?: MobileVerificationStatus;
+  personalConsentStatus?: PersonalConsentStatus;
+  approvedPurposes?: CommunicationPurpose[];
+  consentVersion?: string;
+  consentMethod?: 'EMPLOYEE_CONFIRMATION';
   role: UserRole;
   branchName: string;
   emailConsent: boolean;
@@ -159,6 +173,7 @@ export interface BroadcastCampaignDetailed {
   id: string;
   title: string;
   businessReason: string;
+  purpose?: CommunicationPurpose;
   targetScope: 'ALL_USERS' | 'SPECIFIC_ROLE' | 'SPECIFIC_BRANCH';
   targetRole?: UserRole;
   targetBranchId?: string;

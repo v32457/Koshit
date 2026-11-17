@@ -1,12 +1,15 @@
 /**
- * KOSH INNOVATIONS — ITEM CODE GENERATION ENGINE
- * Declarative, configurable rule evaluator for manufacturing master data.
+ * KOSH INNOVATIONS — GLOBAL ITEM CODE GENERATION ENGINE
+ * Declarative, configurable rule evaluator for global manufacturing master data.
+ *
+ * Architectural Rule:
+ * - Global Item Code generation MUST NOT include or require Category.
+ * - Global active rules operate purely on global dimensions (Item Type, Material, Material Form, Process, Colour, Brand, Spec, Sequence) with global sequence scope.
  */
 
 import { ItemCodeRule } from '../types';
 
 export interface CodeGenerationInput {
-  categoryCode: string;
   subcategoryCode?: string;
   materialCode?: string;
   typeCode?: string;
@@ -19,7 +22,8 @@ export interface CodeGenerationInput {
   dimensions?: string;
   ratingSize?: string;
   specification?: string;
-  sequenceNumber: number;
+  sequenceNumber?: number;
+  [key: string]: any;
 }
 
 export interface CodeGenerationResult {
@@ -30,19 +34,21 @@ export interface CodeGenerationResult {
   errors: string[];
 }
 
+import { INITIAL_ITEM_CODE_RULES } from '../data/seedData';
+
 /**
- * Evaluates an ItemCodeRule against user inputs and an atomic sequence number.
+ * Evaluates an ItemCodeRule against user inputs and an atomic global sequence number.
  */
 export function generateItemCode(
-  rule: ItemCodeRule,
+  rule: ItemCodeRule | null | undefined,
   input: CodeGenerationInput,
   isProvisional = false
 ): CodeGenerationResult {
+  const effectiveRule = rule && Array.isArray(rule.components) ? rule : INITIAL_ITEM_CODE_RULES[0];
   const errors: string[] = [];
   const componentsUsed: Array<{ name: string; value: string }> = [];
 
-  // Sort components by configured order
-  const activeComponents = [...rule.components]
+  const activeComponents = [...(effectiveRule?.components || [])]
     .filter((c) => c.enabled)
     .sort((a, b) => a.order - b.order);
 
@@ -52,9 +58,6 @@ export function generateItemCode(
     let partValue = '';
 
     switch (comp.sourceDimension) {
-      case 'category':
-        partValue = input.categoryCode || '';
-        break;
       case 'subcategory':
         partValue = input.subcategoryCode || '';
         break;
@@ -104,7 +107,7 @@ export function generateItemCode(
     }
 
     if (comp.isRequired && !partValue) {
-      errors.push(`Missing required component '${comp.name}' for category ${input.categoryCode}`);
+      errors.push(`Missing required component '${comp.name}' in rule '${effectiveRule?.name || 'Global Code Rule'}'`);
     }
 
     if (partValue) {
@@ -113,11 +116,14 @@ export function generateItemCode(
     }
   }
 
-  const generatedCode = parts.join(rule.separator || '');
+  const generatedCode = parts.join(effectiveRule?.separator || '');
 
-  // SAP Business One ItemCode field max constraint is 50 chars
-  if (generatedCode.length > 50) {
-    errors.push(`Generated Item Code (${generatedCode.length} chars) exceeds SAP Business One max limit (50 chars)`);
+  const configuredMax =
+    effectiveRule?.maxLength && effectiveRule.maxLength > 0 ? Math.min(50, effectiveRule.maxLength) : 50;
+  if (generatedCode.length > configuredMax) {
+    errors.push(
+      `Generated Item Code (${generatedCode.length} chars) exceeds maximum allowed limit (${configuredMax} chars)`
+    );
   }
 
   return {

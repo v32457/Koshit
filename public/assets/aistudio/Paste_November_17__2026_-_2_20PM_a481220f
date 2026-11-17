@@ -1,0 +1,1509 @@
+	# KOSH INNOVATIONS
+# MASTER DEVELOPMENT PROMPT
+## GLOBAL ITEM MASTER & BRANCH ITEM AVAILABILITY — COMPLETE EXISTING APPLICATION ENHANCEMENT
+
+**Project:** KOSH Innovations Enterprise Application  
+**Development Platform:** Google AI Studio  
+**Implementation Type:** Existing Application Modification  
+**Target:** Production-Grade Enterprise ERP Functionality  
+**Priority:** Data Integrity, Governance, Auditability, Procurement Integration and Backward Compatibility
+
+---
+
+# 1. ROLE AND RESPONSIBILITY
+
+Act as the Principal ERP Solution Architect, Enterprise Master Data Architect, Procurement Functional Consultant, Full-Stack Developer, Database Architect, Backend Engineer, Frontend Engineer, Rule Engine Architect, Security Engineer, Migration Engineer and QA Lead for KOSH Innovations.
+
+Your assignment is to examine, redesign, develop, modify, integrate, test and deploy the existing KOSH Global Item Master and Branch Item Availability functionality.
+
+This is an existing application enhancement.
+
+You must modify the existing source code, components, APIs, services, database entities, configuration screens, workflows and validation mechanisms.
+
+**Do not create a new application.**
+
+**Do not replace the existing KOSH application.**
+
+**Do not create a parallel Global Item Master or Branch Item Master.**
+
+**Do not redesign unrelated business modules.**
+
+Preserve existing functionality and data wherever possible.
+
+The final implementation must be fully integrated with existing KOSH authentication, RBAC, company and branch masters, UOM master, procurement modules, approval workflows and audit infrastructure.
+
+# 2. ABSOLUTE IMPLEMENTATION REQUIREMENTS
+
+The following rules are mandatory.
+
+1. Inspect the existing repository before modifying code.
+2. Inspect existing database structures before creating or changing tables.
+3. Reuse existing master data and services wherever appropriate.
+4. Do not create duplicate masters.
+5. Do not use mock data.
+6. Do not use hardcoded categories, UOMs or branch mappings.
+7. Do not simulate rule validation.
+8. Do not create non-functional buttons.
+9. Do not claim a feature is implemented when only its UI exists.
+10. Do not break existing PR, RFQ, PO, Goods Receipt or Inventory workflows.
+11. Do not delete historical records.
+12. Do not silently change historical transaction values.
+13. Do not bypass existing authentication, RBAC or approval mechanisms.
+14. Do not report unexecuted tests as passed.
+15. Do not claim production deployment without actual production verification.
+
+When dependencies, libraries or software are required:
+
+- Inspect existing versions.
+- Verify compatibility.
+- Verify source and licence.
+- Download from official or verified sources.
+- Verify integrity where possible.
+- Install using reproducible procedures.
+- Integrate with the existing application.
+- Execute tests.
+- Record installed versions.
+
+Do not introduce unapproved paid APIs or commercial dependencies.
+
+If the execution environment cannot install software or access production infrastructure, clearly identify the blocker and provide the required reproducible deployment procedure.
+
+# 3. FIRST ACTION — AUDIT THE EXISTING APPLICATION
+
+Before changing any code, inspect the existing KOSH project.
+
+Identify the actual implementation of:
+
+1. Global Item Master.
+2. Create Item screen.
+3. Branch Item Availability.
+4. Branch-Created Items.
+5. Item Code & Description Rule Builder.
+6. Rule Engine Validation Audit.
+7. Category Master.
+8. Material Master.
+9. Item Type Master.
+10. Material Form Master.
+11. Process Master.
+12. Colour Master.
+13. UOM Master.
+14. UOM Conversion.
+15. Manufacturer and Brand Master.
+16. Item Attachments.
+17. Existing compliance fields.
+18. Existing item approval workflows.
+19. Existing company and branch masters.
+20. Existing PR item selection.
+21. Existing RFQ and PO item references.
+22. Existing Goods Receipt and Inventory references.
+23. Existing audit and change-history mechanisms.
+24. Existing database migration framework.
+25. Existing authentication and RBAC.
+
+Determine where each field is currently stored and how it is used.
+
+Identify all dependencies on Category in the existing codebase, including:
+
+- Item creation validation.
+- Item code generation.
+- Item description generation.
+- Item search.
+- Item filtering.
+- Branch availability.
+- PR selection.
+- RFQ.
+- PO.
+- Inventory.
+- Reporting.
+- API requests.
+- Database constraints.
+- Audit rules.
+
+Do not remove a field from the UI without correcting its backend and database ownership.
+
+Produce an audit report and impact analysis before implementing schema changes.
+
+# 4. APPROVED ARCHITECTURAL DECISIONS
+
+The following decisions have been explicitly approved and must not be changed.
+
+## 4.1 Category ownership
+
+Category belongs exclusively to Branch Item Availability.
+
+- Remove Category from Global Item Master.
+- Remove Category from Global Item Creation Audit.
+- Remove Category as a mandatory global code-generation dimension.
+- Remove Category as a mandatory global description-generation dimension.
+- Assign Category separately for each Company and Branch.
+- The same Global Item may have different Categories in different branches.
+- Maintain one active Category assignment per Global Item, Company and Branch, unless an approved future requirement changes this rule.
+
+## 4.2 UOM ownership
+
+Global UOM defaults with authorized branch-specific overrides.
+
+Global Item Master maintains:
+
+- Default Purchase UOM.
+- Default Inventory / Base UOM.
+- Default conversion definition.
+- Conversion precision.
+- Rounding rules.
+- Valid UOM relationships.
+
+Branch Item Availability may maintain:
+
+- Branch Purchase UOM.
+- Branch Inventory UOM.
+- Branch conversion definition.
+- Conversion numerator.
+- Conversion denominator.
+- Conversion precision.
+- Rounding rule.
+
+A valid conversion is mandatory whenever the effective Purchase UOM differs from the effective Inventory UOM.
+
+Branch overrides must be authorized and audited.
+
+## 4.3 Global Item Code
+
+One globally unique Global Item Code.
+
+- Generate once.
+- Reuse across all branches.
+- Do not generate a different global code for each branch.
+- Do not require Category for global code generation.
+- Do not create duplicate Global Item records.
+
+## 4.4 Compliance ownership
+
+All operational controls and compliance settings belong at Branch Item Availability level.
+
+Do not maintain global operational compliance defaults.
+
+## 4.5 Approval workflow
+
+Two independent approval stages are mandatory:
+
+**Stage 1:** Global Item Creation → Global Checker Approval.
+
+**Stage 2:** Branch Item Activation → Branch Checker Approval.
+
+Global approval does not automatically activate an item in any branch.
+
+Branch approval does not modify the Global Item identity.
+
+Only an approved and active Branch Item Availability record may be selected in a new PR.
+
+# 5. TARGET DATA ARCHITECTURE
+
+Implement the following logical architecture using the existing database conventions.
+
+<GLOBAL ITEM MASTER>
+    |
+    |-- Global Item ID
+    |-- Global Item Code
+    |-- Global Item Description
+    |-- Global Item Type
+    |-- Material
+    |-- Material Form
+    |-- Process
+    |-- Colour
+    |-- Technical Specifications
+    |-- Manufacturer / Brand
+    |-- Customer / Part References
+    |-- Default Purchase UOM
+    |-- Default Inventory UOM
+    |-- Default UOM Conversion
+    |-- Global Item Status
+    |-- Duplicate Detection
+    |-- Global Audit History
+    |-- Global Checker Approval
+    |
+    +---- <BRANCH ITEM AVAILABILITY A>
+    |       |-- Company
+    |       |-- Branch
+    |       |-- Category
+    |       |-- UOM Overrides
+    |       |-- Alternative Items
+    |       |-- Attachments
+    |       |-- Barcode / GTIN
+    |       |-- Revision
+    |       |-- Purchase Configuration
+    |       |-- Compliance
+    |       |-- Batch / Lot
+    |       |-- Quality
+    |       |-- Warehouse
+    |       |-- Inventory Planning
+    |       |-- Branch Audit
+    |       |-- Branch Approval
+    |
+    +---- <BRANCH ITEM AVAILABILITY B>
+            Same independent branch configuration
+
+One Global Item must support multiple Branch Item Availability records.
+
+Each branch record must reference the original Global Item ID.
+
+# 6. GLOBAL ITEM MASTER — REDESIGN
+
+Modify the existing Global Item Master and Create Item screens.
+
+The Global Item Master must describe the permanent technical identity of the item.
+
+## 6.1 Remove from Global Item Master
+
+Remove:
+
+- Category.
+- Shelf-Life Controlled.
+- Shelf-Life Duration.
+- Serial Number Tracking.
+- Warranty Applicable.
+- Warranty Duration.
+- MOQ.
+- Order Multiple.
+- Service Control.
+- Other branch-specific purchasing and operational compliance settings.
+
+Remove these fields from global backend validation and global data ownership, not merely from the frontend.
+
+## 6.2 Retain global technical identity
+
+Retain and reuse existing supported attributes:
+
+- Material.
+- Item Type.
+- Material Form.
+- Process.
+- Colour.
+- Specification.
+- Key Specification.
+- Product Name.
+- Dimensions.
+- Rating.
+- Size.
+- Thickness.
+- GSM.
+- Capacity.
+- Manufacturer.
+- Brand.
+- Customer Reference.
+- Customer Part Number.
+- Manufacturer Part Number.
+- Model Number.
+- Other globally applicable technical attributes.
+
+Do not introduce duplicate classification masters.
+
+## 6.3 Global item identity fields
+
+Every Global Item must have:
+
+- Global Item ID.
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Technical specifications.
+- Default Purchase UOM.
+- Default Inventory UOM where applicable.
+- Default conversion definition.
+- Global Status.
+- Created By.
+- Created Date.
+- Modified By.
+- Modified Date.
+- Rule Version.
+- Audit Reference.
+
+# 7. GLOBAL UOM GOVERNANCE
+
+Purchase UOM is mandatory.
+
+Inventory / Base UOM must be configured where required by the existing inventory architecture.
+
+The Global Item Master must use the existing UOM Master.
+
+Do not hardcode UOM values.
+
+Support:
+
+- Default Purchase UOM.
+- Default Inventory UOM.
+- Conversion Numerator.
+- Conversion Denominator.
+- Conversion Factor.
+- Conversion Precision.
+- Rounding Rule.
+- Permitted UOM relationships.
+
+If Purchase UOM and Inventory UOM are identical, use a conversion factor of 1.
+
+If they differ, require a valid conversion definition.
+
+Do not assume that different physical dimensions are directly convertible.
+
+For mass-to-volume conversions, require an approved material-specific conversion basis, such as density, where applicable.
+
+Use exact decimal arithmetic for persisted quantity and financial calculations.
+
+Preserve the applicable UOM conversion snapshot in PR and PO transactions.
+
+Changing the Global UOM configuration must not silently recalculate historical transactions.
+
+# 8. GLOBAL DUPLICATE DETECTION
+
+Implement mandatory duplicate detection.
+
+Check:
+
+1. Global Item Code.
+2. Exact technical identity.
+3. Manufacturer.
+4. Manufacturer Part Number.
+5. Customer Part Number where applicable.
+6. Relevant technical specifications.
+7. Potentially similar item descriptions.
+
+Differentiate:
+
+- Hard duplicate conflict.
+- Potential duplicate warning.
+
+Do not automatically merge or delete similar records.
+
+Provide an authorized duplicate-resolution workflow.
+
+When merging duplicates, preserve all historical PR, RFQ, PO, Goods Receipt, Inventory and audit references.
+
+Global duplicate detection must execute on the backend.
+
+# 9. GLOBAL ITEM CODE AND DESCRIPTION RULE BUILDER
+
+Modify the existing Item Code & Description Rule Builder.
+
+The current implementation may use Category as a required dimension.
+
+Remove that dependency.
+
+## 9.1 Global Item Code
+
+Generate the code using configurable global dimensions, such as:
+
+- Material.
+- Item Type.
+- Material Form.
+- Process.
+- Colour.
+- Other global technical attributes.
+- Sequential Counter.
+
+Support:
+
+- Configurable dimensions.
+- Enable / Disable.
+- Mandatory / Optional.
+- Sequence order.
+- Separators.
+- Padding.
+- Sequence reset scope.
+- Rule versions.
+- Approval and publishing.
+
+Category must never be required for global item code generation.
+
+Preserve existing item codes.
+
+Do not automatically regenerate historical codes.
+
+## 9.2 Global Item Description
+
+Generate descriptions from global technical identity.
+
+Support:
+
+- Configurable description tokens.
+- Token order.
+- Separators.
+- Mandatory attributes.
+- Maximum length.
+- Normalization.
+- Duplicate warnings.
+
+Category must not be part of the mandatory global description.
+
+# 10. BRANCH ITEM AVAILABILITY — COMPLETE REDESIGN
+
+This becomes the authoritative branch-specific operational configuration.
+
+The screen must support the following sections.
+
+## Section A — Branch Context and Global Item Selection
+
+Fields:
+
+- Company.
+- Branch.
+- Global Item Code.
+- Global Item Description.
+- Global Item ID.
+- Global Item Status.
+- Global Item Type.
+- Technical Specifications.
+- Default Purchase UOM.
+- Default Inventory UOM.
+
+Global identity fields must be loaded from the approved Global Item Master.
+
+They must be read-only in the branch configuration screen.
+
+Do not allow branch users to create another global identity through this screen.
+
+Only approved Global Items may be selected.
+
+## Section B — Branch Category
+
+Fields:
+
+- Category.
+- Other supported branch classification attributes.
+
+Category is mandatory for branch activation.
+
+Load Category values from the existing Category Master.
+
+Do not hardcode Category values.
+
+Validate the Category assignment for the selected Company and Branch.
+
+## Section C — Branch Purchase and Inventory Configuration
+
+Support:
+
+- Purchase Enabled.
+- Inventory Enabled.
+- Branch Purchase UOM.
+- Branch Inventory UOM.
+- Conversion Numerator.
+- Conversion Denominator.
+- Conversion Factor.
+- Conversion Precision.
+- Rounding Rule.
+- MOQ.
+- Order Multiple.
+- Preferred Warehouse where applicable.
+- Preferred Buyer where applicable.
+- Preferred Supplier where applicable.
+- Procurement Lead Time where applicable.
+
+Branch UOM overrides are optional.
+
+When an override is not configured, use the Global Item default.
+
+When an override is configured, validate the conversion and compatibility.
+
+## Section D — Branch Item Controls and Compliance
+
+All operational controls must be configured here.
+
+Support:
+
+- Shelf-Life Controlled.
+- Shelf-Life Duration.
+- Shelf-Life Unit.
+- Serial Number Tracked.
+- Warranty Applicable.
+- Warranty Duration.
+- Warranty Unit.
+- MOQ.
+- Order Multiple.
+- Service Control.
+- Batch Tracking.
+- Lot Tracking.
+- Quality Inspection.
+- Inspection Type.
+- Storage Conditions.
+- Regulatory Compliance.
+- Other existing operational controls.
+
+Use conditional fields.
+
+For example:
+
+If Shelf-Life Controlled is enabled:
+- Shelf-Life Duration is required.
+- Shelf-Life Unit is required.
+
+If Warranty Applicable is enabled:
+- Warranty requirements must be configured according to the applicable rules.
+
+If Serial Tracking is enabled:
+- The existing serial tracking requirements must be validated.
+
+If Batch / Lot Tracking is enabled:
+- Batch / Lot requirements must be configured.
+
+Do not show irrelevant fields when their corresponding controls are disabled.
+
+## Section E — Warehouse and Inventory Planning
+
+Support branch-specific configuration for:
+
+- Warehouse eligibility.
+- Preferred Warehouse.
+- Storage Location where applicable.
+- Safety Stock.
+- Reorder Level.
+- Maximum Stock.
+- Replenishment settings.
+- Procurement Lead Time.
+
+Inspect existing Warehouse and Inventory masters before implementing.
+
+A branch may have multiple warehouses.
+
+Do not force a single warehouse where the existing architecture supports multiple warehouses.
+
+## Section F — Alternative Item References
+
+Maintain alternative item references at Branch level.
+
+Support:
+
+- Alternative Global Item.
+- Substitute Global Item.
+- Equivalent Item where supported.
+- Relationship Type.
+- Effective From.
+- Effective To.
+- Active / Inactive.
+- Reason.
+- Approval status where required.
+
+All alternatives must reference existing Global Item IDs.
+
+Validate that the alternative item is approved and available for the relevant branch.
+
+Prevent invalid self-reference and prohibited circular substitute relationships.
+
+Do not create duplicate Global Item records.
+
+## Section G — Item Attachments
+
+Support optional or rule-based branch attachments:
+
+- Technical Datasheet.
+- Engineering Drawing.
+- Technical Specification.
+- Test Certificate.
+- Quality Certificate.
+- Regulatory Certificate.
+- Safety Data Sheet.
+- Other approved document types.
+
+Each attachment must support:
+
+- Document Type.
+- File Reference.
+- Description.
+- Document Version.
+- Uploaded By.
+- Uploaded Date.
+- Effective Date.
+- Expiry Date.
+- Approval Status.
+- Active / Inactive.
+
+Apply configurable mandatory document rules.
+
+Validate file type, size, access permissions and integrity.
+
+Do not expose unrestricted storage URLs.
+
+Preserve historical attachment references.
+
+## Section H — Barcode / GTIN
+
+Support optional branch-level:
+
+- Barcode Value.
+- Barcode Type.
+- GTIN.
+- Effective From.
+- Effective To.
+- Status.
+
+Validate barcode uniqueness according to the approved ownership scope.
+
+Do not assume every item has a GTIN.
+
+Support intentionally shared barcode references through a controlled mechanism where necessary.
+
+## Section I — Branch Item Revision / Version
+
+Maintain branch-specific revision information where applicable.
+
+Fields:
+
+- Revision Number.
+- Revision Description.
+- Technical Change Reference.
+- Effective From.
+- Effective To.
+- Change Reason.
+- Approved By.
+- Approval Status.
+
+A branch must record which revision it has adopted.
+
+Do not overwrite historical revisions.
+
+If a change affects global item identity or specifications, initiate the appropriate Global Item Change workflow.
+
+## Section J — Branch Availability
+
+Support:
+
+- Purchase Availability.
+- Inventory Availability.
+- Active / Inactive.
+- Effective From.
+- Effective To.
+- Reason for Activation.
+- Branch Status.
+
+The item must not be available for new PR selection until Branch Checker Approval and activation are completed.
+
+# 11. BRANCH CATEGORY GOVERNANCE
+
+Category is assigned independently for each Global Item, Company and Branch.
+
+Example:
+
+Global Item: Steel Sheet — 304 Grade.
+
+| Company | Branch | Category |
+|---|---|---|
+| Kosh Innovations | Pondicherry | Raw Materials |
+| Kosh Innovations | Coimbatore | Production Consumables |
+| Kosh Innovations | Chennai | Raw Materials |
+
+These are illustrative examples.
+
+The actual values must be retrieved from existing master data.
+
+A change to one branch Category must not change another branch Category.
+
+Prevent multiple active Category assignments for the same Global Item, Company and Branch unless an approved future business rule permits them.
+
+# 12. GLOBAL AND BRANCH CHANGE HISTORY
+
+Implement mandatory change history at both levels.
+
+## Global Change History
+
+Record changes to:
+
+- Item Code.
+- Item Description.
+- Item Type.
+- Technical Specifications.
+- Material.
+- Material Form.
+- Process.
+- Colour.
+- Manufacturer / Brand references.
+- Default Purchase UOM.
+- Default Inventory UOM.
+- Default UOM Conversion.
+- Global Status.
+
+## Branch Change History
+
+Record changes to:
+
+- Category.
+- Purchase Availability.
+- Inventory Availability.
+- Branch UOM Overrides.
+- Conversion Definitions.
+- Alternative Item References.
+- Attachments.
+- Barcode / GTIN.
+- Revision / Version.
+- Shelf-Life.
+- Serial Tracking.
+- Warranty.
+- MOQ.
+- Order Multiple.
+- Batch / Lot.
+- Quality Controls.
+- Warehouse Configuration.
+- Inventory Planning.
+- Regulatory Requirements.
+- Branch Status.
+
+Every change history entry must capture:
+
+- Entity ID.
+- Company.
+- Branch where applicable.
+- Field / Attribute.
+- Previous Value.
+- New Value.
+- Changed By.
+- Changed At.
+- Change Reason.
+- Approval Reference.
+- Applicable Rule Version.
+- Related request or transaction reference.
+
+Audit history must be append-only for ordinary application users.
+
+Do not silently delete or overwrite audit history.
+
+# 13. RULE-BASED AUDIT ENGINE
+
+Preserve and extend the existing Rule Engine Validation Audit.
+
+Do not replace it with ordinary frontend validation.
+
+Implement two separate audit stages.
+
+## 13.1 Global Item Creation Audit
+
+Check:
+
+1. Mandatory Global Item fields.
+2. Global Item Type.
+3. Required technical attributes.
+4. Global Item Code pattern.
+5. Global Item Code length.
+6. Global Item Description pattern.
+7. Global Item Code duplicate detection.
+8. Potential duplicate detection.
+9. Purchase UOM.
+10. Inventory UOM where required.
+11. Global UOM conversion.
+12. Technical specification completeness.
+13. Applicable global attachments where required.
+14. Rule version and evaluation integrity.
+
+Category must not be a mandatory global checkpoint.
+
+Branch operational compliance must not be evaluated during global creation.
+
+## 13.2 Branch Item Activation Audit
+
+Check:
+
+1. Approved Global Item reference.
+2. Company.
+3. Branch.
+4. Branch Category.
+5. Branch purchase availability.
+6. Branch inventory availability.
+7. Branch UOM overrides.
+8. Branch UOM conversion.
+9. MOQ.
+10. Order Multiple.
+11. Shelf-Life rules.
+12. Serial Tracking rules.
+13. Warranty rules.
+14. Batch / Lot rules.
+15. Quality Inspection rules.
+16. Alternative Item validity.
+17. Attachment requirements.
+18. Barcode uniqueness.
+19. Revision validity.
+20. Warehouse configuration.
+21. Inventory planning.
+22. Regulatory documentation.
+23. Branch duplicate availability.
+24. Effective date.
+25. Audit rule version.
+
+Only execute conditional checks when applicable.
+
+## 13.3 Audit results
+
+Support:
+
+- PASS.
+- WARNING.
+- ERROR.
+- BLOCKED.
+
+Mandatory unresolved errors must block submission.
+
+Warnings must follow published governance rules.
+
+Every audit report must record:
+
+- Audit ID.
+- Entity ID.
+- Audit Type.
+- Rule Version.
+- Checkpoint.
+- Result.
+- Error / Warning details.
+- Evaluated Fields.
+- Evaluated By.
+- Timestamp.
+
+Never generate artificial PASS results.
+
+## 13.4 Rule configuration and publishing
+
+Support:
+
+- Rule Master.
+- Rule Version.
+- Rule Scope.
+- Checkpoint.
+- Severity.
+- Mandatory / Optional.
+- Enabled / Disabled.
+- Effective Date.
+- Draft.
+- Validate.
+- Simulate.
+- Submit for Approval.
+- Approve.
+- Publish.
+- Retire.
+
+Separate rule scopes:
+
+- GLOBAL_ITEM_CREATION.
+- BRANCH_ITEM_ACTIVATION.
+
+Published rule versions must be preserved in historical audit records.
+
+Simulation must not create or modify actual item records.
+
+# 14. DUAL APPROVAL WORKFLOW
+
+Implement two independent approval workflows.
+
+## 14.1 Global Item Approval
+
+1. Authorized user creates Global Item.
+2. User saves draft.
+3. System generates provisional Global Item Code.
+4. System generates provisional Global Item Description.
+5. User executes Global Item Creation Audit.
+6. Mandatory errors are resolved.
+7. User submits for Checker Approval.
+8. Checker reviews the Global Item and audit results.
+9. Checker approves or rejects.
+10. Approved Global Item becomes eligible for Branch Item Availability.
+
+A draft or rejected Global Item must not be selectable for branch activation.
+
+## 14.2 Branch Item Approval
+
+1. Authorized user selects approved Global Item.
+2. Selects Company and Branch.
+3. Configures Category.
+4. Configures branch UOM overrides where required.
+5. Configures purchasing and inventory settings.
+6. Configures compliance.
+7. Configures attachments and other optional controls.
+8. Executes Branch Item Activation Audit.
+9. Resolves mandatory errors.
+10. Submits for Branch Checker Approval.
+11. Checker reviews branch configuration and audit.
+12. Checker approves or rejects.
+13. Approved record becomes active for that branch.
+
+Approval must use existing KOSH RBAC and approval services.
+
+The creator must not approve their own record unless an existing formally approved policy explicitly permits it.
+
+# 15. ITEM MASTER UI REDESIGN
+
+Modify the existing Global Item Master and Branch Item Availability screens.
+
+Use the existing Purchase Requisition screen as the UI/UX reference.
+
+Do not create an unrelated design system.
+
+Follow the existing PR screen's layout principles:
+
+- Clear page header.
+- Compact contextual information.
+- Organized sections.
+- Consistent spacing.
+- Responsive forms.
+- Expandable configuration panels.
+- Readable data grids.
+- Clear status indicators.
+- Inline validation.
+- Audit summary.
+- Consistent footer actions.
+
+## 15.1 Global Item Master screen
+
+Required sections:
+
+1. Global Item Identity & Classification.
+2. Technical Specifications.
+3. Manufacturer / Brand / Customer References.
+4. Purchase UOM & Inventory UOM.
+5. UOM Conversion & Validation.
+6. Global Technical Attachments where applicable.
+7. Global Rule-Based Audit.
+8. Global Checker Approval Status.
+
+Do not display Category or operational branch compliance fields.
+
+Footer actions:
+
+- Cancel.
+- Save Draft.
+- Validate Rules.
+- Submit for Checker Approval.
+
+## 15.2 Branch Item Availability screen
+
+Required sections:
+
+1. Company / Branch / Global Item Selection.
+2. Branch Category.
+3. Branch Purchase & Inventory Configuration.
+4. Branch UOM Overrides.
+5. Branch Item Controls & Compliance.
+6. Batch / Lot / Quality.
+7. Warehouse & Inventory Planning.
+8. Alternative Item References.
+9. Item Attachments.
+10. Barcode / GTIN.
+11. Revision / Version.
+12. Branch Availability.
+13. Branch Rule-Based Audit.
+14. Branch Checker Approval.
+
+Footer actions:
+
+- Cancel.
+- Save Draft.
+- Validate Rules.
+- Submit for Checker Approval.
+
+Both screens must follow the existing KOSH PR screen's interaction and visual conventions.
+
+# 16. GLOBAL ITEM MASTER LIST
+
+Modify the existing Global Item Master listing.
+
+Display:
+
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Material.
+- Material Form.
+- Purchase UOM.
+- Inventory UOM.
+- Global Item Status.
+- Branch Availability Count.
+- Approval Status.
+- Created Date.
+- Actions.
+
+Actions:
+
+- View.
+- Edit where permitted.
+- View Branch Availability.
+- View Audit History.
+- View Rule Version.
+- View Approval History.
+
+Do not display Category as a global item attribute.
+
+# 17. BRANCH ITEM AVAILABILITY LIST
+
+Provide a branch-aware listing.
+
+Filters:
+
+- Company.
+- Branch.
+- Category.
+- Global Item Code.
+- Global Item Description.
+- Item Type.
+- Purchase Availability.
+- Inventory Availability.
+- Compliance Status.
+- Approval Status.
+- Active / Inactive.
+
+Columns:
+
+- Global Item Code.
+- Global Item Description.
+- Company.
+- Branch.
+- Category.
+- Purchase UOM.
+- Inventory UOM.
+- MOQ.
+- Order Multiple.
+- Batch / Lot Status.
+- Shelf-Life Status.
+- Serial Tracking Status.
+- Warranty Status.
+- Quality Status.
+- Availability Status.
+- Audit Status.
+- Approval Status.
+
+Actions:
+
+- View.
+- Edit.
+- Activate / Deactivate where authorized.
+- View Compliance.
+- View Attachments.
+- View Alternative Items.
+- View Audit History.
+- View Approval History.
+
+All information must come from actual database records.
+
+# 18. PR, RFQ, PO AND INVENTORY INTEGRATION
+
+Inspect existing downstream modules before modifying their data relationships.
+
+## 18.1 Purchase Requisition
+
+When creating a PR:
+
+1. Select Company.
+2. Select Branch.
+3. Load only approved and active Branch Item Availability records.
+4. Display Global Item Code.
+5. Display Global Item Description.
+6. Display Branch Category.
+7. Load effective Purchase UOM.
+8. Load effective Inventory UOM where required.
+9. Load the approved conversion definition.
+10. Validate MOQ.
+11. Validate Order Multiple.
+12. Validate branch purchase availability.
+13. Validate any applicable item restrictions.
+
+Backend submission must independently validate the item/branch relationship.
+
+Do not trust frontend filtering alone.
+
+## 18.2 RFQ and Purchase Order
+
+Preserve Global Item references and branch-specific configuration.
+
+Ensure RFQ and PO retain the relevant transaction-level item, UOM, conversion and specification snapshots.
+
+Do not automatically modify existing commercial calculations.
+
+## 18.3 Goods Receipt and Inventory
+
+Ensure the existing batch, lot, serial, shelf-life, quality and warehouse processes consume the approved Branch Item Availability configuration.
+
+Do not create duplicate inventory controls.
+
+Reuse existing inventory and warehouse services.
+
+# 19. DATA MODEL AND DATABASE MIGRATION
+
+Inspect existing entities before creating or modifying tables.
+
+Reuse existing:
+
+- Global Item Master.
+- Category Master.
+- UOM Master.
+- Company Master.
+- Branch Master.
+- Warehouse Master.
+- Rule Master.
+- Approval Master.
+- Audit infrastructure.
+
+The logical architecture must support:
+
+GLOBAL:
+- Global Item.
+- Global Specifications.
+- Global UOM.
+- Global UOM Conversion.
+- Global Item Code Rules.
+- Global Description Rules.
+- Global Duplicate Detection.
+- Global Audit.
+- Global Approval.
+
+BRANCH:
+- Branch Item Availability.
+- Branch Category Assignment.
+- Branch UOM Override.
+- Branch UOM Conversion.
+- Branch Alternative Items.
+- Branch Attachments.
+- Branch Barcode / GTIN.
+- Branch Revision.
+- Branch Compliance.
+- Branch Batch / Lot.
+- Branch Quality.
+- Branch Warehouse Configuration.
+- Branch Inventory Planning.
+- Branch Audit.
+- Branch Approval.
+
+GOVERNANCE:
+- Rule Master.
+- Rule Version.
+- Rule Checkpoint.
+- Rule Evaluation.
+- Audit Report.
+- Approval History.
+- Change History.
+
+Use the existing database naming conventions and migration framework.
+
+Enforce:
+
+- Primary keys.
+- Foreign keys.
+- Unique constraints.
+- Referential integrity.
+- Tenant isolation.
+- Branch isolation.
+- Appropriate indexes.
+- Transaction handling.
+- Historical snapshots.
+
+Prevent duplicate active Branch Item Availability records for the approved Global Item + Company + Branch uniqueness key.
+
+Do not create duplicate entities if equivalent existing structures are available.
+
+# 20. LEGACY DATA MIGRATION
+
+Existing Global Item records may already contain Category and compliance fields.
+
+Do not delete or overwrite these values blindly.
+
+Before migration:
+
+1. Identify existing Global Item records.
+2. Identify existing Category assignments.
+3. Identify Company and Branch ownership.
+4. Identify existing UOM definitions.
+5. Identify existing compliance values.
+6. Identify existing attachments.
+7. Identify existing item code rules.
+8. Identify PR and PO references.
+9. Identify existing approval history.
+10. Identify existing audit history.
+
+Prepare a migration plan.
+
+For each existing item:
+
+- Preserve Global Item ID.
+- Preserve Global Item Code.
+- Preserve Global Item Description.
+- Preserve historical transactions.
+- Move Category to the correct Branch Item Availability record.
+- Move branch operational compliance to the correct branch record.
+- Preserve UOM conversion definitions.
+- Preserve historical audit information.
+- Preserve attachment references.
+- Preserve approval history where possible.
+
+If the existing data does not establish the correct branch ownership, mark it for migration review.
+
+Do not guess.
+
+Do not activate ambiguous branch records automatically.
+
+Generate a migration reconciliation report.
+
+Do not delete legacy columns until all dependent code, data and reports have been migrated and verified.
+
+# 21. SECURITY AND AUTHORIZATION
+
+Reuse existing KOSH authentication and RBAC.
+
+Define or extend permissions for:
+
+- Global Item Creation.
+- Global Item Modification.
+- Global Item Checker.
+- Global Item Approval.
+- Branch Item Creation.
+- Branch Item Modification.
+- Branch Item Checker.
+- Branch Item Approval.
+- Rule Configuration.
+- Rule Publishing.
+- Duplicate Resolution.
+- Data Migration.
+- Audit Viewing.
+
+A branch administrator must not modify Global Item identity unless authorized.
+
+A global master administrator must not automatically receive unrestricted branch operational permissions.
+
+All backend endpoints must enforce authorization independently.
+
+Validate company and branch access from authenticated server-side context.
+
+# 22. TESTING REQUIREMENTS
+
+Execute actual automated tests.
+
+## Global Item tests
+
+1. Create Global Item without Category.
+2. Verify Category is not required.
+3. Generate unique Global Item Code without Category.
+4. Validate Global Item Description.
+5. Validate Purchase UOM.
+6. Validate Inventory UOM.
+7. Validate UOM conversion.
+8. Reject invalid conversion.
+9. Detect duplicate Global Item Code.
+10. Detect potential duplicate technical identity.
+11. Execute Global Item Creation Audit.
+12. Submit for Global Checker Approval.
+13. Approve and reject Global Items.
+14. Preserve historical codes and audit history.
+
+## Branch Item tests
+
+15. Select an approved Global Item.
+16. Assign Category to Branch A.
+17. Assign a different Category to Branch B.
+18. Verify no duplicate Global Item is created.
+19. Configure branch Purchase UOM override.
+20. Configure branch Inventory UOM override.
+21. Validate branch conversion.
+22. Configure Shelf-Life.
+23. Configure Serial Tracking.
+24. Configure Warranty.
+25. Configure MOQ and Order Multiple.
+26. Configure Batch / Lot.
+27. Configure Quality Inspection.
+28. Configure Warehouse.
+29. Add Alternative Item.
+30. Add Attachment.
+31. Add Barcode.
+32. Configure Revision.
+33. Execute Branch Item Activation Audit.
+34. Submit for Branch Checker Approval.
+35. Approve and reject branch configurations.
+
+## Governance tests
+
+36. Verify global audit and branch audit are independent.
+37. Verify audit version preservation.
+38. Verify change history.
+39. Verify creator cannot approve their own record where prohibited.
+40. Verify unauthorized branch modification is rejected.
+41. Verify unauthorized global modification is rejected.
+
+## PR integration tests
+
+42. Display only approved active branch items.
+43. Display correct branch Category.
+44. Display effective Purchase UOM.
+45. Validate conversion.
+46. Validate MOQ.
+47. Validate Order Multiple.
+48. Reject inactive branch items.
+49. Preserve historical PR snapshots.
+
+## Regression tests
+
+Verify existing:
+
+- Item search.
+- Item selection.
+- Purchase Requisition.
+- RFQ.
+- Purchase Order.
+- Goods Receipt.
+- Inventory.
+- Existing reports.
+- Existing approval workflows.
+- Existing RBAC.
+- Existing audit history.
+
+Do not mark a test passed unless it actually executed.
+
+# 23. PRODUCTION DEPLOYMENT
+
+The final target is the actual KOSH production environment.
+
+Before deployment:
+
+1. Inspect repository and current branch.
+2. Review changes.
+3. Back up application files.
+4. Back up the database.
+5. Verify backup integrity.
+6. Prepare versioned database migrations.
+7. Test migrations on a representative environment.
+8. Deploy backend changes.
+9. Deploy frontend changes.
+10. Execute migration.
+11. Reconcile legacy data.
+12. Verify approval workflows.
+13. Verify PR integration.
+14. Execute functional tests.
+15. Execute security tests.
+16. Execute regression tests.
+17. Verify monitoring and logging.
+18. Verify rollback readiness.
+19. Deploy through the authorized production release process.
+20. Execute production acceptance tests.
+
+Do not deploy untested migrations directly to production.
+
+Do not report deployment success without actual verification.
+
+# 24. EXECUTION PHASES
+
+PHASE 0 — Existing application and database audit.
+
+PHASE 1 — Architecture and data ownership finalization.
+
+PHASE 2 — Global Item Master redesign.
+
+PHASE 3 — Global UOM governance.
+
+PHASE 4 — Global Item Code and Description Rule Builder redesign.
+
+PHASE 5 — Global Duplicate Detection and Global Audit.
+
+PHASE 6 — Branch Item Availability redesign.
+
+PHASE 7 — Branch UOM, compliance, warehouse, quality and documentation configuration.
+
+PHASE 8 — Branch Rule-Based Audit.
+
+PHASE 9 — Dual Checker Approval workflows.
+
+PHASE 10 — UI/UX redesign following the existing PR screen.
+
+PHASE 11 — PR, RFQ, PO and Inventory integration.
+
+PHASE 12 — Legacy data migration and reconciliation.
+
+PHASE 13 — Automated testing and security hardening.
+
+PHASE 14 — Production deployment and verification.
+
+Do not skip phases.
+
+Do not mark a phase complete based on generated code alone.
+
+# 25. REQUIRED IMPLEMENTATION TRACKER
+
+Maintain a live status tracker.
+
+Use:
+
+- NOT STARTED.
+- AUDITING.
+- BLOCKED.
+- IMPLEMENTING.
+- INSTALLED.
+- INTEGRATED.
+- TESTING.
+- PASSED.
+- FAILED.
+- DEPLOYED.
+- PRODUCTION VERIFIED.
+
+For each item, provide:
+
+- Requirement.
+- Source-code location.
+- Database object.
+- API.
+- Frontend component.
+- Dependencies.
+- Test cases.
+- Actual test result.
+- Remaining limitations.
+
+For BLOCKED items, provide the exact missing access, licence, permission, infrastructure or decision.
+
+For PASSED items, provide actual execution evidence.
+
+For DEPLOYED items, provide deployment evidence.
+
+For PRODUCTION VERIFIED items, provide actual production verification evidence.
+
+# 26. REQUIRED FIRST RESPONSE
+
+Before modifying the application, provide:
+
+1. Existing architecture audit.
+2. Existing database audit.
+3. Existing Global Item Master implementation.
+4. Existing Branch Item Availability implementation.
+5. Current Category dependencies.
+6. Existing UOM architecture.
+7. Existing compliance field ownership.
+8. Existing Rule Builder.
+9. Existing Rule Engine Validation Audit.
+10. Existing approval workflow.
+11. Existing PR integration.
+12. Existing RFQ / PO / Inventory dependencies.
+13. Legacy data migration impact.
+14. Proposed implementation sequence.
+15. Identified technical blockers.
+
+After the audit, begin actual implementation.
+
+Do not repeatedly ask questions that the approved requirements already answer.
+
+If an actual business-critical ambiguity is discovered in the existing system, identify the exact conflict and ask only the necessary clarification.
+
+---
+
+# FINAL EXECUTION DIRECTIVE
+
+Modify the existing KOSH Innovations application.
+
+The Global Item Master must own global item identity, technical specifications, default UOM configuration, global duplicate detection and global change history.
+
+The Branch Item Availability master must own Category, branch UOM overrides, alternatives, attachments, barcode, revision, purchasing configuration, compliance, batch/lot, quality, warehouse, inventory planning and branch change history.
+
+Global Item Code must remain globally unique and shared across all branches.
+
+Purchase UOM must be mandatory.
+
+Global UOM defaults must support authorized branch overrides.
+
+Global Item Creation Audit and Branch Item Activation Audit must remain separate.
+
+Global Checker Approval and Branch Checker Approval must remain separate.
+
+The existing PR screen is the UI/UX reference for both creation workflows.
+
+Existing business transactions and historical references must be preserved.
+
+Implement real frontend functionality, backend enforcement, database changes, migrations, approval workflows, rule-based audit, integrations and automated testing.
+
+**Do not deliver a mockup, trial, demonstration, disconnected module or sandbox-only implementation as the final result.**
+
+**The final acceptance requirement is a fully integrated, tested, production-verified enhancement to the existing KOSH application, with all approved mandatory acceptance tests passing.**
+
+Never claim an operation, test or production deployment has succeeded unless it has actually been executed and verified.

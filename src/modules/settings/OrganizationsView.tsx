@@ -65,9 +65,14 @@ import {
   Award,
   Briefcase,
   Users,
+  Paperclip,
 } from 'lucide-react';
 
+import { complianceGovernanceService } from '../../services/complianceGovernanceService';
+import { ComplianceGovernanceSettings, ComplianceDocumentAttachment } from '../../types';
 import { PurchaseOrganizationView } from './PurchaseOrganizationView';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 const INITIAL_UNIT_MASTERS: UnitDescriptionMaster[] = [
   { id: 'u-1', code: 'INJ', description: 'Injection Moulding & Tooling Unit', approvalStatus: 'APPROVED', version: 1 },
@@ -308,6 +313,40 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
     rows: any[];
   } | null>(null);
   const [importFeedback, setImportFeedback] = useState('');
+
+  const filteredMappingRecords = React.useMemo(() => {
+    return fieldRecords.filter((f) => {
+      if (mappingTabFilter !== 'ALL' && f.tabName !== mappingTabFilter) return false;
+      if (mappingStatusFilter !== 'ALL' && f.discoveryStatus !== mappingStatusFilter) return false;
+      if (!mappingSearchTerm) return true;
+      const q = mappingSearchTerm.toLowerCase();
+      return (
+        f.visibleSapLabel.toLowerCase().includes(q) ||
+        f.technicalPropertyName.toLowerCase().includes(q) ||
+        f.koshTargetEntity.toLowerCase().includes(q) ||
+        f.koshTargetProperty.toLowerCase().includes(q) ||
+        (f.retrievedSourceValue || '').toLowerCase().includes(q)
+      );
+    });
+  }, [fieldRecords, mappingTabFilter, mappingStatusFilter, mappingSearchTerm]);
+
+  const mappingsGrid = useStandardDataGrid({
+    data: filteredMappingRecords,
+    gridId: 'org-sap-field-mappings',
+    userId: 'usr-default',
+    primarySortField: 'lastVerifiedAt',
+    tieBreakerField: 'id',
+    filterSignature: `${mappingTabFilter}|${mappingStatusFilter}|${mappingSearchTerm}`,
+  });
+
+  const jobLogsGrid = useStandardDataGrid({
+    data: jobLogs,
+    gridId: 'org-sap-sync-jobs',
+    userId: 'usr-default',
+    primarySortField: 'startedAt',
+    tieBreakerField: 'id',
+    filterSignature: activeSyncCo?.id || '',
+  });
 
   // Connection Profile & Schedule Form State
   const [profileForm, setProfileForm] = useState({
@@ -598,6 +637,23 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
   const [stagedMsmeDetails, setStagedMsmeDetails] = useState<MSMEVerificationDetails | null>(null);
   const [coMsmeVerificationDetails, setCoMsmeVerificationDetails] = useState<MSMEVerificationDetails | undefined>(undefined);
 
+  // Statutory Compliance Governance & Manual Verification State
+  const [complianceSettings, setComplianceSettings] = useState<ComplianceGovernanceSettings>(() =>
+    complianceGovernanceService.getComplianceSettings()
+  );
+  const [coGstCertFile, setCoGstCertFile] = useState<ComplianceDocumentAttachment | null>(null);
+  const [coGstManualStatus, setCoGstManualStatus] = useState<'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED' | 'REJECTED'>('PENDING_MANUAL_VALIDATION');
+  const [coMsmeCertFile, setCoMsmeCertFile] = useState<ComplianceDocumentAttachment | null>(null);
+  const [coMsmeManualStatus, setCoMsmeManualStatus] = useState<'PENDING_MANUAL_VALIDATION' | 'MANUALLY_VERIFIED' | 'REJECTED'>('PENDING_MANUAL_VALIDATION');
+
+  useEffect(() => {
+    const handleComplianceSync = (e: any) => {
+      setComplianceSettings(e.detail || complianceGovernanceService.getComplianceSettings());
+    };
+    window.addEventListener('cip-compliance-settings-updated', handleComplianceSync);
+    return () => window.removeEventListener('cip-compliance-settings-updated', handleComplianceSync);
+  }, []);
+
   // Branch Form State
   const [portalBranchCode, setPortalBranchCode] = useState('');
   const [sapBranchCode, setSapBranchCode] = useState('');
@@ -724,6 +780,8 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
         company.gstVerificationDetails ||
         (company.gstin ? getOrCreateGstDetailsForEntity(company.gstin, company.legalName, company.tradeName) || null : null)
       );
+      setCoGstCertFile(company.gstCertificateDocument || null);
+      setCoGstManualStatus(company.gstManualValidation?.status || complianceSettings.gstDefaultStatusOnUpload);
       setCoMsmeInfo(
         company.msmeInfo || {
           isMSME: false,
@@ -731,6 +789,8 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
           activityType: 'MANUFACTURING',
         }
       );
+      setCoMsmeCertFile(company.msmeCertificateDocument || null);
+      setCoMsmeManualStatus(company.msmeManualValidation?.status || complianceSettings.msmeDefaultStatusOnUpload);
     } else {
       setEditingCompanyId(null);
       setCoCode(`KOSH-0${companies.length + 1}`);
@@ -747,11 +807,15 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
       setCoStreetAddress('');
       setCoIsEnabled(true);
       setSavedCoGstDetails(null);
+      setCoGstCertFile(null);
+      setCoGstManualStatus(complianceSettings.gstDefaultStatusOnUpload);
       setCoMsmeInfo({
         isMSME: false,
         msmeClassification: 'SMALL',
         activityType: 'MANUFACTURING',
       });
+      setCoMsmeCertFile(null);
+      setCoMsmeManualStatus(complianceSettings.msmeDefaultStatusOnUpload);
     }
     setIsCompanyModalOpen(true);
   };
@@ -767,6 +831,21 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
     if (cleanCin && cleanCin.length !== 21) {
       setErrorMsg('Corporate Identification Number (CIN) must be exactly 21 alphanumeric characters (e.g. U72900PY2020PTC008642).');
       return;
+    }
+
+    // Statutory Compliance Enforcement
+    if (!complianceSettings.gstValidationEnabled) {
+      if (complianceSettings.gstRequireDocumentUpload && coGstin.trim() && !coGstCertFile) {
+        setErrorMsg('SAVE BLOCKED: GST Registration Certificate document upload is required for manual validation when online verification is disabled in General Settings.');
+        return;
+      }
+    }
+
+    if (coMsmeInfo.isMSME && !complianceSettings.msmeValidationEnabled) {
+      if (complianceSettings.msmeRequireDocumentUpload && coMsmeInfo.udyamRegistrationNo && !coMsmeCertFile) {
+        setErrorMsg('SAVE BLOCKED: Udyam Registration Certificate document upload is required for manual validation when online verification is disabled in General Settings.');
+        return;
+      }
     }
 
     if (editingCompanyId) {
@@ -788,6 +867,24 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
               streetAddress: coStreetAddress.trim(),
               isEnabled: coIsEnabled,
               msmeInfo: coMsmeInfo,
+              gstVerificationMode: (complianceSettings.gstValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT') as any,
+              gstCertificateDocument: coGstCertFile || c.gstCertificateDocument || undefined,
+              gstManualValidation: !complianceSettings.gstValidationEnabled
+                ? {
+                    status: coGstManualStatus,
+                    validatedBy: coGstManualStatus === 'MANUALLY_VERIFIED' ? 'Platform Administrator' : undefined,
+                    validatedAt: coGstManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+                  }
+                : c.gstManualValidation,
+              msmeVerificationMode: (complianceSettings.msmeValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT') as any,
+              msmeCertificateDocument: coMsmeCertFile || c.msmeCertificateDocument || undefined,
+              msmeManualValidation: !complianceSettings.msmeValidationEnabled && coMsmeInfo.isMSME
+                ? {
+                    status: coMsmeManualStatus,
+                    validatedBy: coMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'Platform Administrator' : undefined,
+                    validatedAt: coMsmeManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+                  }
+                : c.msmeManualValidation,
               gstVerificationDetails: savedCoGstDetails || c.gstVerificationDetails || (coGstin ? getOrCreateGstDetailsForEntity(coGstin, coLegalName, coTradeName) : undefined),
               updatedAt: new Date().toISOString(),
             }
@@ -814,6 +911,24 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
         postalCode: coPostalCode.trim(),
         streetAddress: coStreetAddress.trim(),
         msmeInfo: coMsmeInfo,
+        gstVerificationMode: complianceSettings.gstValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT',
+        gstCertificateDocument: coGstCertFile || undefined,
+        gstManualValidation: !complianceSettings.gstValidationEnabled
+          ? {
+              status: coGstManualStatus,
+              validatedBy: coGstManualStatus === 'MANUALLY_VERIFIED' ? 'Platform Administrator' : undefined,
+              validatedAt: coGstManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+            }
+          : undefined,
+        msmeVerificationMode: complianceSettings.msmeValidationEnabled ? 'AUTOMATED' : 'MANUAL_DOCUMENT',
+        msmeCertificateDocument: coMsmeCertFile || undefined,
+        msmeManualValidation: !complianceSettings.msmeValidationEnabled && coMsmeInfo.isMSME
+          ? {
+              status: coMsmeManualStatus,
+              validatedBy: coMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'Platform Administrator' : undefined,
+              validatedAt: coMsmeManualStatus === 'MANUALLY_VERIFIED' ? new Date().toISOString() : undefined,
+            }
+          : undefined,
         gstVerificationDetails: savedCoGstDetails || (coGstin ? getOrCreateGstDetailsForEntity(coGstin, coLegalName, coTradeName) : undefined),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -2757,21 +2872,7 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {fieldRecords
-                      .filter((f) => {
-                        if (mappingTabFilter !== 'ALL' && f.tabName !== mappingTabFilter) return false;
-                        if (mappingStatusFilter !== 'ALL' && f.discoveryStatus !== mappingStatusFilter) return false;
-                        if (!mappingSearchTerm) return true;
-                        const q = mappingSearchTerm.toLowerCase();
-                        return (
-                          f.visibleSapLabel.toLowerCase().includes(q) ||
-                          f.technicalPropertyName.toLowerCase().includes(q) ||
-                          f.koshTargetEntity.toLowerCase().includes(q) ||
-                          f.koshTargetProperty.toLowerCase().includes(q) ||
-                          (f.retrievedSourceValue || '').toLowerCase().includes(q)
-                        );
-                      })
-                      .map((rec) => (
+                    {mappingsGrid.pagedData.map((rec) => (
                         <tr key={rec.id} className="hover:bg-slate-50/80 transition">
                           <td className="p-3 font-bold text-slate-900">
                             <div>{rec.visibleSapLabel}</div>
@@ -2822,6 +2923,16 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                       ))}
                   </tbody>
                 </table>
+                <DataGridFooter
+                  totalRecords={mappingsGrid.totalRecords}
+                  currentPage={mappingsGrid.currentPage}
+                  pageSize={mappingsGrid.pageSize}
+                  totalPages={mappingsGrid.totalPages}
+                  onPageChange={mappingsGrid.onPageChange}
+                  onPageSizeChange={mappingsGrid.onPageSizeChange}
+                  entityLabel="mapped fields"
+                  sortNotice="Sorted newest verified first"
+                />
               </div>
             </div>
 
@@ -3381,7 +3492,7 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {jobLogs.map((job) => (
+                        {jobLogsGrid.pagedData.map((job) => (
                           <tr key={job.id} className="hover:bg-slate-50/80">
                             <td className="p-2.5 font-mono font-bold text-indigo-700">{job.jobCorrelationId}</td>
                             <td className="p-2.5 font-bold text-slate-800">{job.operationType}</td>
@@ -3399,6 +3510,16 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                         ))}
                       </tbody>
                     </table>
+                    <DataGridFooter
+                      totalRecords={jobLogsGrid.totalRecords}
+                      currentPage={jobLogsGrid.currentPage}
+                      pageSize={jobLogsGrid.pageSize}
+                      totalPages={jobLogsGrid.totalPages}
+                      onPageChange={jobLogsGrid.onPageChange}
+                      onPageSizeChange={jobLogsGrid.onPageSizeChange}
+                      entityLabel="sync jobs"
+                      sortNotice="Sorted newest execution first"
+                    />
                   </div>
                 </div>
               )}
@@ -3752,95 +3873,204 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                 </div>
               </div>
 
-              {/* Company GST Verification Challenge Box */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                    <span>Official GSTIN Verification ({getGstVerificationMode() === 'MANUAL_CAPTCHA' ? 'Manual CAPTCHA Mode' : 'Automated Paid API Mode'})</span>
+              {/* Company GST Verification Section — Governed by General Settings */}
+              {complianceSettings.gstValidationEnabled ? (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      <span>Official GSTIN Verification ({getGstVerificationMode() === 'MANUAL_CAPTCHA' ? 'Manual CAPTCHA Mode' : 'Automated Paid API Mode'})</span>
+                    </div>
+                    {savedCoGstDetails ? (
+                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> GST Verified & Confirmed
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-slate-500">
+                        Pre-Save Verification Required
+                      </span>
+                    )}
                   </div>
-                  {savedCoGstDetails ? (
-                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> GST Verified & Confirmed
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono text-slate-500">
-                      Pre-Save Verification Required
-                    </span>
-                  )}
-                </div>
 
-                {getGstVerificationMode() === 'MANUAL_CAPTCHA' ? (
-                  coGstSession ? (
-                    <div className="flex flex-wrap items-center gap-2.5 bg-white p-2.5 rounded-lg border border-indigo-200">
-                      <div className="flex items-center gap-1.5">
-                        <img
-                          src={coGstSession.captchaDataUrl}
-                          alt="CAPTCHA Challenge"
-                          className="h-9 rounded border border-slate-300 bg-slate-50"
-                        />
+                  {getGstVerificationMode() === 'MANUAL_CAPTCHA' ? (
+                    coGstSession ? (
+                      <div className="flex flex-wrap items-center gap-2.5 bg-white p-2.5 rounded-lg border border-indigo-200">
+                        <div className="flex items-center gap-1.5">
+                          <img
+                            src={coGstSession.captchaDataUrl}
+                            alt="CAPTCHA Challenge"
+                            className="h-9 rounded border border-slate-300 bg-slate-50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRequestCoCaptcha()}
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
+                            title="Refresh CAPTCHA"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex-1 min-w-[130px]">
+                          <input
+                            type="text"
+                            maxLength={6}
+                            placeholder="ENTER 6 CHARS"
+                            value={coCaptchaInput}
+                            onChange={(e) => setCoCaptchaInput(e.target.value.toUpperCase())}
+                            className="w-full text-xs p-2 border border-slate-300 rounded font-mono font-bold uppercase tracking-widest bg-slate-50 focus:bg-white"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleVerifyCoGstModal}
+                          disabled={isVerifyingCoGst}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                        >
+                          {isVerifyingCoGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                          <span>Verify GSTIN</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
+                        <span className="text-xs text-slate-500">Initiate official taxpayer search workflow to fetch verified legal name & address.</span>
                         <button
                           type="button"
                           onClick={() => handleRequestCoCaptcha()}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded transition cursor-pointer"
-                          title="Refresh CAPTCHA"
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded border border-indigo-200 cursor-pointer"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
+                          Request CAPTCHA
                         </button>
                       </div>
-                      <div className="flex-1 min-w-[130px]">
-                        <input
-                          type="text"
-                          maxLength={6}
-                          placeholder="ENTER 6 CHARS"
-                          value={coCaptchaInput}
-                          onChange={(e) => setCoCaptchaInput(e.target.value.toUpperCase())}
-                          className="w-full text-xs p-2 border border-slate-300 rounded font-mono font-bold uppercase tracking-widest bg-slate-50 focus:bg-white"
-                        />
-                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-xs text-slate-600">Enterprise Paid API Mode active. Direct lookup without CAPTCHA.</span>
                       <button
                         type="button"
                         onClick={handleVerifyCoGstModal}
                         disabled={isVerifyingCoGst}
-                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                       >
-                        {isVerifyingCoGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                        <span>Verify GSTIN</span>
+                        {isVerifyingCoGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                        <span>Verify with Paid API</span>
                       </button>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="text-xs text-slate-500">Initiate official taxpayer search workflow to fetch verified legal name & address.</span>
+                  )}
+
+                  {coGstError && (
+                    <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-2 rounded border border-rose-200">
+                      {coGstError}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                /* Manual GST Mode when Disabled in General Settings */
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-amber-600" />
+                      <span>Manual GST Entry & Document Upload</span>
+                      <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300">
+                        Online Verification Disabled in Settings
+                      </span>
+                    </div>
+
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${
+                      coGstManualStatus === 'MANUALLY_VERIFIED'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-amber-100 text-amber-900 border-amber-300'
+                    }`}>
+                      {coGstManualStatus === 'MANUALLY_VERIFIED' ? (
+                        <><CheckCircle2 className="w-3 h-3 text-emerald-600" /> Manually Verified</>
+                      ) : (
+                        <><Clock className="w-3 h-3 text-amber-600" /> Pending Manual Validation</>
+                      )}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    GST Online Verification is disabled in General Settings. Enter the GSTIN above and upload the official GST Certificate. Compliance officers will manually validate this registration.
+                  </p>
+
+                  {/* File Upload Box */}
+                  <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                        <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>GST Registration Certificate {complianceSettings.gstRequireDocumentUpload && <span className="text-rose-500">*</span>}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">PDF, JPG, PNG (Max 5MB)</span>
+                    </div>
+
+                    {coGstCertFile ? (
+                      <div className="flex items-center justify-between bg-slate-50 p-2 rounded border border-slate-200 text-xs">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-indigo-600" />
+                          <div>
+                            <div className="font-bold text-slate-800">{coGstCertFile.fileName}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {complianceGovernanceService.formatFileSize(coGstCertFile.fileSizeBytes)} • Uploaded {new Date(coGstCertFile.uploadedAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCoGstCertFile(null)}
+                          className="text-rose-600 hover:text-rose-800 text-[11px] font-bold cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-amber-300 rounded-lg bg-amber-50/40 hover:bg-amber-50 cursor-pointer transition">
+                        <Upload className="w-5 h-5 text-amber-600 mb-1" />
+                        <span className="text-xs font-bold text-amber-900">Click to Upload GST Registration Certificate</span>
+                        <span className="text-[10px] text-slate-500">Attach official GSTIN PDF / Scanned copy</span>
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const doc = complianceGovernanceService.createDocumentAttachment(
+                                file.name,
+                                file.size,
+                                file.type,
+                                'Platform Administrator',
+                                'GST_CERTIFICATE',
+                                'Uploaded for Company GST manual validation'
+                              );
+                              setCoGstCertFile(doc);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+
+                    {/* Manual Validation Toggle Action */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                      <span className="text-[11px] text-slate-500">Manual Validation Action:</span>
                       <button
                         type="button"
-                        onClick={() => handleRequestCoCaptcha()}
-                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded border border-indigo-200 cursor-pointer"
+                        onClick={() => {
+                          setCoGstManualStatus(
+                            coGstManualStatus === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED'
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer border flex items-center gap-1 ${
+                          coGstManualStatus === 'MANUALLY_VERIFIED'
+                            ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                            : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-500'
+                        }`}
                       >
-                        Request CAPTCHA
+                        <Check className="w-3 h-3" />
+                        <span>{coGstManualStatus === 'MANUALLY_VERIFIED' ? 'Revert to Pending' : 'Mark as Manually Verified'}</span>
                       </button>
                     </div>
-                  )
-                ) : (
-                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
-                    <span className="text-xs text-slate-600">Enterprise Paid API Mode active. Direct lookup without CAPTCHA.</span>
-                    <button
-                      type="button"
-                      onClick={handleVerifyCoGstModal}
-                      disabled={isVerifyingCoGst}
-                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {isVerifyingCoGst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                      <span>Verify with Paid API</span>
-                    </button>
                   </div>
-                )}
-
-                {coGstError && (
-                  <p className="text-xs font-semibold text-rose-600 bg-rose-50 p-2 rounded border border-rose-200">
-                    {coGstError}
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1 flex items-center justify-between">
@@ -3923,45 +4153,182 @@ export const OrganizationsView: React.FC<OrganizationsViewProps> = ({
                 </div>
 
                 {coMsmeInfo.isMSME && (
-                  <div className="space-y-3 pt-2 border-t border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Udyam Reg. No. e.g. UDYAM-TN-03-0012345"
-                        value={coMsmeInfo.udyamRegistrationNo || ''}
-                        onChange={(e) => setCoMsmeInfo({ ...coMsmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
-                        className="flex-1 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleVerifyCoMsme}
-                        disabled={isVerifyingCoMsme}
-                        className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      >
-                        {isVerifyingCoMsme ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-                        Verify MSME
-                      </button>
-                    </div>
+                  complianceSettings.msmeValidationEnabled ? (
+                    <div className="space-y-3 pt-2 border-t border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Udyam Reg. No. e.g. UDYAM-TN-03-0012345"
+                          value={coMsmeInfo.udyamRegistrationNo || ''}
+                          onChange={(e) => setCoMsmeInfo({ ...coMsmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
+                          className="flex-1 text-xs p-2 border border-slate-300 rounded-lg font-mono font-bold uppercase"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyCoMsme}
+                          disabled={isVerifyingCoMsme}
+                          className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          {isVerifyingCoMsme ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                          Verify MSME
+                        </button>
+                      </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border font-mono">
-                      <div>
-                        <span className="text-slate-500 block text-[9px]">Classification:</span>
-                        <strong className="text-indigo-900">{coMsmeInfo.msmeClassification || 'SMALL'}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px]">Activity Type:</span>
-                        <strong className="text-indigo-900">{coMsmeInfo.activityType || 'MANUFACTURING'}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px]">Investment:</span>
-                        <strong className="text-indigo-900">{coMsmeInfo.investmentCategory || '₹1 Cr - ₹10 Cr'}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[9px]">Turnover:</span>
-                        <strong className="text-indigo-900">{coMsmeInfo.turnoverCategory || '₹5 Cr - ₹50 Cr'}</strong>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] bg-white p-2.5 rounded-lg border font-mono">
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">Classification:</span>
+                          <strong className="text-indigo-900">{coMsmeInfo.msmeClassification || 'SMALL'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">Activity Type:</span>
+                          <strong className="text-indigo-900">{coMsmeInfo.activityType || 'MANUFACTURING'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">Investment:</span>
+                          <strong className="text-indigo-900">{coMsmeInfo.investmentCategory || '₹1 Cr - ₹10 Cr'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px]">Turnover:</span>
+                          <strong className="text-indigo-900">{coMsmeInfo.turnoverCategory || '₹5 Cr - ₹50 Cr'}</strong>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* Manual MSME Mode when Disabled in General Settings */
+                    <div className="space-y-3 pt-2 border-t border-slate-200">
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50/70 p-2 rounded-lg border border-amber-200">
+                        <span className="text-[11px] font-bold text-amber-900">
+                          Manual MSME Mode (Online Registry Lookup Disabled in Settings)
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${
+                          coMsmeManualStatus === 'MANUALLY_VERIFIED'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-amber-100 text-amber-900 border-amber-300'
+                        }`}>
+                          {coMsmeManualStatus === 'MANUALLY_VERIFIED' ? (
+                            <><CheckCircle2 className="w-3 h-3 text-emerald-600" /> Manually Verified</>
+                          ) : (
+                            <><Clock className="w-3 h-3 text-amber-600" /> Pending Manual Validation</>
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Udyam Reg. Number</label>
+                          <input
+                            type="text"
+                            placeholder="UDYAM-TN-03-0012345"
+                            value={coMsmeInfo.udyamRegistrationNo || ''}
+                            onChange={(e) => setCoMsmeInfo({ ...coMsmeInfo, udyamRegistrationNo: e.target.value.toUpperCase() })}
+                            className="w-full text-xs p-2 border border-slate-300 rounded font-mono font-bold uppercase"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Enterprise Classification</label>
+                          <select
+                            value={coMsmeInfo.msmeClassification || 'SMALL'}
+                            onChange={(e) => setCoMsmeInfo({ ...coMsmeInfo, msmeClassification: e.target.value as any })}
+                            className="w-full text-xs p-2 border border-slate-300 rounded font-bold"
+                          >
+                            <option value="MICRO">Micro Enterprise (≤ ₹1 Cr Inv)</option>
+                            <option value="SMALL">Small Enterprise (≤ ₹10 Cr Inv)</option>
+                            <option value="MEDIUM">Medium Enterprise (≤ ₹50 Cr Inv)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-0.5">Major Activity Type</label>
+                          <select
+                            value={coMsmeInfo.activityType || 'MANUFACTURING'}
+                            onChange={(e) => setCoMsmeInfo({ ...coMsmeInfo, activityType: e.target.value as any })}
+                            className="w-full text-xs p-2 border border-slate-300 rounded font-bold"
+                          >
+                            <option value="MANUFACTURING">Manufacturing</option>
+                            <option value="SERVICES">Services</option>
+                            <option value="BOTH">Manufacturing & Services</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* File Upload Box for Udyam Certificate */}
+                      <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                            <Paperclip className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Udyam Registration Certificate {complianceSettings.msmeRequireDocumentUpload && <span className="text-rose-500">*</span>}</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400">PDF, JPG, PNG (Max 5MB)</span>
+                        </div>
+
+                        {coMsmeCertFile ? (
+                          <div className="flex items-center justify-between bg-slate-50 p-2 rounded border border-slate-200 text-xs">
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-indigo-600" />
+                              <div>
+                                <div className="font-bold text-slate-800">{coMsmeCertFile.fileName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {complianceGovernanceService.formatFileSize(coMsmeCertFile.fileSizeBytes)} • Uploaded {new Date(coMsmeCertFile.uploadedAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCoMsmeCertFile(null)}
+                              className="text-rose-600 hover:text-rose-800 text-[11px] font-bold cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center p-2.5 border-2 border-dashed border-amber-300 rounded-lg bg-amber-50/40 hover:bg-amber-50 cursor-pointer transition">
+                            <Upload className="w-4 h-4 text-amber-600 mb-1" />
+                            <span className="text-xs font-bold text-amber-900">Upload Udyam Registration Certificate</span>
+                            <span className="text-[10px] text-slate-500">Attach official Ministry of MSME Certificate</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const doc = complianceGovernanceService.createDocumentAttachment(
+                                    file.name,
+                                    file.size,
+                                    file.type,
+                                    'Platform Administrator',
+                                    'MSME_CERTIFICATE',
+                                    'Uploaded for Company MSME manual validation'
+                                  );
+                                  setCoMsmeCertFile(doc);
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </label>
+                        )}
+
+                        {/* Manual Validation Action */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                          <span className="text-[11px] text-slate-500">Manual Validation Action:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCoMsmeManualStatus(
+                                coMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'PENDING_MANUAL_VALIDATION' : 'MANUALLY_VERIFIED'
+                              );
+                            }}
+                            className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer border flex items-center gap-1 ${
+                              coMsmeManualStatus === 'MANUALLY_VERIFIED'
+                                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-500'
+                            }`}
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>{coMsmeManualStatus === 'MANUALLY_VERIFIED' ? 'Revert to Pending' : 'Mark as Manually Verified'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
                 )}
               </div>
 

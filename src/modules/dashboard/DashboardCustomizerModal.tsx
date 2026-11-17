@@ -19,6 +19,8 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface DashboardCustomizerModalProps {
   isOpen: boolean;
@@ -40,6 +42,14 @@ export const DashboardCustomizerModal: React.FC<DashboardCustomizerModalProps> =
   const [dashboardName, setDashboardName] = useState(currentDashboard.name);
   const [audienceScope, setAudienceScope] = useState(currentDashboard.audienceScope);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  const glossaryGrid = useStandardDataGrid({
+    gridId: 'dashboard-metric-glossary',
+    data: DATA_SOURCE_CATALOGUE,
+    defaultSortField: 'id',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+  });
 
   if (!isOpen) return null;
 
@@ -450,7 +460,7 @@ export const DashboardCustomizerModal: React.FC<DashboardCustomizerModalProps> =
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {DATA_SOURCE_CATALOGUE.map((ds) => (
+                    {glossaryGrid.pagedData.map((ds) => (
                       <tr key={ds.id} className="hover:bg-slate-50">
                         <td className="p-2.5">
                           <div className="font-bold text-slate-900">{ds.name}</div>
@@ -477,6 +487,15 @@ export const DashboardCustomizerModal: React.FC<DashboardCustomizerModalProps> =
                   </tbody>
                 </table>
               </div>
+              <DataGridFooter
+                currentPage={glossaryGrid.currentPage}
+                totalPages={glossaryGrid.totalPages}
+                pageSize={glossaryGrid.pageSize}
+                totalRecords={glossaryGrid.totalRecords}
+                onPageChange={glossaryGrid.setCurrentPage}
+                onPageSizeChange={glossaryGrid.setPageSize}
+                pageSizeOptions={glossaryGrid.pageSizeOptions}
+              />
             </div>
           )}
         </div>

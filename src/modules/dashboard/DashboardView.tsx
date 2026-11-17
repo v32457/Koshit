@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { GlobalItem, Branch, DashboardDefinition } from '../../types';
+import React, { useState, useMemo } from 'react';
+import { GlobalItem, Branch, DashboardDefinition, User } from '../../types';
 import {
   Boxes,
   Clock,
@@ -24,10 +24,15 @@ import {
 import { INITIAL_DASHBOARD_DEFINITIONS } from '../../data/dashboardCatalogue';
 import { INITIAL_BRANCHES } from '../../data/seedData';
 import { DashboardCustomizerModal } from './DashboardCustomizerModal';
+import { financialYearService } from '../../services/financialYearService';
+import { FinancialYearSelector } from '../../components/FinancialYearSelector';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface DashboardViewProps {
   items: GlobalItem[];
   activeBranch: Branch;
+  currentUser?: User;
   onNavigate: (route: string) => void;
   onOpenStage0Modal: () => void;
 }
@@ -35,6 +40,7 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   items,
   activeBranch,
+  currentUser,
   onNavigate,
   onOpenStage0Modal,
 }) => {
@@ -43,20 +49,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('ALL');
   const [timeframeFilter, setTimeframeFilter] = useState<string>('30D');
+  const [selectedFyId, setSelectedFyId] = useState<string>('ALL');
 
   // Live items from the application state; this view never invents SAP outcomes.
   const [isSyncTableExpanded, setIsSyncTableExpanded] = useState<boolean>(false);
   const [syncActionMessage, setSyncActionMessage] = useState<string | null>(null);
 
-  // Filter items to the selected branch using the item's recorded branch availability.
-  const filteredItems = items.filter((item) => {
-    if (selectedBranchFilter === 'ALL') return true;
-    const branch = INITIAL_BRANCHES.find(
-      (b) => b.name.startsWith(selectedBranchFilter) || b.city === selectedBranchFilter,
-    );
-    if (!branch) return false;
-    return item.branchAvailability.some((a) => a.branchId === branch.id && a.isActive);
+  const effectiveSelectedFyId = useMemo(() => {
+    if (
+      selectedFyId === 'ALL' &&
+      !financialYearService.isUserAuthorizedForAllFinancialYears(currentUser)
+    ) {
+      return financialYearService.getDefaultFinancialYearForCompany('co-kosh-01')?.id || '';
+    }
+    return selectedFyId;
+  }, [selectedFyId, currentUser]);
+
+  // Filter items to the selected branch AND Financial Year via centralized fiscal calendar service.
+  const branchFilteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (selectedBranchFilter === 'ALL') return true;
+        const branch = INITIAL_BRANCHES.find(
+          (b) => b.name.startsWith(selectedBranchFilter) || b.city === selectedBranchFilter
+        );
+        if (!branch) return false;
+        return (item.branchAvailability || []).some((a) => a.branchId === branch.id && a.isActive);
+      }),
+    [items, selectedBranchFilter]
+  );
+
+  const fyItemResult = useMemo(
+    () =>
+      financialYearService.filterTransactionsByFinancialYear({
+        records: branchFilteredItems,
+        selectedFyId: effectiveSelectedFyId,
+        companyId: currentUser?.orgId || 'co-kosh-01',
+        currentUser,
+        entityType: 'ITEM_MASTER',
+        getRecordId: (i) => i.id,
+        getDocumentNumber: (i) => i.globalItemCode,
+        getCompanyId: () => currentUser?.orgId || 'co-kosh-01',
+        getDocumentDate: (i) => (i.updatedAt || i.createdAt || '').slice(0, 10),
+      }),
+    [branchFilteredItems, effectiveSelectedFyId, currentUser]
+  );
+
+  const filteredItems = fyItemResult.filteredRecords;
+
+  const syncTableGrid = useStandardDataGrid({
+    gridId: 'dashboard-sap-sync-audit',
+    userId: currentUser?.id,
+    data: filteredItems,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'globalItemCode',
+    filterSignature: `${selectedBranchFilter}|${effectiveSelectedFyId}`,
   });
+
+  const recentMasterItems = useMemo(
+    () => syncTableGrid.allSortedData.slice(0, 5),
+    [syncTableGrid.allSortedData]
+  );
 
   // Derived metric counts
   const totalApproved = filteredItems.filter((i) => i.status === 'APPROVED' || i.status === 'SAP_CREATED').length;
@@ -148,12 +202,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Branch allocation derived from recorded branch availability on the live item set.
   const branchTotalAssociations = filteredItems.reduce(
-    (sum, item) => sum + item.branchAvailability.filter((a) => a.isActive).length,
+    (sum, item) => sum + (item.branchAvailability || []).filter((a) => a.isActive).length,
     0,
   );
   const branchData = INITIAL_BRANCHES.map((b) => {
     const count = filteredItems.filter((item) =>
-      item.branchAvailability.some((a) => a.branchId === b.id && a.isActive),
+      (item.branchAvailability || []).some((a) => a.branchId === b.id && a.isActive),
     ).length;
     return {
       name: b.name,
@@ -237,6 +291,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       </div>
+
+      <FinancialYearSelector
+        companyId={currentUser?.orgId || 'co-kosh-01'}
+        selectedFyId={effectiveSelectedFyId}
+        onSelectFy={setSelectedFyId}
+        currentUser={currentUser}
+        dataQualityGaps={fyItemResult.dataQualityGaps}
+        entityLabel="Enterprise Dashboard"
+      />
 
       {/* SAP Business One Real-Time Sync Status Visual Summary Component */}
       <div className="bg-gradient-to-r from-slate-900 via-[#0B192C] to-slate-900 rounded-xl border border-slate-800 shadow-md text-white p-5 space-y-4">
@@ -448,7 +511,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-[11px]">
-                  {filteredItems.map((item) => {
+                  {syncTableGrid.pagedData.map((item) => {
                     const isSynced = item.status === 'SAP_CREATED' || item.sapSyncInfo?.syncStatus === 'SYNCED';
                     const isPending = item.status === 'APPROVED' || item.status === 'SAP_PENDING' || item.sapSyncInfo?.syncStatus === 'PENDING';
                     const isFailed = item.status === 'SAP_FAILED' || item.sapSyncInfo?.syncStatus === 'FAILED';
@@ -509,6 +572,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </tbody>
               </table>
             </div>
+            <DataGridFooter
+              currentPage={syncTableGrid.currentPage}
+              totalPages={syncTableGrid.totalPages}
+              pageSize={syncTableGrid.pageSize}
+              totalRecords={syncTableGrid.totalRecords}
+              onPageChange={syncTableGrid.setCurrentPage}
+              onPageSizeChange={syncTableGrid.setPageSize}
+              pageSizeOptions={syncTableGrid.pageSizeOptions}
+              defaultSortNotice="Sorted Newest First"
+            />
           </div>
         )}
       </div>
@@ -750,7 +823,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredItems.slice(0, 5).map((item) => (
+                        {recentMasterItems.map((item) => (
                           <tr key={item.id} className="hover:bg-slate-50/80 transition">
                             <td className="p-2.5 font-mono font-bold text-blue-900">
                               {item.globalItemCode}

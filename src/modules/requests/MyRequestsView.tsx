@@ -1,6 +1,8 @@
 import React from 'react';
 import { GlobalItem, User } from '../../types';
-import { FileText, Clock, RotateCcw, CheckCircle2, ArrowRight } from 'lucide-react';
+import { FileText } from 'lucide-react';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
 
 interface MyRequestsViewProps {
   items: GlobalItem[];
@@ -15,6 +17,25 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
 }) => {
   // Items created by user or visible drafts
   const userItems = items;
+
+  const {
+    pagedData: paginatedUserItems,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    totalRecords,
+    totalPages,
+    pageSizeOptions,
+  } = useStandardDataGrid<GlobalItem>({
+    gridId: 'my-requests',
+    userId: currentUser?.id,
+    data: userItems,
+    defaultSortField: 'updatedAt',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'globalItemCode',
+    getRowId: (i) => i.globalItemCode || i.id,
+  });
 
   return (
     <div className="space-y-4">
@@ -51,7 +72,7 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {userItems.map((item) => {
+              {paginatedUserItems.map((item) => {
                 const latestDecision = item.approvalHistory[item.approvalHistory.length - 1];
                 return (
                   <tr key={item.id} className="hover:bg-slate-50 transition">
@@ -95,6 +116,17 @@ export const MyRequestsView: React.FC<MyRequestsViewProps> = ({
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        totalRecords={totalRecords}
+        pageSizeOptions={pageSizeOptions}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+        defaultSortNotice="Default Sort: Updated Date (Newest First)"
+      />
     </div>
   );
 };

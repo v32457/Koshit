@@ -5,8 +5,15 @@ import {
   AuditFilterParams,
 } from '../../services/enterpriseAuditService';
 import { AuditDetailModal } from '../../components/AuditDetailModal';
-import { INITIAL_COMPANIES, INITIAL_BRANCHES } from '../../data/seedData';
+import { INITIAL_COMPANIES } from '../../data/seedData';
 import { PurchaseOrganizationService } from '../../services/purchaseOrganizationService';
+import { User } from '../../types';
+import { financialYearService } from '../../services/financialYearService';
+import { FinancialYearSelector } from '../../components/FinancialYearSelector';
+import { useStandardDataGrid } from '../../hooks/useStandardDataGrid';
+import { DataGridFooter } from '../../components/DataGridFooter';
+import { executeScopedExport } from '../../services/exportService';
+import { rbacPermissionService } from '../../services/rbacPermissionService';
 import {
   FileCheck,
   Shield,
@@ -28,7 +35,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-export const AuditLogsView: React.FC = () => {
+interface AuditLogsViewProps {
+  currentUser?: User;
+}
+
+export const AuditLogsView: React.FC<AuditLogsViewProps> = ({ currentUser }) => {
   const [filters, setFilters] = useState<AuditFilterParams>({
     companyId: 'ALL',
     purchaseOrganizationId: 'ALL',
@@ -40,6 +51,9 @@ export const AuditLogsView: React.FC = () => {
     dateTo: '',
     searchQuery: '',
   });
+  const [selectedFyId, setSelectedFyId] = useState<string>(
+    () => financialYearService.getDefaultFinancialYearForCompany('co-kosh-01')?.id || ''
+  );
 
   const [selectedRecord, setSelectedRecord] = useState<EnterpriseAuditRecord | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -51,22 +65,110 @@ export const AuditLogsView: React.FC = () => {
 
   const orgsList = useMemo(() => PurchaseOrganizationService.getOrganizations(), []);
 
-  // Fetch Live Audit Logs & Metrics
-  const auditLogs = useMemo(() => {
-    return EnterpriseAuditService.getAuditLogs(filters);
-  }, [filters]);
+  // Fetch Live Audit Logs, then apply centralized Financial Year & RBAC Filter
+  const baseAuditLogs = useMemo(() => {
+    return EnterpriseAuditService.getAuditLogs(filters, currentUser);
+  }, [filters, currentUser]);
+
+  const fyResult = useMemo(() => {
+    return financialYearService.filterTransactionsByFinancialYear({
+      records: baseAuditLogs,
+      selectedFyId,
+      companyId: filters.companyId || 'ALL',
+      branchId: filters.branchId || 'ALL',
+      purchaseOrgId: filters.purchaseOrganizationId || 'ALL',
+      currentUser,
+      entityType: 'AUDIT_LOG',
+      getRecordId: (r) => r.id,
+      getDocumentNumber: (r) => r.correlationId || r.id,
+      getCompanyId: (r) => r.companyId,
+      getBranchId: (r) => r.branchId,
+      getPurchaseOrgId: (r) => r.purchaseOrganizationId,
+      getFinancialYearId: (r) =>
+        (r.newValue?.financialYearId as string | undefined) ||
+        (r.previousValue?.financialYearId as string | undefined),
+      getFinancialYearCode: (r) =>
+        (r.newValue?.financialYearCode as string | undefined) ||
+        (r.previousValue?.financialYearCode as string | undefined),
+      getDocumentDate: (r) => r.timestamp?.slice(0, 10),
+    });
+  }, [baseAuditLogs, selectedFyId, filters.companyId, filters.branchId, filters.purchaseOrganizationId, currentUser]);
+
+  const auditLogs = fyResult.filteredRecords;
+
+  const {
+    pagedData: paginatedAuditLogs,
+    allSortedData: sortedAuditLogs,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    totalRecords,
+    totalPages,
+    pageSizeOptions,
+  } = useStandardDataGrid<EnterpriseAuditRecord>({
+    gridId: 'audit-logs',
+    userId: currentUser?.id,
+    data: auditLogs,
+    defaultSortField: 'timestamp',
+    defaultSortDirection: 'desc',
+    tieBreakerField: 'id',
+    filterSignature: JSON.stringify(filters) + selectedFyId,
+    getRowId: (r) => r.id,
+  });
+
+  const canExportAll = rbacPermissionService.hasPermission(currentUser, 'EXPORT_ALL_FILTERED');
+  const [exportScope, setExportScope] = useState<'CURRENT_PAGE' | 'ALL_FILTERED'>('CURRENT_PAGE');
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   const metrics = useMemo(() => {
-    return EnterpriseAuditService.getDashboardMetrics(filters);
-  }, [filters]);
+    return {
+      totalEvents: auditLogs.length,
+      poChanges: auditLogs.filter((r) => r.entityType === 'PURCHASE_ORGANIZATION').length,
+      buyerChanges: auditLogs.filter((r) => r.entityType === 'BUYER_ASSIGNMENT').length,
+      managerChanges: auditLogs.filter((r) => r.entityType === 'MANAGER_ASSIGNMENT').length,
+      validityChanges: auditLogs.filter(
+        (r) => r.eventType.includes('VALIDITY') || r.effectiveFrom || r.effectiveTo
+      ).length,
+      delegationEvents: auditLogs.filter((r) => r.entityType === 'DELEGATION').length,
+      unauthorizedAttempts: auditLogs.filter(
+        (r) => r.entityType === 'SECURITY' || r.eventType === 'UNAUTHORIZED_ATTEMPT'
+      ).length,
+    };
+  }, [auditLogs]);
 
   const handleVerifyChain = async () => {
     const res = await EnterpriseAuditService.verifyAuditChainIntegrity();
     setVerificationResult(res);
   };
 
-  const handleExportCsv = () => {
-    EnterpriseAuditService.exportAuditLogsToCsv(filters);
+  const handleExportCsv = async () => {
+    const targetRecords = exportScope === 'CURRENT_PAGE' ? paginatedAuditLogs : sortedAuditLogs;
+    if (exportScope === 'ALL_FILTERED' && !canExportAll) {
+      setExportMessage('Permission EXPORT_ALL_FILTERED required for All Filtered export. Exported Current Page instead.');
+      return;
+    }
+    const res = await executeScopedExport({
+      format: 'csv',
+      exportScope,
+      title: 'CIPPlatform — Enterprise Audit Ledger',
+      subtitle: 'Immutable Cryptographic Audit Log Export',
+      headers: ['Timestamp', 'Correlation ID', 'Actor', 'Channel', 'Company', 'Entity Type', 'Event Type', 'Description', 'Reason'],
+      rows: targetRecords.map((r) => [
+        r.timestamp,
+        r.correlationId || '',
+        r.changedByName || '',
+        r.source || '',
+        r.companyName || r.companyId || '',
+        r.entityType,
+        r.eventType,
+        r.eventDescription,
+        r.changeReason || '',
+      ]),
+      filenamePrefix: 'enterprise_audit_logs',
+    });
+    setExportMessage(res.message);
+    setTimeout(() => setExportMessage(null), 4000);
   };
 
   const resetFilters = () => {
@@ -110,15 +212,34 @@ export const AuditLogsView: React.FC = () => {
             Verify SHA-256 Chain Integrity
           </button>
 
-          <button
-            onClick={handleExportCsv}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
-          >
-            <Download className="w-4 h-4" />
-            Export Audit Trail (CSV)
-          </button>
+          <div className="flex items-center gap-1.5 bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <select
+              aria-label="Audit export scope"
+              value={exportScope}
+              onChange={(e) => setExportScope(e.target.value as 'CURRENT_PAGE' | 'ALL_FILTERED')}
+              className="bg-slate-900 text-slate-200 text-xs font-bold px-2 py-1 rounded border border-slate-700"
+            >
+              <option value="CURRENT_PAGE">Current Page ({paginatedAuditLogs.length})</option>
+              <option value="ALL_FILTERED" disabled={!canExportAll}>
+                All Filtered ({sortedAuditLogs.length}){!canExportAll ? ' [Restricted]' : ''}
+              </option>
+            </select>
+            <button
+              onClick={handleExportCsv}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          </div>
         </div>
       </div>
+
+      {exportMessage && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+          {exportMessage}
+        </div>
+      )}
 
       {/* Verification Result Banner */}
       {verificationResult && (
@@ -154,6 +275,15 @@ export const AuditLogsView: React.FC = () => {
           </button>
         </div>
       )}
+
+      <FinancialYearSelector
+        companyId={filters.companyId || 'co-kosh-01'}
+        selectedFyId={selectedFyId}
+        onSelectFy={setSelectedFyId}
+        currentUser={currentUser}
+        dataQualityGaps={fyResult.dataQualityGaps}
+        entityLabel="Audit Logs"
+      />
 
       {/* Metrics Dashboard Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -288,8 +418,8 @@ export const AuditLogsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {auditLogs.length > 0 ? (
-                auditLogs.map((log) => (
+              {paginatedAuditLogs.length > 0 ? (
+                paginatedAuditLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition">
                     <td className="p-3">
                       <div className="font-mono font-bold text-slate-800">
@@ -388,6 +518,17 @@ export const AuditLogsView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      <DataGridFooter
+        currentPage={currentPage}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        totalRecords={totalRecords}
+        pageSizeOptions={pageSizeOptions}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+        defaultSortNotice="Default Sort: Event Timestamp (Newest First)"
+      />
 
       {/* Audit Detail & Diff Modal */}
       <AuditDetailModal
