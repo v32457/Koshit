@@ -17,6 +17,7 @@ import {
   prGovernancePolicyService,
   canViewPrGovernancePolicyStrip,
 } from '../../services/prGovernancePolicyService';
+import { prDuplicateGovernanceService } from '../../services/prDuplicateGovernanceService';
 import { financialYearService } from '../../services/financialYearService';
 import { FinancialYearSelector } from '../../components/FinancialYearSelector';
 import {
@@ -86,12 +87,16 @@ import {
   matchesDateRange,
   buildAdvancedFilterChips,
   countActiveAdvancedConditions,
+  parseMultiSelectFilter,
+  matchesMultiSelectFilter,
+  formatMultiSelectFilterLabel,
 } from '../../services/advancedFilterEngine';
 import {
   AdvancedFilterPanel,
   DateRangeFilterControl,
   ActiveFilterChipsBar,
   AdvancedFilterToggleButton,
+  MultiSelectFilterDropdown,
 } from '../../components/AdvancedFilterPanel';
 import {
   FileText,
@@ -145,8 +150,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
   const [selectedCompany, setSelectedCompany] = useState<string>('ALL');
   const [selectedBranch, setSelectedBranch] = useState<string>('ALL');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('ALL');
-  const [selectedType, setSelectedType] = useState<PRType | 'ALL'>('ALL');
-  const [selectedStatus, setSelectedStatus] = useState<PRStatus | 'ALL'>('ALL');
+  const [selectedType, setSelectedType] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedBudgetStatus, setSelectedBudgetStatus] = useState<string>('ALL');
   const [selectedCurrency, setSelectedCurrency] = useState<string>('ALL');
   const [deliveryDateFilter, setDeliveryDateFilter] = useState<string>('');
@@ -312,6 +317,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
     };
     window.addEventListener('cip-prs-updated', handlePrsUpdated);
     window.addEventListener('cip-pr-governance-updated', handleGovernanceUpdated);
+    void prDuplicateGovernanceService.syncPrsWithBackend(PurchaseRequisitionService.getPurchaseRequisitions());
+    void prDuplicateGovernanceService.hydrateFromBackend();
     return () => {
       window.removeEventListener('cip-prs-updated', handlePrsUpdated);
       window.removeEventListener('cip-pr-governance-updated', handleGovernanceUpdated);
@@ -826,27 +833,29 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
     }
 
     if (selectedCompany !== 'ALL') {
-      const label =
-        filterOptions.companies.find((c) => c.id === selectedCompany)?.label || selectedCompany;
       chips.push({
         id: 'chip-company',
         category: 'QUICK',
         fieldLabel: 'Company',
-        operatorLabel: 'Equals',
-        valueLabel: label,
+        operatorLabel: parseMultiSelectFilter(selectedCompany).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(
+          selectedCompany,
+          filterOptions.companies.map((c) => ({ value: c.id, label: c.label }))
+        ),
         onRemove: () => setSelectedCompany('ALL'),
       });
     }
 
     if (selectedBranch !== 'ALL') {
-      const label =
-        filterOptions.branches.find((b) => b.id === selectedBranch)?.label || selectedBranch;
       chips.push({
         id: 'chip-branch',
         category: 'QUICK',
         fieldLabel: 'Branch',
-        operatorLabel: 'Equals',
-        valueLabel: label,
+        operatorLabel: parseMultiSelectFilter(selectedBranch).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(
+          selectedBranch,
+          filterOptions.branches.map((b) => ({ value: b.id, label: b.label }))
+        ),
         onRemove: () => setSelectedBranch('ALL'),
       });
     }
@@ -856,8 +865,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         id: 'chip-dept',
         category: 'QUICK',
         fieldLabel: 'Department',
-        operatorLabel: 'Equals',
-        valueLabel: selectedDepartment,
+        operatorLabel: parseMultiSelectFilter(selectedDepartment).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(selectedDepartment),
         onRemove: () => setSelectedDepartment('ALL'),
       });
     }
@@ -867,8 +876,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         id: 'chip-pr-type',
         category: 'QUICK',
         fieldLabel: 'PR Type',
-        operatorLabel: 'Equals',
-        valueLabel: selectedType,
+        operatorLabel: parseMultiSelectFilter(selectedType).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(selectedType),
         onRemove: () => setSelectedType('ALL'),
       });
     }
@@ -878,8 +887,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         id: 'chip-status',
         category: 'QUICK',
         fieldLabel: 'Status',
-        operatorLabel: 'Equals',
-        valueLabel: selectedStatus,
+        operatorLabel: parseMultiSelectFilter(selectedStatus).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(selectedStatus),
         onRemove: () => setSelectedStatus('ALL'),
       });
     }
@@ -889,8 +898,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         id: 'chip-budget',
         category: 'QUICK',
         fieldLabel: 'Budget',
-        operatorLabel: 'Equals',
-        valueLabel: selectedBudgetStatus,
+        operatorLabel: parseMultiSelectFilter(selectedBudgetStatus).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(selectedBudgetStatus),
         onRemove: () => setSelectedBudgetStatus('ALL'),
       });
     }
@@ -900,8 +909,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         id: 'chip-currency',
         category: 'QUICK',
         fieldLabel: 'Currency',
-        operatorLabel: 'Equals',
-        valueLabel: selectedCurrency,
+        operatorLabel: parseMultiSelectFilter(selectedCurrency).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(selectedCurrency),
         onRemove: () => setSelectedCurrency('ALL'),
       });
     }
@@ -981,22 +990,21 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         expDate.toLowerCase().includes(q) ||
         matchesLineSearch;
 
-      const matchesCompany = selectedCompany === 'ALL' || pr.companyId === selectedCompany;
+      const matchesCompany = matchesMultiSelectFilter(selectedCompany, pr.companyId);
       const matchesBranch =
-        selectedBranch === 'ALL' ||
-        pr.branchId === selectedBranch ||
-        pr.branchName === selectedBranch;
-      const matchesDept = selectedDepartment === 'ALL' || pr.department === selectedDepartment;
-      const matchesType = selectedType === 'ALL' || pr.prType === selectedType;
+        matchesMultiSelectFilter(selectedBranch, pr.branchId) ||
+        matchesMultiSelectFilter(selectedBranch, pr.branchName);
+      const matchesDept = matchesMultiSelectFilter(selectedDepartment, pr.department);
+      const matchesType = matchesMultiSelectFilter(selectedType, pr.prType);
       const effectiveStatus = getEffectivePRStatus(pr);
       const matchesStatus =
-        selectedStatus === 'ALL' ||
-        pr.status === selectedStatus ||
-        effectiveStatus === selectedStatus;
-      const matchesBudget =
-        selectedBudgetStatus === 'ALL' || pr.budgetValidationStatus === selectedBudgetStatus;
-      const matchesCurrency =
-        selectedCurrency === 'ALL' || prCurrency === selectedCurrency;
+        matchesMultiSelectFilter(selectedStatus, pr.status) ||
+        matchesMultiSelectFilter(selectedStatus, effectiveStatus);
+      const matchesBudget = matchesMultiSelectFilter(
+        selectedBudgetStatus,
+        pr.budgetValidationStatus
+      );
+      const matchesCurrency = matchesMultiSelectFilter(selectedCurrency, prCurrency);
       const matchesLegacyDeliveryDate =
         !deliveryDateFilter || expDate === deliveryDateFilter;
       const matchesPrDateRange = matchesDateRange(prCreatedDate, prDateRange);
@@ -1062,21 +1070,20 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
         row.currency.toLowerCase().includes(q) ||
         row.expectedDeliveryDate.toLowerCase().includes(q);
 
-      const matchesCompany = selectedCompany === 'ALL' || row.companyId === selectedCompany;
+      const matchesCompany = matchesMultiSelectFilter(selectedCompany, row.companyId);
       const matchesBranch =
-        selectedBranch === 'ALL' ||
-        row.branchId === selectedBranch ||
-        row.branchName === selectedBranch;
-      const matchesDept = selectedDepartment === 'ALL' || row.department === selectedDepartment;
-      const matchesType = selectedType === 'ALL' || row.prType === selectedType;
+        matchesMultiSelectFilter(selectedBranch, row.branchId) ||
+        matchesMultiSelectFilter(selectedBranch, row.branchName);
+      const matchesDept = matchesMultiSelectFilter(selectedDepartment, row.department);
+      const matchesType = matchesMultiSelectFilter(selectedType, row.prType);
       const matchesStatus =
-        selectedStatus === 'ALL' ||
-        row.effectiveStatus === selectedStatus ||
-        row.pr.status === selectedStatus;
-      const matchesBudget =
-        selectedBudgetStatus === 'ALL' || row.budgetValidationStatus === selectedBudgetStatus;
-      const matchesCurrency =
-        selectedCurrency === 'ALL' || row.currency === selectedCurrency;
+        matchesMultiSelectFilter(selectedStatus, row.effectiveStatus) ||
+        matchesMultiSelectFilter(selectedStatus, row.pr.status);
+      const matchesBudget = matchesMultiSelectFilter(
+        selectedBudgetStatus,
+        row.budgetValidationStatus
+      );
+      const matchesCurrency = matchesMultiSelectFilter(selectedCurrency, row.currency);
       const matchesLegacyDeliveryDate =
         !deliveryDateFilter || row.expectedDeliveryDate === deliveryDateFilter;
       const matchesPrDateRange = matchesDateRange(prCreatedDate, prDateRange);
@@ -1247,8 +1254,8 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
     if (!showConsolidatedReport) return null;
     return PurchaseRequisitionService.generateConsolidatedPrReport({
       user: currentUser,
-      prType: selectedType,
-      status: selectedStatus,
+      prType: selectedType as any,
+      status: selectedStatus as any,
       currency: selectedCurrency,
     });
   }, [showConsolidatedReport, currentUser, selectedType, selectedStatus, selectedCurrency, prs]);
@@ -2012,7 +2019,20 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
           </div>
         );
       }
-      case 'budgetValidationStatus':
+      case 'budgetValidationStatus': {
+        const bgtOn = prGovernancePolicyService.isBudgetValidationEnabled(
+          pr.companyId,
+          pr.branchId
+        );
+        if (!bgtOn) {
+          return (
+            <div title="Budget Validation is OFF under active policy">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200">
+                Disabled
+              </span>
+            </div>
+          );
+        }
         return (
           <div title={pr.budgetValidationStatus}>
             <span
@@ -2026,6 +2046,7 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
             </span>
           </div>
         );
+      }
       case 'approvalStatus':
         return <div title={fullText}>{getStatusBadge(getEffectivePRStatus(pr))}</div>;
       case 'buyerStatus': {
@@ -2200,7 +2221,20 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
             {row.requesterName}
           </div>
         );
-      case 'budgetValidationStatus':
+      case 'budgetValidationStatus': {
+        const bgtOn = prGovernancePolicyService.isBudgetValidationEnabled(
+          row.pr.companyId,
+          row.pr.branchId
+        );
+        if (!bgtOn) {
+          return (
+            <div title="Budget Validation is OFF under active policy">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-slate-100 text-slate-500 border border-slate-200">
+                Disabled
+              </span>
+            </div>
+          );
+        }
         return (
           <div title={row.budgetValidationStatus}>
             <span
@@ -2214,6 +2248,7 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
             </span>
           </div>
         );
+      }
       case 'buyerStatus':
         return (
           <div title={row.buyerStatus} className="truncate">
@@ -2323,15 +2358,12 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
             >
               Cancel: {effectivePolicy.activation.prCancellationEnabled ? 'ON' : 'OFF'}
             </span>
-            <span
-              className={`px-2 py-0.5 rounded ${
-                effectivePolicy.activation.budgetValidationEnabled
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-              }`}
-            >
-              Budget Recon: {effectivePolicy.activation.budgetValidationEnabled ? 'ON' : 'OFF'}
-            </span>
+            {effectivePolicy.activation.budgetValidationEnabled &&
+              effectivePolicy.budget?.enableBudgetValidation && (
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Budget Recon: ON
+                </span>
+              )}
           </div>
         </div>
       )}
@@ -2823,107 +2855,105 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
           <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  aria-label="Filter by Company"
+                <MultiSelectFilterDropdown
+                  label="Company"
+                  allLabel="All Companies"
+                  ariaLabel="Filter by Company"
                   value={selectedCompany}
-                  onChange={(e) => setSelectedCompany(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Companies</option>
-                  {filterOptions.companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedCompany}
+                  options={filterOptions.companies.map((c) => ({
+                    value: c.id,
+                    label: c.label,
+                  }))}
+                />
 
-                <select
-                  aria-label="Filter by Branch"
+                <MultiSelectFilterDropdown
+                  label="Branch"
+                  allLabel="All Branches"
+                  ariaLabel="Filter by Branch"
                   value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Branches</option>
-                  {filterOptions.branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedBranch}
+                  options={filterOptions.branches.map((b) => ({
+                    value: b.id,
+                    label: b.label,
+                  }))}
+                />
 
-                <select
-                  aria-label="Filter by Department"
+                <MultiSelectFilterDropdown
+                  label="Department"
+                  allLabel="All Departments"
+                  ariaLabel="Filter by Department"
                   value={selectedDepartment}
-                  onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Departments</option>
-                  {filterOptions.departments.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedDepartment}
+                  options={filterOptions.departments.map((d) => ({
+                    value: d,
+                    label: d,
+                  }))}
+                />
 
-                <select
-                  aria-label="Filter by PR Type"
+                <MultiSelectFilterDropdown
+                  label="PR Type"
+                  allLabel="All PR Types"
+                  ariaLabel="Filter by PR Type"
                   value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value as any)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All PR Types</option>
-                  <option value="MRP">MRP</option>
-                  <option value="MANUAL">Manual</option>
-                  <option value="REPAIR">Repair</option>
-                  <option value="MAINTENANCE">Maintenance</option>
-                  <option value="CAPEX_ASSET">Capex / Asset</option>
-                </select>
+                  onChange={setSelectedType}
+                  options={[
+                    { value: 'MRP', label: 'MRP' },
+                    { value: 'MANUAL', label: 'Manual' },
+                    { value: 'REPAIR', label: 'Repair' },
+                    { value: 'MAINTENANCE', label: 'Maintenance' },
+                    { value: 'CAPEX_ASSET', label: 'Capex / Asset' },
+                  ]}
+                />
 
-                <select
-                  aria-label="Filter by Approval Status"
+                <MultiSelectFilterDropdown
+                  label="Approval Status"
+                  allLabel="All Statuses"
+                  ariaLabel="Filter by Approval Status"
                   value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value as any)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="DRAFT">Draft</option>
-                  <option value="PENDING_MANAGER_APPROVAL">Pending Manager L1</option>
-                  <option value="PENDING_SUBSEQUENT_APPROVAL">Pending Category Approval</option>
-                  <option value="APPROVED_PENDING_BUYER">Approved - Pending Buyer</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="REJECTED">Rejected</option>
-                  <option value="RETURNED_FOR_CORRECTION">Returned for Correction</option>
-                  <option value="SHORT_CLOSED">Short Closed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
+                  onChange={setSelectedStatus}
+                  options={[
+                    { value: 'DRAFT', label: 'Draft' },
+                    { value: 'PENDING_MANAGER_APPROVAL', label: 'Pending Manager L1' },
+                    { value: 'PENDING_SUBSEQUENT_APPROVAL', label: 'Pending Category Approval' },
+                    { value: 'APPROVED_PENDING_BUYER', label: 'Approved - Pending Buyer' },
+                    { value: 'COMPLETED', label: 'Completed' },
+                    { value: 'REJECTED', label: 'Rejected' },
+                    { value: 'RETURNED_FOR_CORRECTION', label: 'Returned for Correction' },
+                    { value: 'SHORT_CLOSED', label: 'Short Closed' },
+                    { value: 'CANCELLED', label: 'Cancelled' },
+                  ]}
+                />
 
-                <select
-                  aria-label="Filter by Budget Status"
-                  value={selectedBudgetStatus}
-                  onChange={(e) => setSelectedBudgetStatus(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Budget Statuses</option>
-                  <option value="SUFFICIENT">Sufficient</option>
-                  <option value="INSUFFICIENT">Insufficient</option>
-                  <option value="EXCEPTION_APPROVED">Exception Approved</option>
-                  <option value="MISSING_ASSIGNMENT">Missing Assignment</option>
-                  <option value="NOT_VALIDATED">Not Validated</option>
-                </select>
+                {effectivePolicy.activation.budgetValidationEnabled &&
+                  effectivePolicy.budget?.enableBudgetValidation && (
+                    <MultiSelectFilterDropdown
+                      label="Budget Status"
+                      allLabel="All Budget Statuses"
+                      ariaLabel="Filter by Budget Status"
+                      value={selectedBudgetStatus}
+                      onChange={setSelectedBudgetStatus}
+                      options={[
+                        { value: 'SUFFICIENT', label: 'Sufficient' },
+                        { value: 'INSUFFICIENT', label: 'Insufficient' },
+                        { value: 'EXCEPTION_APPROVED', label: 'Exception Approved' },
+                        { value: 'MISSING_ASSIGNMENT', label: 'Missing Assignment' },
+                        { value: 'NOT_VALIDATED', label: 'Not Validated' },
+                      ]}
+                    />
+                  )}
 
-                <select
-                  aria-label="Filter by Currency"
+                <MultiSelectFilterDropdown
+                  label="Currency"
+                  allLabel="All Currencies"
+                  ariaLabel="Filter by Currency"
                   value={selectedCurrency}
-                  onChange={(e) => setSelectedCurrency(e.target.value)}
-                  className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="ALL">All Currencies</option>
-                  {filterOptions.currencies.map((curr) => (
-                    <option key={curr} value={curr}>
-                      {curr}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedCurrency}
+                  options={filterOptions.currencies.map((curr) => ({
+                    value: curr,
+                    label: curr,
+                  }))}
+                />
 
                 <input
                   type="number"
@@ -3148,21 +3178,24 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
             </select>
           </div>
 
-          <div>
-            <label className="block font-bold text-slate-700 mb-1">Budget Status</label>
-            <select
-              value={selectedBudgetStatus}
-              onChange={(e) => setSelectedBudgetStatus(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
-            >
-              <option value="ALL">All Budget Statuses</option>
-              <option value="SUFFICIENT">Sufficient</option>
-              <option value="INSUFFICIENT">Insufficient</option>
-              <option value="EXCEPTION_APPROVED">Exception Approved</option>
-              <option value="MISSING_ASSIGNMENT">Missing Assignment</option>
-              <option value="NOT_VALIDATED">Not Validated</option>
-            </select>
-          </div>
+          {effectivePolicy.activation.budgetValidationEnabled &&
+            effectivePolicy.budget?.enableBudgetValidation && (
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Budget Status</label>
+                <select
+                  value={selectedBudgetStatus}
+                  onChange={(e) => setSelectedBudgetStatus(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+                >
+                  <option value="ALL">All Budget Statuses</option>
+                  <option value="SUFFICIENT">Sufficient</option>
+                  <option value="INSUFFICIENT">Insufficient</option>
+                  <option value="EXCEPTION_APPROVED">Exception Approved</option>
+                  <option value="MISSING_ASSIGNMENT">Missing Assignment</option>
+                  <option value="NOT_VALIDATED">Not Validated</option>
+                </select>
+              </div>
+            )}
 
           <div>
             <label className="block font-bold text-slate-700 mb-1">Transaction Currency</label>
@@ -3254,7 +3287,15 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
                       { label: 'PR Type', value: pr.prType },
                       { label: 'Priority', value: pr.priority },
                       { label: 'Assigned Buyer', value: getAssignedBuyer(pr) },
-                      { label: 'Budget Check', value: pr.budgetValidationStatus },
+                      {
+                        label: 'Budget Check',
+                        value: prGovernancePolicyService.isBudgetValidationEnabled(
+                          pr.companyId,
+                          pr.branchId
+                        )
+                          ? pr.budgetValidationStatus
+                          : 'Disabled',
+                      },
                       { label: 'Policy Version', value: pr.policyVersion || 'v2.4' },
                       { label: 'Lines Count', value: `${pr.lines.length} Line(s)` },
                     ]}
@@ -3464,7 +3505,13 @@ export const PurchaseRequisitionListView: React.FC<PurchaseRequisitionListViewPr
                                   Budget & Priority
                                 </span>
                                 <span className="font-semibold text-slate-800">
-                                  {pr.budgetValidationStatus} • {pr.priority}
+                                  {prGovernancePolicyService.isBudgetValidationEnabled(
+                                    pr.companyId,
+                                    pr.branchId
+                                  )
+                                    ? pr.budgetValidationStatus
+                                    : 'Disabled'}{' '}
+                                  • {pr.priority}
                                 </span>
                               </div>
                               <div>

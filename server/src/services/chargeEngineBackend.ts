@@ -56,6 +56,8 @@ export type BackendAllocationMethod =
 
 export type BackendApplicability = 'MANDATORY' | 'OPTIONAL' | 'CONDITIONAL' | 'NOT_APPLICABLE';
 
+export type BackendChargeApprovalStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+
 export interface BackendChargeMaster {
   id: string;
   chargeCode: string;
@@ -64,19 +66,27 @@ export interface BackendChargeMaster {
   chargeCategory: string;
   defaultApplicationLevel: BackendApplicationLevel;
   permittedApplicationLevels: BackendApplicationLevel[];
+  applicablePrTypes?: string[];
   defaultCalculationMethod: BackendCalculationMethod;
   defaultRate: number;
   defaultFormulaExpression?: string;
   defaultCurrency: string;
   defaultTaxTreatment: string;
+  taxCode?: string;
   taxRatePercent: number;
   defaultAllocationBasis: BackendAllocationMethod;
   chargeBearer: string;
+  sapExpenseCode?: number;
+  sapExpenseName?: string;
+  sapGlAccountCode?: string;
   minimumCharge?: number;
   maximumCharge?: number;
   effectiveFrom: string;
   effectiveTo?: string;
   isActive: boolean;
+  approvalStatus?: BackendChargeApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: string;
   versionNumber: number;
   createdBy: string;
   modifiedBy: string;
@@ -92,18 +102,25 @@ export interface BackendChargeMapping {
   chargeCode: string;
   isEnabled: boolean;
   applicability: BackendApplicability;
+  applicablePrTypes?: string[];
   defaultCalculationMethod: BackendCalculationMethod;
   fixedTariffOrRate: number;
   formulaExpression?: string;
   currency: string;
   taxTreatment: string;
+  taxCode?: string;
   taxRatePercent: number;
   allocationBasis: BackendAllocationMethod;
+  sapExpenseCode?: number;
+  sapGlAccountCode?: string;
   effectiveFrom: string;
   effectiveTo?: string;
   allowBranchOverride: boolean;
   centrallyControlledFields: string[];
   requiresApproval: boolean;
+  approvalStatus?: BackendChargeApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: string;
   isBranchOverride: boolean;
   updatedBy: string;
   updatedAt: string;
@@ -291,6 +308,7 @@ export class ChargeEngineBackendStore {
 
   private seedDefaults(): void {
     const now = '2026-04-01T00:00:00.000Z';
+    const invPrTypes = ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'];
     this.masters = [
       {
         id: 'cm-load',
@@ -300,16 +318,24 @@ export class ChargeEngineBackendStore {
         chargeCategory: 'HANDLING',
         defaultApplicationLevel: 'PR_LINE',
         permittedApplicationLevels: ['PR_HEADER', 'PR_LINE', 'PO_HEADER', 'PO_LINE', 'SHIPMENT', 'DELIVERY_SCHEDULE', 'GRN', 'QUANTITY_BASED'],
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'FIXED_AMOUNT',
         defaultRate: 1500,
         defaultCurrency: 'INR',
         defaultTaxTreatment: 'DOMESTIC_GST_TAXABLE',
+        taxCode: 'GST18',
         taxRatePercent: 18,
         defaultAllocationBasis: 'PROPORTIONAL_QUANTITY',
         chargeBearer: 'BUYER',
+        sapExpenseCode: 101,
+        sapExpenseName: 'Loading & Origin Handling Expense',
+        sapGlAccountCode: '520110',
         minimumCharge: 0,
         effectiveFrom: '2025-04-01',
         isActive: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         versionNumber: 1,
         createdBy: 'System Governance',
         modifiedBy: 'System Governance',
@@ -323,16 +349,24 @@ export class ChargeEngineBackendStore {
         chargeCategory: 'HANDLING',
         defaultApplicationLevel: 'DELIVERY_SCHEDULE',
         permittedApplicationLevels: ['PR_HEADER', 'PR_LINE', 'PO_HEADER', 'PO_LINE', 'DELIVERY_SCHEDULE', 'GRN', 'SHIPMENT', 'QUANTITY_BASED'],
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'FIXED_AMOUNT',
         defaultRate: 1500,
         defaultCurrency: 'INR',
         defaultTaxTreatment: 'DOMESTIC_GST_TAXABLE',
+        taxCode: 'GST18',
         taxRatePercent: 18,
         defaultAllocationBasis: 'PROPORTIONAL_QUANTITY',
         chargeBearer: 'BUYER',
+        sapExpenseCode: 102,
+        sapExpenseName: 'Unloading & Receiving Bay Expense',
+        sapGlAccountCode: '520120',
         minimumCharge: 0,
         effectiveFrom: '2025-04-01',
         isActive: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         versionNumber: 1,
         createdBy: 'System Governance',
         modifiedBy: 'System Governance',
@@ -346,16 +380,24 @@ export class ChargeEngineBackendStore {
         chargeCategory: 'LOGISTICS',
         defaultApplicationLevel: 'PO_HEADER',
         permittedApplicationLevels: ['PR_HEADER', 'PR_LINE', 'PO_HEADER', 'PO_LINE', 'SHIPMENT', 'DELIVERY_SCHEDULE', 'GRN', 'QUANTITY_BASED', 'TRANSPORT_TRIP', 'INVOICE_LEVEL'],
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'FIXED_AMOUNT',
         defaultRate: 4500,
         defaultCurrency: 'INR',
         defaultTaxTreatment: 'DOMESTIC_GST_RCM',
+        taxCode: 'GST5-RCM',
         taxRatePercent: 5,
         defaultAllocationBasis: 'PROPORTIONAL_VALUE',
         chargeBearer: 'BUYER',
+        sapExpenseCode: 103,
+        sapExpenseName: 'Inward Freight & Line-Haul Expense',
+        sapGlAccountCode: '520200',
         minimumCharge: 0,
         effectiveFrom: '2025-04-01',
         isActive: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         versionNumber: 1,
         createdBy: 'System Governance',
         modifiedBy: 'System Governance',
@@ -369,15 +411,23 @@ export class ChargeEngineBackendStore {
         chargeCategory: 'IMPORT_CUSTOMS',
         defaultApplicationLevel: 'SHIPMENT',
         permittedApplicationLevels: ['PR_HEADER', 'PR_LINE', 'PO_HEADER', 'PO_LINE', 'SHIPMENT', 'INVOICE_LEVEL'],
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'PERCENTAGE',
         defaultRate: 10,
         defaultCurrency: 'INR',
         defaultTaxTreatment: 'IMPORT_CUSTOMS_BCD_SWS',
+        taxCode: 'CUST-BCD10',
         taxRatePercent: 10,
         defaultAllocationBasis: 'PROPORTIONAL_VALUE',
         chargeBearer: 'BUYER',
+        sapExpenseCode: 104,
+        sapExpenseName: 'Import Customs Duty (BCD + SWS)',
+        sapGlAccountCode: '520310',
         effectiveFrom: '2025-04-01',
         isActive: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         versionNumber: 1,
         createdBy: 'System Governance',
         modifiedBy: 'System Governance',
@@ -391,16 +441,24 @@ export class ChargeEngineBackendStore {
         chargeCategory: 'INSURANCE',
         defaultApplicationLevel: 'PO_HEADER',
         permittedApplicationLevels: ['PR_HEADER', 'PO_HEADER', 'SHIPMENT', 'INVOICE_LEVEL'],
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'PERCENTAGE',
         defaultRate: 0.25,
         defaultCurrency: 'INR',
         defaultTaxTreatment: 'DOMESTIC_GST_TAXABLE',
+        taxCode: 'GST18',
         taxRatePercent: 18,
         defaultAllocationBasis: 'PROPORTIONAL_VALUE',
         chargeBearer: 'BUYER',
+        sapExpenseCode: 109,
+        sapExpenseName: 'Transit & Marine Cargo Insurance',
+        sapGlAccountCode: '520410',
         minimumCharge: 250,
         effectiveFrom: '2025-04-01',
         isActive: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         versionNumber: 1,
         createdBy: 'System Governance',
         modifiedBy: 'System Governance',
@@ -418,16 +476,23 @@ export class ChargeEngineBackendStore {
         chargeCode: 'CHG-LOAD',
         isEnabled: true,
         applicability: 'OPTIONAL',
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'FIXED_AMOUNT',
         fixedTariffOrRate: 1500,
         currency: 'INR',
         taxTreatment: 'DOMESTIC_GST_TAXABLE',
+        taxCode: 'GST18',
         taxRatePercent: 18,
         allocationBasis: 'PROPORTIONAL_QUANTITY',
+        sapExpenseCode: 101,
+        sapGlAccountCode: '520110',
         effectiveFrom: '2025-04-01',
         allowBranchOverride: true,
         centrallyControlledFields: ['taxTreatment', 'allocationBasis'],
         requiresApproval: false,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         isBranchOverride: false,
         updatedBy: 'System Governance',
         updatedAt: now,
@@ -441,16 +506,23 @@ export class ChargeEngineBackendStore {
         chargeCode: 'CHG-FREIGHT',
         isEnabled: true,
         applicability: 'MANDATORY',
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'FIXED_AMOUNT',
         fixedTariffOrRate: 4500,
         currency: 'INR',
         taxTreatment: 'DOMESTIC_GST_RCM',
+        taxCode: 'GST5-RCM',
         taxRatePercent: 5,
         allocationBasis: 'PROPORTIONAL_VALUE',
+        sapExpenseCode: 103,
+        sapGlAccountCode: '520200',
         effectiveFrom: '2025-04-01',
         allowBranchOverride: true,
         centrallyControlledFields: ['taxTreatment', 'allocationBasis'],
         requiresApproval: false,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         isBranchOverride: false,
         updatedBy: 'System Governance',
         updatedAt: now,
@@ -464,16 +536,23 @@ export class ChargeEngineBackendStore {
         chargeCode: 'CHG-INSURANCE',
         isEnabled: true,
         applicability: 'CONDITIONAL',
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'PERCENTAGE',
         fixedTariffOrRate: 0.25,
         currency: 'INR',
         taxTreatment: 'DOMESTIC_GST_TAXABLE',
+        taxCode: 'GST18',
         taxRatePercent: 18,
         allocationBasis: 'PROPORTIONAL_VALUE',
+        sapExpenseCode: 109,
+        sapGlAccountCode: '520410',
         effectiveFrom: '2025-04-01',
         allowBranchOverride: false,
         centrallyControlledFields: ['isEnabled', 'applicability', 'fixedTariffOrRate', 'taxTreatment'],
         requiresApproval: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         isBranchOverride: false,
         updatedBy: 'System Governance',
         updatedAt: now,
@@ -487,16 +566,23 @@ export class ChargeEngineBackendStore {
         chargeCode: 'CHG-CUSTOMS',
         isEnabled: true,
         applicability: 'CONDITIONAL',
+        applicablePrTypes: invPrTypes,
         defaultCalculationMethod: 'PERCENTAGE',
         fixedTariffOrRate: 10,
         currency: 'INR',
         taxTreatment: 'IMPORT_CUSTOMS_BCD_SWS',
+        taxCode: 'CUST-BCD10',
         taxRatePercent: 10,
         allocationBasis: 'PROPORTIONAL_VALUE',
+        sapExpenseCode: 104,
+        sapGlAccountCode: '520310',
         effectiveFrom: '2025-04-01',
         allowBranchOverride: true,
         centrallyControlledFields: ['taxTreatment', 'defaultCalculationMethod'],
         requiresApproval: true,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'System Governance',
+        approvedAt: now,
         isBranchOverride: false,
         updatedBy: 'System Governance',
         updatedAt: now,
@@ -536,6 +622,7 @@ export class ChargeEngineBackendStore {
     }
 
     const now = new Date().toISOString();
+    const approvalStatus = payload.approvalStatus || 'APPROVED';
     const record: BackendChargeMaster = {
       id: `cm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       chargeCode: code,
@@ -547,19 +634,30 @@ export class ChargeEngineBackendStore {
         payload.permittedApplicationLevels && payload.permittedApplicationLevels.length > 0
           ? payload.permittedApplicationLevels
           : ['PR_HEADER', 'PR_LINE', 'PO_HEADER'],
+      applicablePrTypes:
+        payload.applicablePrTypes && payload.applicablePrTypes.length > 0
+          ? payload.applicablePrTypes.filter((p) => p !== 'EXPENSE')
+          : ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
       defaultCalculationMethod: payload.defaultCalculationMethod || 'FIXED_AMOUNT',
       defaultRate: Number(payload.defaultRate ?? 0),
       defaultFormulaExpression: payload.defaultFormulaExpression,
       defaultCurrency: String(payload.defaultCurrency || 'INR').toUpperCase(),
       defaultTaxTreatment: String(payload.defaultTaxTreatment || 'DOMESTIC_GST_TAXABLE'),
+      taxCode: payload.taxCode || `GST${Number(payload.taxRatePercent ?? 18)}`,
       taxRatePercent: Number(payload.taxRatePercent ?? 18),
       defaultAllocationBasis: payload.defaultAllocationBasis || 'PROPORTIONAL_VALUE',
       chargeBearer: String(payload.chargeBearer || 'BUYER'),
+      sapExpenseCode: payload.sapExpenseCode ?? 199,
+      sapExpenseName: payload.sapExpenseName || name,
+      sapGlAccountCode: payload.sapGlAccountCode || '520990',
       minimumCharge: payload.minimumCharge,
       maximumCharge: payload.maximumCharge,
       effectiveFrom: payload.effectiveFrom || now.slice(0, 10),
       effectiveTo: payload.effectiveTo,
       isActive: payload.isActive ?? true,
+      approvalStatus,
+      approvedBy: approvalStatus === 'APPROVED' ? actorName : undefined,
+      approvedAt: approvalStatus === 'APPROVED' ? now : undefined,
       versionNumber: 1,
       createdBy: actorName,
       modifiedBy: actorName,
@@ -567,6 +665,30 @@ export class ChargeEngineBackendStore {
     };
     this.masters.unshift(record);
     return record;
+  }
+
+  approveChargeMaster(
+    id: string,
+    decision: 'APPROVED' | 'REJECTED',
+    actorName = 'Checker Admin',
+    actorRole?: string
+  ): BackendChargeMaster {
+    assertAdminRole(actorRole);
+    const idx = this.masters.findIndex((m) => m.id === id);
+    if (idx === -1) throw new ChargeEngineHttpError(404, 'CHARGE_MASTER_NOT_FOUND', `Charge Master "${id}" not found.`);
+    const current = this.masters[idx];
+    const now = new Date().toISOString();
+    const updated: BackendChargeMaster = {
+      ...current,
+      approvalStatus: decision,
+      approvedBy: decision === 'APPROVED' ? actorName : undefined,
+      approvedAt: decision === 'APPROVED' ? now : undefined,
+      versionNumber: current.versionNumber + 1,
+      modifiedBy: actorName,
+      modifiedDate: now,
+    };
+    this.masters[idx] = updated;
+    return updated;
   }
 
   updateChargeMaster(
@@ -633,6 +755,11 @@ export class ChargeEngineBackendStore {
       chargeCode: master.chargeCode,
       isEnabled: payload.isEnabled ?? prev?.isEnabled ?? true,
       applicability: payload.applicability || prev?.applicability || 'OPTIONAL',
+      applicablePrTypes:
+        payload.applicablePrTypes ??
+        prev?.applicablePrTypes ??
+        master.applicablePrTypes ??
+        ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
       defaultCalculationMethod:
         payload.defaultCalculationMethod || prev?.defaultCalculationMethod || master.defaultCalculationMethod,
       fixedTariffOrRate:
@@ -642,16 +769,20 @@ export class ChargeEngineBackendStore {
       formulaExpression: payload.formulaExpression ?? prev?.formulaExpression ?? master.defaultFormulaExpression,
       currency: String(payload.currency || prev?.currency || master.defaultCurrency).toUpperCase(),
       taxTreatment: payload.taxTreatment || prev?.taxTreatment || master.defaultTaxTreatment,
+      taxCode: payload.taxCode || prev?.taxCode || master.taxCode,
       taxRatePercent:
         payload.taxRatePercent !== undefined
           ? Number(payload.taxRatePercent)
           : prev?.taxRatePercent ?? master.taxRatePercent,
       allocationBasis: payload.allocationBasis || prev?.allocationBasis || master.defaultAllocationBasis,
+      sapExpenseCode: payload.sapExpenseCode ?? prev?.sapExpenseCode ?? master.sapExpenseCode,
+      sapGlAccountCode: payload.sapGlAccountCode || prev?.sapGlAccountCode || master.sapGlAccountCode,
       effectiveFrom: payload.effectiveFrom || prev?.effectiveFrom || master.effectiveFrom,
       effectiveTo: payload.effectiveTo ?? prev?.effectiveTo,
       allowBranchOverride: payload.allowBranchOverride ?? prev?.allowBranchOverride ?? true,
       centrallyControlledFields: payload.centrallyControlledFields ?? prev?.centrallyControlledFields ?? [],
       requiresApproval: payload.requiresApproval ?? prev?.requiresApproval ?? false,
+      approvalStatus: payload.approvalStatus || prev?.approvalStatus || 'APPROVED',
       isBranchOverride: false,
       updatedBy: actorName,
       updatedAt: now,
@@ -735,6 +866,11 @@ export class ChargeEngineBackendStore {
       chargeCode: master.chargeCode,
       isEnabled: payload.isEnabled ?? base?.isEnabled ?? true,
       applicability: payload.applicability || base?.applicability || 'OPTIONAL',
+      applicablePrTypes:
+        payload.applicablePrTypes ??
+        base?.applicablePrTypes ??
+        master.applicablePrTypes ??
+        ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
       defaultCalculationMethod:
         payload.defaultCalculationMethod || base?.defaultCalculationMethod || master.defaultCalculationMethod,
       fixedTariffOrRate:
@@ -744,16 +880,20 @@ export class ChargeEngineBackendStore {
       formulaExpression: payload.formulaExpression ?? base?.formulaExpression ?? master.defaultFormulaExpression,
       currency: String(payload.currency || base?.currency || master.defaultCurrency).toUpperCase(),
       taxTreatment: payload.taxTreatment || base?.taxTreatment || master.defaultTaxTreatment,
+      taxCode: payload.taxCode || base?.taxCode || master.taxCode,
       taxRatePercent:
         payload.taxRatePercent !== undefined
           ? Number(payload.taxRatePercent)
           : base?.taxRatePercent ?? master.taxRatePercent,
       allocationBasis: payload.allocationBasis || base?.allocationBasis || master.defaultAllocationBasis,
+      sapExpenseCode: payload.sapExpenseCode ?? base?.sapExpenseCode ?? master.sapExpenseCode,
+      sapGlAccountCode: payload.sapGlAccountCode || base?.sapGlAccountCode || master.sapGlAccountCode,
       effectiveFrom: payload.effectiveFrom || base?.effectiveFrom || master.effectiveFrom,
       effectiveTo: payload.effectiveTo ?? base?.effectiveTo,
       allowBranchOverride: companyMapping?.allowBranchOverride ?? true,
       centrallyControlledFields: companyMapping?.centrallyControlledFields ?? [],
       requiresApproval: payload.requiresApproval ?? base?.requiresApproval ?? false,
+      approvalStatus: payload.approvalStatus || base?.approvalStatus || 'APPROVED',
       isBranchOverride: true,
       updatedBy: actorName,
       updatedAt: now,
@@ -787,8 +927,9 @@ export class ChargeEngineBackendStore {
     return this.mappings.length < before;
   }
 
-  resolveEffectiveMappings(companyId: string, branchId = 'ALL', asOfDate?: string) {
+  resolveEffectiveMappings(companyId: string, branchId = 'ALL', asOfDate?: string, prType?: string) {
     const refDate = (asOfDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const normPrType = prType ? prType.trim().toUpperCase() : undefined;
     return this.masters.map((master) => {
       const companyMap = this.mappings.find(
         (m) => m.companyId === companyId && m.branchId === 'ALL' && m.chargeMasterId === master.id
@@ -809,6 +950,16 @@ export class ChargeEngineBackendStore {
         (!effFrom || refDate >= effFrom) &&
         (!effTo || refDate <= effTo);
 
+      const masterAppStatus = master.approvalStatus || 'APPROVED';
+      const winningAppStatus = winning?.approvalStatus || 'APPROVED';
+      const isApproved = masterAppStatus === 'APPROVED' && winningAppStatus === 'APPROVED';
+      const applicablePrTypes =
+        winning?.applicablePrTypes ||
+        master.applicablePrTypes ||
+        ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'];
+      const prTypeOk =
+        !normPrType || (normPrType !== 'EXPENSE' && applicablePrTypes.includes(normPrType));
+
       return {
         chargeMasterId: master.id,
         chargeMasterVersion: master.versionNumber,
@@ -818,22 +969,28 @@ export class ChargeEngineBackendStore {
         chargeCategory: master.chargeCategory,
         defaultApplicationLevel: master.defaultApplicationLevel,
         permittedApplicationLevels: master.permittedApplicationLevels,
+        applicablePrTypes,
         mappingId: winning?.id || `default-${companyId}-${branchId}-${master.id}`,
         mappingVersion: winning?.versionNumber || 1,
         companyId,
         branchId,
         sourceScope: useBranch ? 'BRANCH_OVERRIDE' : companyMap ? 'COMPANY_INHERITED' : 'MASTER_DEFAULT',
         isActiveInMaster: master.isActive,
+        approvalStatus: isApproved ? 'APPROVED' : masterAppStatus !== 'APPROVED' ? masterAppStatus : winningAppStatus,
         isEnabled: winning?.isEnabled ?? master.isActive,
-        isEffectiveNow: master.isActive && (winning?.isEnabled ?? true) && isDateEffective,
+        isEffectiveNow: master.isActive && isApproved && (winning?.isEnabled ?? true) && isDateEffective && prTypeOk,
         applicability: winning?.applicability || 'OPTIONAL',
         calculationMethod: winning?.defaultCalculationMethod || master.defaultCalculationMethod,
         rate: winning?.fixedTariffOrRate ?? master.defaultRate,
         formulaExpression: winning?.formulaExpression ?? master.defaultFormulaExpression,
         currency: winning?.currency || master.defaultCurrency,
         taxTreatment: winning?.taxTreatment || master.defaultTaxTreatment,
+        taxCode: winning?.taxCode || master.taxCode || `GST${winning?.taxRatePercent ?? master.taxRatePercent}`,
         taxRatePercent: winning?.taxRatePercent ?? master.taxRatePercent,
         allocationBasis: winning?.allocationBasis || master.defaultAllocationBasis,
+        sapExpenseCode: winning?.sapExpenseCode ?? master.sapExpenseCode ?? 199,
+        sapExpenseName: master.sapExpenseName || master.chargeName,
+        sapGlAccountCode: winning?.sapGlAccountCode || master.sapGlAccountCode || '520990',
         allowBranchOverride: companyMap?.allowBranchOverride ?? true,
         centrallyControlledFields: companyMap?.centrallyControlledFields ?? [],
         requiresApproval: winning?.requiresApproval ?? false,
@@ -947,6 +1104,8 @@ export class ChargeEngineBackendStore {
     prId?: string;
     companyId: string;
     branchId: string;
+    prType?: string;
+    allowSameChargeAtHeaderAndLine?: boolean;
     itemsSubtotal: number;
     currency?: string;
     lockSnapshot?: boolean;
@@ -954,6 +1113,8 @@ export class ChargeEngineBackendStore {
     selectedCharges: Array<{
       chargeMasterId?: string;
       chargeCode?: string;
+      applicationLevel?: 'PR_HEADER' | 'PR_LINE';
+      lineItemId?: string;
       applicability?: 'APPLICABLE' | 'AS_PER_FIXED_CHARGES' | 'NOT_APPLICABLE';
       rateOverride?: number;
       quantity?: number;
@@ -962,6 +1123,14 @@ export class ChargeEngineBackendStore {
       distanceKm?: number;
     }>;
   }) {
+    if (params.prType && params.prType.toUpperCase() === 'EXPENSE' && (params.selectedCharges || []).length > 0) {
+      throw new ChargeEngineHttpError(
+        422,
+        'CHARGE_NOT_PERMITTED_FOR_EXPENSE_PR',
+        'Charge Items are not permitted on EXPENSE PRs. Use Expense PR lines instead.'
+      );
+    }
+
     if (params.prId && this.prChargeSnapshots[params.prId]?.every((s) => Boolean(s.snapshotLockedAt))) {
       return {
         prId: params.prId,
@@ -970,8 +1139,15 @@ export class ChargeEngineBackendStore {
       };
     }
 
-    const effective = this.resolveEffectiveMappings(params.companyId, params.branchId, params.asOfDate);
-    const seenCodes = new Set<string>();
+    const effective = this.resolveEffectiveMappings(
+      params.companyId,
+      params.branchId,
+      params.asOfDate,
+      params.prType
+    );
+    const seenHeaderCodes = new Set<string>();
+    const seenLineCodesByLine = new Map<string, Set<string>>();
+    const seenAnyLineCodes = new Set<string>();
     const results: Array<Record<string, unknown>> = [];
     const targetCurrency = (params.currency || 'INR').toUpperCase();
     const lockTimestamp = params.lockSnapshot ? new Date().toISOString() : undefined;
@@ -989,21 +1165,58 @@ export class ChargeEngineBackendStore {
           `Charge "${sel.chargeCode || sel.chargeMasterId}" does not exist in centralized Charge Master.`
         );
       }
-      if (!matched.isActiveInMaster || !matched.isEnabled || !matched.isEffectiveNow || matched.applicability === 'NOT_APPLICABLE') {
+      if (
+        !matched.isActiveInMaster ||
+        matched.approvalStatus !== 'APPROVED' ||
+        !matched.isEnabled ||
+        !matched.isEffectiveNow ||
+        matched.applicability === 'NOT_APPLICABLE'
+      ) {
         throw new ChargeEngineHttpError(
           400,
           'INACTIVE_OR_NOT_APPLICABLE_CHARGE',
-          `Charge "${matched.chargeCode}" is inactive, expired, or not applicable for ${params.companyId}/${params.branchId}.`
+          `Charge "${matched.chargeCode}" is inactive, unapproved, expired, or not applicable for ${params.companyId}/${params.branchId}.`
         );
       }
-      if (seenCodes.has(matched.chargeCode)) {
-        throw new ChargeEngineHttpError(
-          409,
-          'DUPLICATE_PR_CHARGE',
-          `Duplicate charge "${matched.chargeCode}" in PR charge list is prohibited.`
-        );
+
+      const appLevel = sel.applicationLevel || 'PR_HEADER';
+      if (appLevel === 'PR_HEADER') {
+        if (seenHeaderCodes.has(matched.chargeCode)) {
+          throw new ChargeEngineHttpError(
+            409,
+            'DUPLICATE_PR_CHARGE',
+            `Duplicate charge "${matched.chargeCode}" in PR header charge list is prohibited.`
+          );
+        }
+        if (!params.allowSameChargeAtHeaderAndLine && seenAnyLineCodes.has(matched.chargeCode)) {
+          throw new ChargeEngineHttpError(
+            409,
+            'DUPLICATE_HEADER_LINE_CHARGE',
+            `Charge "${matched.chargeCode}" cannot be added at both PR Header and PR Line levels unless explicitly permitted by policy.`
+          );
+        }
+        seenHeaderCodes.add(matched.chargeCode);
+      } else {
+        const lineKey = sel.lineItemId || 'DEFAULT_LINE';
+        const lineSet = seenLineCodesByLine.get(lineKey) || new Set<string>();
+        if (lineSet.has(matched.chargeCode)) {
+          throw new ChargeEngineHttpError(
+            409,
+            'DUPLICATE_PR_CHARGE',
+            `Duplicate charge "${matched.chargeCode}" on PR line "${lineKey}" is prohibited.`
+          );
+        }
+        if (!params.allowSameChargeAtHeaderAndLine && seenHeaderCodes.has(matched.chargeCode)) {
+          throw new ChargeEngineHttpError(
+            409,
+            'DUPLICATE_HEADER_LINE_CHARGE',
+            `Charge "${matched.chargeCode}" cannot be added at both PR Header and PR Line levels unless explicitly permitted by policy.`
+          );
+        }
+        lineSet.add(matched.chargeCode);
+        seenLineCodesByLine.set(lineKey, lineSet);
+        seenAnyLineCodes.add(matched.chargeCode);
       }
-      seenCodes.add(matched.chargeCode);
 
       const rateToUse = sel.rateOverride !== undefined ? Number(sel.rateOverride) : matched.rate;
       const calc =
@@ -1032,12 +1245,18 @@ export class ChargeEngineBackendStore {
         mappingId: matched.mappingId,
         mappingVersion: matched.mappingVersion,
         sourceScope: matched.sourceScope,
+        applicationLevel: appLevel,
+        lineItemId: sel.lineItemId,
         calculationMethod: matched.calculationMethod,
         allocationBasis: matched.allocationBasis,
         rate: rateToUse,
         currency: targetCurrency,
         taxTreatment: matched.taxTreatment,
+        taxCode: matched.taxCode,
         gstRatePercent: matched.taxRatePercent,
+        sapExpenseCode: matched.sapExpenseCode,
+        sapExpenseName: matched.sapExpenseName,
+        sapGlAccountCode: matched.sapGlAccountCode,
         estimatedAmount: calc.baseAmount,
         taxAmount: calc.taxAmount,
         totalWithTax: calc.totalWithTax,
@@ -1068,6 +1287,7 @@ export class ChargeEngineBackendStore {
       applicableChargesBaseTotal: totalChargesBase,
       applicableChargesTaxTotal: totalChargesTax,
       grandTotalWithCharges: roundHalfUp(params.itemsSubtotal + totalChargesBase, 2),
+      landedGrandTotalWithTax: roundHalfUp(params.itemsSubtotal + totalChargesBase + totalChargesTax, 2),
       items: results,
     };
   }

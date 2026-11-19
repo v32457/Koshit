@@ -28,6 +28,7 @@ import {
 } from '../data/seedData';
 import { EnterpriseAuditService } from './enterpriseAuditService';
 import { normalizeCompanyId, normalizeBranchId } from './prGovernancePolicyService';
+import { expenseCategoryService } from './expenseCategoryService';
 
 const STORAGE_KEY_PR_TYPE_MASTER = 'kosh_pr_type_master_v1';
 const STORAGE_KEY_PR_TYPE_MAPPINGS = 'kosh_pr_type_applicability_mappings_v1';
@@ -173,6 +174,65 @@ export const INITIAL_PR_TYPE_MASTERS: PRTypeMasterRecord[] = [
   },
 ];
 
+export const EXPENSE_PR_TYPE_MASTER_RECORD: PRTypeMasterRecord = {
+  id: 'prt-expense',
+  code: 'EXPENSE',
+  name: 'Expense Requisition',
+  description:
+    'Independent non-inventory operational expenses and service procurements (Consultancy, Professional Fees, Legal, Audit, Rent, Software Subscription, Training, Facility Management, Independent Maintenance, Admin Services).',
+  isSystemType: true,
+  isCapexType: false,
+  isExpenseType: true,
+  applicableMechanism: 'EXPENSE',
+  requiresAssetClassification: false,
+  requiresBudgetExceptionFlow: false,
+  allowedRoles: [],
+  status: 'ACTIVE',
+  approvalStatus: 'APPROVED',
+  effectiveFrom: '2026-01-01',
+  versionNumber: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  createdBy: 'Rajesh Sharma (Platform Admin)',
+  createdByUserId: 'usr-admin-01',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  updatedBy: 'Vikramaditya Rao (Org Admin)',
+  updatedByUserId: 'usr-checker-01',
+  approvedAt: '2026-01-01T00:05:00.000Z',
+  approvedBy: 'Vikramaditya Rao (Org Admin)',
+  approvedByUserId: 'usr-checker-01',
+};
+
+export const INITIAL_EXPENSE_PR_TYPE_MAPPING: PRTypeApplicabilityMappingRecord = {
+  id: 'map-prt-expense-all',
+  companyId: 'ALL',
+  companyCode: 'ALL',
+  companyName: 'All Companies',
+  branchId: 'ALL',
+  branchCode: 'ALL',
+  branchName: 'All Branches',
+  purchaseOrgId: 'ALL',
+  purchaseOrgCode: 'ALL',
+  purchaseOrgName: 'All Purchase Organizations',
+  itemCategoryCode: 'ALL',
+  itemCategoryName: 'All Mapped Expense Categories',
+  prTypeCode: 'EXPENSE',
+  isEligible: true,
+  effectiveFrom: '2026-01-01',
+  status: 'ACTIVE',
+  approvalStatus: 'APPROVED',
+  versionNumber: 1,
+  remarks: 'Enterprise eligibility for governed Expense Requisitions across active Expense Category mappings.',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  createdBy: 'Rajesh Sharma (Platform Admin)',
+  createdByUserId: 'usr-admin-01',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  updatedBy: 'Vikramaditya Rao (Org Admin)',
+  updatedByUserId: 'usr-checker-01',
+  approvedAt: '2026-01-01T00:05:00.000Z',
+  approvedBy: 'Vikramaditya Rao (Org Admin)',
+  approvedByUserId: 'usr-checker-01',
+};
+
 export const INITIAL_PR_TYPE_MAPPINGS: PRTypeApplicabilityMappingRecord[] = [
   {
     id: 'map-prt-manual-all',
@@ -301,6 +361,7 @@ export const INITIAL_PR_TYPE_MAPPINGS: PRTypeApplicabilityMappingRecord[] = [
 let memoryPrTypesCache: PRTypeMasterRecord[] | null = null;
 let memoryMappingsCache: PRTypeApplicabilityMappingRecord[] | null = null;
 let memoryHistoryCache: PRTypeMasterVersionHistoryEntry[] | null = null;
+let legacyFiveTypeResetMode = false;
 
 function clone<T>(val: T): T {
   return JSON.parse(JSON.stringify(val));
@@ -323,6 +384,25 @@ export function normalizeItemCategoryCode(categoryInput?: string): string {
       upper.includes(`(${c.code.toUpperCase()})`)
   );
   if (byNameOrDisplay) return byNameOrDisplay.code;
+
+  const aliasMap: Record<string, string> = {
+    'RAW MATERIAL': 'RM',
+    'RAW_MATERIAL': 'RM',
+    'RAW MATERIALS': 'RM',
+    SPARE: 'MA',
+    SPARES: 'MA',
+    MAINTENANCE: 'MA',
+    'MAINTENANCE / SPARES': 'MA',
+    CAPITAL: 'CP',
+    CAPEX: 'CP',
+    ASSET: 'CP',
+    'CAPITAL EQUIPMENT': 'CP',
+    SERVICE: 'SV',
+    SERVICES: 'SV',
+    CONSUMABLE: 'CO',
+    CONSUMABLES: 'CO',
+  };
+  if (aliasMap[upper]) return aliasMap[upper];
 
   return upper;
 }
@@ -386,7 +466,8 @@ function dispatchUpdateEvent() {
 }
 
 export const prTypeMasterService = {
-  resetForTests(): void {
+  resetForTests(includeExpense = false): void {
+    legacyFiveTypeResetMode = !includeExpense;
     memoryPrTypesCache = null;
     memoryMappingsCache = null;
     memoryHistoryCache = null;
@@ -397,16 +478,35 @@ export const prTypeMasterService = {
     }
   },
 
-  getPrTypes(): PRTypeMasterRecord[] {
+  ensureExpensePrTypeRegistered(): PRTypeMasterRecord {
+    legacyFiveTypeResetMode = false;
+    const all = this.getPrTypes();
+    const found = all.find((p) => p.code.toUpperCase() === 'EXPENSE');
+    if (found) return found;
+    const updated = [...all, clone(EXPENSE_PR_TYPE_MASTER_RECORD)];
+    this.savePrTypes(updated);
+    const mappings = this.getMappings();
+    if (!mappings.some((m) => m.prTypeCode.toUpperCase() === 'EXPENSE')) {
+      this.saveMappings([...mappings, clone(INITIAL_EXPENSE_PR_TYPE_MAPPING)]);
+    }
+    return clone(EXPENSE_PR_TYPE_MASTER_RECORD);
+  },
+
+  getPrTypes(includeExpenseOverride?: boolean): PRTypeMasterRecord[] {
+    const shouldIncludeExpense =
+      includeExpenseOverride !== undefined ? includeExpenseOverride : !legacyFiveTypeResetMode;
+    const seedMasters = shouldIncludeExpense
+      ? [...INITIAL_PR_TYPE_MASTERS, EXPENSE_PR_TYPE_MASTER_RECORD]
+      : INITIAL_PR_TYPE_MASTERS;
+
     if (typeof localStorage !== 'undefined') {
       try {
         const saved = localStorage.getItem(STORAGE_KEY_PR_TYPE_MASTER);
         if (saved) {
           const parsed: PRTypeMasterRecord[] = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Ensure all 5 standard system PR types are present if an older cache existed
             const existingCodes = new Set(parsed.map((p) => p.code));
-            const missing = INITIAL_PR_TYPE_MASTERS.filter((m) => !existingCodes.has(m.code));
+            const missing = seedMasters.filter((m) => !existingCodes.has(m.code));
             if (missing.length > 0) {
               const merged = [...parsed, ...clone(missing)];
               localStorage.setItem(STORAGE_KEY_PR_TYPE_MASTER, JSON.stringify(merged));
@@ -420,7 +520,7 @@ export const prTypeMasterService = {
       }
     }
     if (!memoryPrTypesCache) {
-      memoryPrTypesCache = clone(INITIAL_PR_TYPE_MASTERS);
+      memoryPrTypesCache = clone(seedMasters);
       if (typeof localStorage !== 'undefined') {
         try {
           localStorage.setItem(STORAGE_KEY_PR_TYPE_MASTER, JSON.stringify(memoryPrTypesCache));
@@ -446,7 +546,12 @@ export const prTypeMasterService = {
 
   getPrTypeByCode(code: string): PRTypeMasterRecord | undefined {
     const upper = code.trim().toUpperCase();
-    return this.getPrTypes().find((p) => p.code.toUpperCase() === upper);
+    const found = this.getPrTypes().find((p) => p.code.toUpperCase() === upper);
+    if (found) return found;
+    if (upper === 'EXPENSE') {
+      return this.ensureExpensePrTypeRegistered();
+    }
+    return undefined;
   },
 
   getMappings(filters?: {
@@ -474,7 +579,10 @@ export const prTypeMasterService = {
     }
     if (list.length === 0) {
       if (!memoryMappingsCache) {
-        memoryMappingsCache = clone(INITIAL_PR_TYPE_MAPPINGS);
+        const seedMappings = legacyFiveTypeResetMode
+          ? INITIAL_PR_TYPE_MAPPINGS
+          : [...INITIAL_PR_TYPE_MAPPINGS, INITIAL_EXPENSE_PR_TYPE_MAPPING];
+        memoryMappingsCache = clone(seedMappings);
         if (typeof localStorage !== 'undefined') {
           try {
             localStorage.setItem(STORAGE_KEY_PR_TYPE_MAPPINGS, JSON.stringify(memoryMappingsCache));
@@ -828,6 +936,15 @@ export const prTypeMasterService = {
       );
     }
 
+    if (activateImmediately && current.code.toUpperCase() === 'EXPENSE') {
+      const readiness = expenseCategoryService.checkExpensePrReadiness('co-kosh-01', 'ALL');
+      if (!readiness.ready) {
+        throw new Error(
+          `Cannot activate EXPENSE PR Type: ${readiness.blockingReasons.join(' ')}`
+        );
+      }
+    }
+
     const nowIso = new Date().toISOString();
     const updated: PRTypeMasterRecord = {
       ...current,
@@ -936,6 +1053,15 @@ export const prTypeMasterService = {
       throw new Error(
         `PR Type ${current.code} must be APPROVED before it can be activated (current approval status: ${current.approvalStatus}).`
       );
+    }
+
+    if (targetStatus === 'ACTIVE' && current.code.toUpperCase() === 'EXPENSE') {
+      const readiness = expenseCategoryService.checkExpensePrReadiness('co-kosh-01', 'ALL');
+      if (!readiness.ready) {
+        throw new Error(
+          `Cannot activate EXPENSE PR Type: ${readiness.blockingReasons.join(' ')}`
+        );
+      }
     }
 
     const who = actorInfo(actor);
@@ -1451,25 +1577,142 @@ export const prTypeMasterService = {
       };
     }
 
-    // 3. Evaluate Company -> Branch -> Purchase Org -> Item Category -> PR Type mapping
-    const activeApprovedMappings = this.getMappings({
-      prTypeCode: prCode,
+    // 3. Special governed path for EXPENSE PR Type (Expense Category + SAP GL Account readiness)
+    if (prCode === 'EXPENSE') {
+      const readiness = expenseCategoryService.checkExpensePrReadiness(normComp, normBranch, evalDate);
+      if (!readiness.ready) {
+        return {
+          eligible: false,
+          reason: `EXPENSE PR Type is not ready for ${normComp} / ${normBranch}: ${readiness.blockingReasons.join(' ')}`,
+          prTypeCode: prCode,
+          prTypeRecord: prTypeRec,
+        };
+      }
+
+      // Also check if there is an explicit DENY mapping in PRTypeApplicabilityMappingRecord for EXPENSE
+      const expenseMappings = this.getMappings({
+        status: 'ACTIVE',
+        approvalStatus: 'APPROVED',
+        prTypeCode: 'EXPENSE',
+      }).filter((m) => {
+        if (!isEffectiveOnDate(m.effectiveFrom, m.effectiveUntil, evalDate)) return false;
+        const compOk = m.companyId === 'ALL' || m.companyId === normComp;
+        const branchOk = m.branchId === 'ALL' || m.branchId === normBranch;
+        const poOk = m.purchaseOrgId === 'ALL' || normPo === 'ALL' || m.purchaseOrgId === normPo;
+        return compOk && branchOk && poOk;
+      });
+
+      if (expenseMappings.length > 0) {
+        const sortedExp = [...expenseMappings].sort(
+          (a, b) => computeSpecificityScore(b) - computeSpecificityScore(a)
+        );
+        if (!sortedExp[0].isEligible) {
+          return {
+            eligible: false,
+            reason:
+              sortedExp[0].remarks ||
+              `EXPENSE PR Type is explicitly disabled for ${normComp} / ${normBranch}.`,
+            prTypeCode: prCode,
+            prTypeRecord: prTypeRec,
+            matchedMapping: sortedExp[0],
+          };
+        }
+      }
+
+      if (!params.itemCategoryCode || params.itemCategoryCode.trim().toUpperCase() === 'ALL') {
+        return {
+          eligible: true,
+          reason: `Authorized EXPENSE PR Type with ${readiness.eligibleCategoriesCount} mapped Expense Categories and ${readiness.sapAccountMappingsCount} SAP GL Account mappings.`,
+          prTypeCode: prCode,
+          prTypeRecord: prTypeRec,
+          specificityScore: 4,
+        };
+      }
+
+      const normExpCode = expenseCategoryService.normalizeExpenseCategoryCode(params.itemCategoryCode);
+      const eligibleExpCats = expenseCategoryService.getEligibleExpenseCategories(
+        normComp,
+        normBranch,
+        evalDate
+      );
+      const matchedExpCat = eligibleExpCats.find(
+        (c) => c.categoryCode.toUpperCase() === normExpCode.toUpperCase()
+      );
+      if (!matchedExpCat) {
+        return {
+          eligible: false,
+          reason: `Category '${params.itemCategoryCode}' is not an eligible, approved Expense Category for EXPENSE PRs in ${normComp} / ${normBranch}. Inventory item categories cannot be used on EXPENSE PRs.`,
+          prTypeCode: prCode,
+          prTypeRecord: prTypeRec,
+        };
+      }
+      return {
+        eligible: true,
+        reason: `Authorized Expense Category '${matchedExpCat.categoryName}' (${matchedExpCat.categoryCode}) mapped to SAP GL Account ${matchedExpCat.sapGlAccountCode}.`,
+        prTypeCode: prCode,
+        prTypeRecord: prTypeRec,
+        specificityScore: 8,
+      };
+    }
+
+    // Block Expense Categories (EXP-*) from being used on Inventory PR Types
+    if (
+      params.itemCategoryCode &&
+      params.itemCategoryCode.trim().toUpperCase() !== 'ALL' &&
+      params.itemCategoryCode.trim().toUpperCase().startsWith('EXP-')
+    ) {
+      return {
+        eligible: false,
+        reason: `Expense Category '${params.itemCategoryCode}' is mapped exclusively to EXPENSE PRs and cannot be used under Inventory PR Type '${prTypeRec.name}' (${prCode}).`,
+        prTypeCode: prCode,
+        prTypeRecord: prTypeRec,
+      };
+    }
+
+    // 4. Evaluate Company -> Branch -> Purchase Org -> Item Category -> PR Type mapping
+    const allContextActiveMappings = this.getMappings({
       status: 'ACTIVE',
       approvalStatus: 'APPROVED',
-    }).filter((m) => isEffectiveOnDate(m.effectiveFrom, m.effectiveUntil, evalDate));
-
-    const candidates = activeApprovedMappings.filter((m) => {
+    }).filter((m) => {
+      if (!isEffectiveOnDate(m.effectiveFrom, m.effectiveUntil, evalDate)) return false;
       const compOk = m.companyId === 'ALL' || m.companyId === normComp;
       const branchOk = m.branchId === 'ALL' || m.branchId === normBranch;
       const poOk = m.purchaseOrgId === 'ALL' || normPo === 'ALL' || m.purchaseOrgId === normPo;
-      const catOk =
-        m.itemCategoryCode === 'ALL' ||
-        normCat === 'ALL' ||
-        normalizeItemCategoryCode(m.itemCategoryCode) === normCat;
-      return compOk && branchOk && poOk && catOk;
+      return compOk && branchOk && poOk;
+    });
+
+    const prTypeContextMappings = allContextActiveMappings.filter(
+      (m) => m.prTypeCode.toUpperCase() === prCode
+    );
+
+    const hasCategorySpecificAllowForPrType = prTypeContextMappings.some(
+      (m) => m.itemCategoryCode !== 'ALL' && m.isEligible === true
+    );
+
+    const candidates = prTypeContextMappings.filter((m) => {
+      if (normCat === 'ALL') {
+        return true;
+      }
+      if (m.itemCategoryCode === 'ALL') {
+        // If this PR Type already has explicit category-specific ALLOW mappings for this context,
+        // do NOT let a broad wildcard 'ALL' ALLOW mapping bypass them for unmapped categories.
+        if (hasCategorySpecificAllowForPrType && m.isEligible === true) {
+          return false;
+        }
+        return true;
+      }
+      return normalizeItemCategoryCode(m.itemCategoryCode) === normCat;
     });
 
     if (candidates.length === 0) {
+      if (hasCategorySpecificAllowForPrType && normCat !== 'ALL') {
+        return {
+          eligible: false,
+          reason: `Category '${resolveItemCategoryName(normCat)}' is not mapped to PR Type '${prTypeRec.name}' (${prCode}) for ${normComp} / ${normBranch}.`,
+          prTypeCode: prCode,
+          prTypeRecord: prTypeRec,
+        };
+      }
       // Strict deny-by-default for CAPEX_ASSET and all non-legacy PR types
       if (!LEGACY_SYSTEM_TYPES.has(prCode)) {
         return {
@@ -1511,6 +1754,33 @@ export const prTypeMasterService = {
       };
     }
 
+    // Exclusivity enforcement:
+    // If winner is only a generic wildcard 'ALL' ALLOW mapping for this PR Type,
+    // never expose categories that are explicitly ALLOW-mapped to OTHER PR Type(s) in this context.
+    if (normCat !== 'ALL' && winner.itemCategoryCode === 'ALL') {
+      const mappedToOtherPrTypes = Array.from(
+        new Set(
+          allContextActiveMappings
+            .filter(
+              (m) =>
+                m.prTypeCode.toUpperCase() !== prCode &&
+                m.isEligible === true &&
+                m.itemCategoryCode !== 'ALL' &&
+                normalizeItemCategoryCode(m.itemCategoryCode) === normCat
+            )
+            .map((m) => m.prTypeCode)
+        )
+      );
+      if (mappedToOtherPrTypes.length > 0) {
+        return {
+          eligible: false,
+          reason: `Category '${resolveItemCategoryName(normCat)}' is exclusively mapped to PR Type(s) [${mappedToOtherPrTypes.join(', ')}] and is not eligible under '${prTypeRec.name}' (${prCode}).`,
+          prTypeCode: prCode,
+          prTypeRecord: prTypeRec,
+        };
+      }
+    }
+
     return {
       eligible: true,
       reason: `Authorized by mapping ${winner.companyCode} / ${winner.branchCode} / ${winner.purchaseOrgCode} / ${winner.itemCategoryCode} (v${winner.versionNumber}).`,
@@ -1544,5 +1814,189 @@ export const prTypeMasterService = {
         userRole: params.userRole,
       }),
     }));
+  },
+
+  /**
+   * Returns only item/expense categories eligible for the selected Company, Branch, Purchase Org, PR Type, date & user role.
+   * For EXPENSE PR Type, returns governed Expense Categories; for Inventory PR Types, returns eligible Item Categories.
+   */
+  getEligibleCategoriesForContext(params: {
+    companyId: string;
+    branchId: string;
+    purchaseOrgId?: string;
+    prTypeCode: PRType | string;
+    evaluationDate?: string;
+    userRole?: string;
+  }): Array<{
+    code: string;
+    name: string;
+    display: string;
+    evaluation: PRTypeEligibilityEvaluationResult;
+  }> {
+    const prCode = params.prTypeCode.trim().toUpperCase();
+    if (prCode === 'EXPENSE') {
+      const prTypeEval = this.evaluatePrTypeEligibility({
+        companyId: params.companyId,
+        branchId: params.branchId,
+        purchaseOrgId: params.purchaseOrgId,
+        itemCategoryCode: 'ALL',
+        prTypeCode: 'EXPENSE',
+        evaluationDate: params.evaluationDate,
+        userRole: params.userRole,
+      });
+      if (!prTypeEval.eligible) return [];
+
+      const expCats = expenseCategoryService.getEligibleExpenseCategories(
+        params.companyId,
+        params.branchId,
+        params.evaluationDate
+      );
+      return expCats.map((ec) => ({
+        code: ec.categoryCode,
+        name: ec.categoryName,
+        display: `${ec.categoryName} (${ec.categoryCode}) · GL ${ec.sapGlAccountCode}`,
+        evaluation: {
+          eligible: true,
+          reason: `Mapped Expense Category ${ec.categoryCode} → SAP GL ${ec.sapGlAccountCode}`,
+          prTypeCode: 'EXPENSE',
+          prTypeRecord: prTypeEval.prTypeRecord,
+        },
+      }));
+    }
+
+    const categories = CLASSIFICATION_DIMENSIONS.category?.values || [];
+    const results: Array<{
+      code: string;
+      name: string;
+      display: string;
+      evaluation: PRTypeEligibilityEvaluationResult;
+    }> = [];
+
+    for (const cat of categories) {
+      const evaluation = this.evaluatePrTypeEligibility({
+        companyId: params.companyId,
+        branchId: params.branchId,
+        purchaseOrgId: params.purchaseOrgId,
+        itemCategoryCode: cat.code,
+        prTypeCode: params.prTypeCode,
+        evaluationDate: params.evaluationDate,
+        userRole: params.userRole,
+      });
+      if (evaluation.eligible) {
+        results.push({
+          code: cat.code,
+          name: cat.name,
+          display: cat.display,
+          evaluation,
+        });
+      }
+    }
+    return results;
+  },
+
+  /**
+   * Revalidates all existing PR lines against a target PR Type & Company/Branch context without deleting lines.
+   */
+  validateLinesCategoriesForPrType(params: {
+    companyId: string;
+    branchId: string;
+    purchaseOrgId?: string;
+    prTypeCode: PRType | string;
+    lines: Array<{ id?: string; itemCode?: string; itemCategory?: string; expenseCategoryCode?: string }>;
+    evaluationDate?: string;
+    userRole?: string;
+  }): {
+    valid: boolean;
+    prTypeEligible: boolean;
+    prTypeReason?: string;
+    eligibleCategories: Array<{ code: string; name: string; display: string }>;
+    invalidLines: Array<{
+      lineIndex: number;
+      lineId?: string;
+      itemCode?: string;
+      rawCategory: string;
+      normalizedCategory: string;
+      reason: string;
+    }>;
+  } {
+    const prCode = params.prTypeCode.trim().toUpperCase();
+    const prTypeEval = this.evaluatePrTypeEligibility({
+      companyId: params.companyId,
+      branchId: params.branchId,
+      purchaseOrgId: params.purchaseOrgId,
+      itemCategoryCode: 'ALL',
+      prTypeCode: prCode,
+      evaluationDate: params.evaluationDate,
+      userRole: params.userRole,
+    });
+
+    const eligibleCategories = this.getEligibleCategoriesForContext({
+      companyId: params.companyId,
+      branchId: params.branchId,
+      purchaseOrgId: params.purchaseOrgId,
+      prTypeCode: prCode,
+      evaluationDate: params.evaluationDate,
+      userRole: params.userRole,
+    }).map(({ code, name, display }) => ({ code, name, display }));
+
+    const invalidLines: Array<{
+      lineIndex: number;
+      lineId?: string;
+      itemCode?: string;
+      rawCategory: string;
+      normalizedCategory: string;
+      reason: string;
+    }> = [];
+
+    (params.lines || []).forEach((line, idx) => {
+      const rawCat = (line.expenseCategoryCode || line.itemCategory || '').trim();
+      const normCat =
+        prCode === 'EXPENSE'
+          ? expenseCategoryService.normalizeExpenseCategoryCode(rawCat)
+          : rawCat.toUpperCase().startsWith('EXP-')
+          ? rawCat.toUpperCase()
+          : normalizeItemCategoryCode(rawCat);
+
+      if (!rawCat || normCat === 'ALL') {
+        invalidLines.push({
+          lineIndex: idx,
+          lineId: line.id,
+          itemCode: line.itemCode,
+          rawCategory: rawCat || 'UNSPECIFIED',
+          normalizedCategory: normCat,
+          reason: `Line #${idx + 1} (${line.itemCode || 'Line'}) is missing a valid mapped category for PR Type ${prCode}.`,
+        });
+        return;
+      }
+
+      const lineEval = this.evaluatePrTypeEligibility({
+        companyId: params.companyId,
+        branchId: params.branchId,
+        purchaseOrgId: params.purchaseOrgId,
+        itemCategoryCode: normCat,
+        prTypeCode: prCode,
+        evaluationDate: params.evaluationDate,
+        userRole: params.userRole,
+      });
+
+      if (!lineEval.eligible) {
+        invalidLines.push({
+          lineIndex: idx,
+          lineId: line.id,
+          itemCode: line.itemCode,
+          rawCategory: rawCat,
+          normalizedCategory: normCat,
+          reason: lineEval.reason,
+        });
+      }
+    });
+
+    return {
+      valid: prTypeEval.eligible && invalidLines.length === 0,
+      prTypeEligible: prTypeEval.eligible,
+      prTypeReason: prTypeEval.eligible ? undefined : prTypeEval.reason,
+      eligibleCategories,
+      invalidLines,
+    };
   },
 };

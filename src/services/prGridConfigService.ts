@@ -817,8 +817,18 @@ export function isValidIsoDate(dateStr?: string | null): boolean {
  * line delivery schedule date so existing PR records continue to work seamlessly.
  */
 export function getExpectedDeliveryDate(pr: PurchaseRequisitionHeader): string {
+  if (pr.prType === 'EXPENSE' && pr.expectedServiceDate && pr.expectedServiceDate.trim()) {
+    return pr.expectedServiceDate.trim();
+  }
   if (pr.expectedDeliveryDate && pr.expectedDeliveryDate.trim()) {
     return pr.expectedDeliveryDate.trim();
+  }
+  if (pr.prType === 'EXPENSE' && pr.expenseLines && pr.expenseLines.length > 0) {
+    const expDates = pr.expenseLines
+      .map((el) => el.expectedServiceDate)
+      .filter((d): d is string => Boolean(d && d.trim()))
+      .sort();
+    return expDates[0] || '';
   }
   const scheduleDates = (pr.lines || [])
     .flatMap((line) => line.deliverySchedules || [])
@@ -881,7 +891,9 @@ export function getColumnDisplayText(pr: PurchaseRequisitionHeader, key: PRColum
     case 'requesterName':
       return pr.requesterName || '';
     case 'purposeAndItems':
-      return `${pr.purchasePurpose || ''} (${(pr.lines || []).length} line(s))`;
+      return pr.prType === 'EXPENSE'
+        ? `${pr.purchasePurpose || ''} (${(pr.expenseLines || []).length} expense line(s))`
+        : `${pr.purchasePurpose || ''} (${(pr.lines || []).length} line(s))`;
     case 'currency':
       return getPrCurrency(pr);
     case 'estimatedTotalValue':
@@ -942,6 +954,61 @@ export function flattenPrLines(prs: PurchaseRequisitionHeader[]): PRLineGridRow[
     const headerExpDate = getExpectedDeliveryDate(pr);
     const headerEffectiveStatus = getEffectivePRStatus(pr);
     const prDate = pr.createdAt ? new Date(pr.createdAt).toISOString().slice(0, 10) : '';
+
+    if (pr.prType === 'EXPENSE' && pr.expenseLines && pr.expenseLines.length > 0) {
+      pr.expenseLines.forEach((el, idx) => {
+        const synthesizedLine = {
+          id: el.id,
+          prId: pr.id,
+          itemCode: el.expenseCategoryCode,
+          description: el.expenseDescription || el.description || '',
+          itemCategory: `${el.expenseCategoryName} (GL ${el.sapGlAccountCode})`,
+          inventoryUom: 'SERVICE',
+          requestedQuantity: 1,
+          approximateUnitPrice: Number(el.baseAmount || el.amount || 0),
+          currency: headerCurr,
+          estimatedTotalValue: Number(el.totalAmountWithTax || el.amount || 0),
+          deliverySchedules: [],
+          status: 'ACTIVE' as const,
+        };
+        rows.push({
+          rowId: `${pr.id}::${el.id}`,
+          prId: pr.id,
+          lineId: el.id,
+          prNumber: pr.prNumber || '',
+          lineNumber: idx + 1,
+          prType: pr.prType,
+          companyId: pr.companyId,
+          companyCode: pr.companyCode,
+          branchId: pr.branchId,
+          branchName: pr.branchName || '',
+          department: pr.department || '',
+          requesterName: pr.requesterName || '',
+          itemCode: el.expenseCategoryCode,
+          description: el.expenseDescription || el.description || '',
+          itemCategory: `${el.expenseCategoryName} (GL ${el.sapGlAccountCode})`,
+          inventoryUom: 'SERVICE',
+          requestedQuantity: 1,
+          receivedQuantity: 0,
+          pendingQuantity: 1,
+          currency: headerCurr,
+          approximateUnitPrice: Number(el.baseAmount || el.amount || 0),
+          estimatedTotalValue: Number(el.totalAmountWithTax || el.amount || 0),
+          expectedDeliveryDate: el.expectedServiceDate || headerExpDate || '',
+          prDate,
+          effectiveStatus: headerEffectiveStatus,
+          budgetValidationStatus: pr.budgetValidationStatus,
+          buyerStatus: 'EXPENSE_SERVICE_LINE',
+          assignedBuyer: el.vendorSuggestion || 'Service Procurement',
+          createdAt: pr.createdAt || '',
+          updatedAt: pr.updatedAt || '',
+          pr,
+          line: synthesizedLine,
+        });
+      });
+      continue;
+    }
+
     const lines = pr.lines || [];
     lines.forEach((line, idx) => {
       const lineCurr = (line.currency || headerCurr || 'INR').trim().toUpperCase();

@@ -3115,6 +3115,51 @@ export const PrGovernanceConfigView: React.FC<PrGovernanceConfigViewProps> = ({
                   className="rounded text-indigo-600"
                 />
               </label>
+
+              <label className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between cursor-pointer">
+                <span className="font-bold text-slate-800">Allow Duplicate PR Override</span>
+                <input
+                  type="checkbox"
+                  checked={
+                    formState.duplicatePrevention?.warningLevel === 'HARD_BLOCK'
+                      ? false
+                      : Boolean(formState.duplicatePrevention?.allowOverride ?? true)
+                  }
+                  disabled={formState.duplicatePrevention?.warningLevel === 'HARD_BLOCK'}
+                  onChange={(e) =>
+                    setFormState({
+                      ...formState,
+                      duplicatePrevention: {
+                        ...(formState.duplicatePrevention as any),
+                        allowOverride: e.target.checked,
+                      },
+                    })
+                  }
+                  className="rounded text-indigo-600"
+                />
+              </label>
+
+              <label className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between cursor-pointer">
+                <span className="font-bold text-slate-800">Require Checker Approval for Override</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(formState.duplicatePrevention?.requireCheckerApprovalForOverride)}
+                  disabled={
+                    formState.duplicatePrevention?.warningLevel === 'HARD_BLOCK' ||
+                    formState.duplicatePrevention?.allowOverride === false
+                  }
+                  onChange={(e) =>
+                    setFormState({
+                      ...formState,
+                      duplicatePrevention: {
+                        ...(formState.duplicatePrevention as any),
+                        requireCheckerApprovalForOverride: e.target.checked,
+                      },
+                    })
+                  }
+                  className="rounded text-indigo-600"
+                />
+              </label>
             </div>
           </div>
         </div>

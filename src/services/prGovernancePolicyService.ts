@@ -207,6 +207,10 @@ export function createSystemDefaultPolicy(
       repairPrEnabled: true,
       maintenancePrEnabled: true,
       capexAssetPrEnabled: false,
+      expensePrEnabled: true,
+      allowSameChargeAtHeaderAndLine: false,
+      taxInclusivePricingSupported: true,
+      includeTaxInBudgetBasis: true,
       prEditingEnabled: true,
       prSubmissionEnabled: true,
       prApprovalEnabled: true,
@@ -278,7 +282,7 @@ export function createSystemDefaultPolicy(
 
     shortClose: {
       enableShortClose: true,
-      applicablePrTypes: ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE'],
+      applicablePrTypes: ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'EXPENSE'],
       applicablePrStatuses: [
         'APPROVED_PENDING_BUYER',
         'PENDING_BUYER_CONFIGURATION',
@@ -304,7 +308,7 @@ export function createSystemDefaultPolicy(
 
     cancellation: {
       enablePrCancellation: true,
-      applicablePrTypes: ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE'],
+      applicablePrTypes: ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'EXPENSE'],
       applicablePrStatuses: [
         'DRAFT',
         'RETURNED_FOR_CORRECTION',
@@ -408,6 +412,24 @@ export function createSystemDefaultPolicy(
       quantityVarianceTolerancePercent: 20,
       warningLevel: 'WARNING_WITH_JUSTIFICATION',
       requireJustificationToProceed: true,
+      allowOverride: true,
+      requireCheckerApprovalForOverride: false,
+      authorizedOverrideRoles: [
+        'PLATFORM_ADMIN',
+        'ORG_ADMIN',
+        'BRANCH_ADMIN',
+        'PROCUREMENT_MANAGER',
+        'DEPARTMENT_HEAD',
+        'ITEM_CHECKER',
+      ],
+      checkerApprovalRoles: [
+        'PLATFORM_ADMIN',
+        'ORG_ADMIN',
+        'BRANCH_ADMIN',
+        'PROCUREMENT_MANAGER',
+        'DEPARTMENT_HEAD',
+        'ITEM_CHECKER',
+      ],
     },
 
     attachmentGovernance: {
@@ -513,6 +535,23 @@ export function validateAndNormalizePolicy(
   }
   if (!copy.duplicatePrevention) {
     copy.duplicatePrevention = sysDefault.duplicatePrevention;
+  } else {
+    if (copy.duplicatePrevention.warningLevel === 'HARD_BLOCK') {
+      copy.duplicatePrevention.allowOverride = false;
+    } else if (copy.duplicatePrevention.allowOverride === undefined) {
+      copy.duplicatePrevention.allowOverride = true;
+    }
+    if (copy.duplicatePrevention.requireCheckerApprovalForOverride === undefined) {
+      copy.duplicatePrevention.requireCheckerApprovalForOverride = false;
+    }
+    if (!copy.duplicatePrevention.authorizedOverrideRoles) {
+      copy.duplicatePrevention.authorizedOverrideRoles =
+        sysDefault.duplicatePrevention!.authorizedOverrideRoles;
+    }
+    if (!copy.duplicatePrevention.checkerApprovalRoles) {
+      copy.duplicatePrevention.checkerApprovalRoles =
+        sysDefault.duplicatePrevention!.checkerApprovalRoles;
+    }
   }
   if (!copy.attachmentGovernance) {
     copy.attachmentGovernance = sysDefault.attachmentGovernance;
@@ -522,6 +561,32 @@ export function validateAndNormalizePolicy(
   }
   if (copy.editingAndLocking.allowApprovedLineAmendment === undefined) {
     copy.editingAndLocking.allowApprovedLineAmendment = true;
+  }
+  if (copy.activation.expensePrEnabled === undefined) {
+    copy.activation.expensePrEnabled = true;
+  }
+  if (copy.activation.allowSameChargeAtHeaderAndLine === undefined) {
+    copy.activation.allowSameChargeAtHeaderAndLine = false;
+  }
+  if (copy.activation.taxInclusivePricingSupported === undefined) {
+    copy.activation.taxInclusivePricingSupported = true;
+  }
+  if (copy.activation.includeTaxInBudgetBasis === undefined) {
+    copy.activation.includeTaxInBudgetBasis = true;
+  }
+  if (
+    copy.activation.expensePrEnabled &&
+    copy.shortClose?.applicablePrTypes &&
+    !copy.shortClose.applicablePrTypes.includes('EXPENSE')
+  ) {
+    copy.shortClose.applicablePrTypes.push('EXPENSE');
+  }
+  if (
+    copy.activation.expensePrEnabled &&
+    copy.cancellation?.applicablePrTypes &&
+    !copy.cancellation.applicablePrTypes.includes('EXPENSE')
+  ) {
+    copy.cancellation.applicablePrTypes.push('EXPENSE');
   }
 
   // 1. Mandatory immutable security & locking invariants
@@ -657,6 +722,33 @@ function incrementVersionString(currentVersion: string): string {
   const major = Number(match[1]);
   const minor = Number(match[2]) + 1;
   return `v${major}.${minor}`;
+}
+
+function applyCentrallyControlledLocks(
+  baseCompanyPolicy: PrGovernancePolicyConfig,
+  targetPolicy: PrGovernancePolicyConfig
+): void {
+  const lockedFields = baseCompanyPolicy.centrallyControlledFields || [];
+  for (const lockedKey of lockedFields) {
+    if (lockedKey in baseCompanyPolicy.activation) {
+      (targetPolicy.activation as any)[lockedKey] = (baseCompanyPolicy.activation as any)[
+        lockedKey
+      ];
+    }
+    if (baseCompanyPolicy.budget && targetPolicy.budget && lockedKey in baseCompanyPolicy.budget) {
+      (targetPolicy.budget as any)[lockedKey] = (baseCompanyPolicy.budget as any)[lockedKey];
+    }
+    if (
+      baseCompanyPolicy.approval &&
+      targetPolicy.approval &&
+      lockedKey in baseCompanyPolicy.approval
+    ) {
+      (targetPolicy.approval as any)[lockedKey] = (baseCompanyPolicy.approval as any)[lockedKey];
+    }
+  }
+  if (lockedFields.includes('budgetValidationEnabled')) {
+    targetPolicy.budget.enableBudgetValidation = targetPolicy.activation.budgetValidationEnabled;
+  }
 }
 
 export const prGovernancePolicyService = {
@@ -806,9 +898,17 @@ export const prGovernancePolicyService = {
   },
 
   /**
-   * Requirement B.1 & B.2: Checks whether a policy is effective on a target YYYY-MM-DD date.
+   * Requirement B.1 & B.2: Checks whether a policy is approved/active and effective on a target YYYY-MM-DD date.
    */
+  isPolicyApprovedAndActive(policy?: PrGovernancePolicyConfig): boolean {
+    if (!policy) return false;
+    return !policy.effectiveStatus || policy.effectiveStatus === 'ACTIVE';
+  },
+
   isPolicyEffectiveOnDate(policy: PrGovernancePolicyConfig, evaluationDate?: string): boolean {
+    if (!this.isPolicyApprovedAndActive(policy)) {
+      return false;
+    }
     const evalDate = (evaluationDate || new Date().toISOString()).split('T')[0];
     if (policy.effectiveFrom && evalDate < policy.effectiveFrom) {
       return false;
@@ -828,7 +928,10 @@ export const prGovernancePolicyService = {
     if (normBranch === 'ALL') return false;
     const policies = this.getPolicies();
     const companyPolicy = policies.find(
-      (p) => normalizeCompanyId(p.companyId) === normComp && p.branchId === 'ALL'
+      (p) =>
+        normalizeCompanyId(p.companyId) === normComp &&
+        p.branchId === 'ALL' &&
+        this.isPolicyApprovedAndActive(p)
     );
     if (companyPolicy && !companyPolicy.allowBranchOverride) {
       return false;
@@ -837,7 +940,8 @@ export const prGovernancePolicyService = {
       (p) =>
         normalizeCompanyId(p.companyId) === normComp &&
         normalizeBranchId(p.branchId) === normBranch &&
-        !p.isInheritedFromCompany
+        !p.isInheritedFromCompany &&
+        this.isPolicyApprovedAndActive(p)
     );
   },
 
@@ -891,13 +995,7 @@ export const prGovernancePolicyService = {
         resolutionSource = 'BRANCH_OVERRIDE';
 
         // Rule 4: Never allow a branch to override a setting that company governance marked as centrally controlled!
-        for (const lockedKey of baseCompanyPolicy.centrallyControlledFields) {
-          if (lockedKey in baseCompanyPolicy.activation) {
-            (resolved.activation as any)[lockedKey] = (baseCompanyPolicy.activation as any)[
-              lockedKey
-            ];
-          }
-        }
+        applyCentrallyControlledLocks(baseCompanyPolicy, resolved);
       } else {
         const branchObj = INITIAL_BRANCHES.find((b) => b.id === normBranch);
         resolved = {
@@ -1002,6 +1100,12 @@ export const prGovernancePolicyService = {
       for (const lockedKey of companyPolicy.centrallyControlledFields) {
         if (lockedKey in companyPolicy.activation) {
           (policyInput.activation as any)[lockedKey] = (companyPolicy.activation as any)[lockedKey];
+        }
+        if (companyPolicy.budget && policyInput.budget && lockedKey in companyPolicy.budget) {
+          (policyInput.budget as any)[lockedKey] = (companyPolicy.budget as any)[lockedKey];
+        }
+        if (companyPolicy.approval && policyInput.approval && lockedKey in companyPolicy.approval) {
+          (policyInput.approval as any)[lockedKey] = (companyPolicy.approval as any)[lockedKey];
         }
       }
     }
@@ -1330,13 +1434,7 @@ export const prGovernancePolicyService = {
           `Company policy for ${companyPolicy.companyCode} has disabled branch overrides.`
         );
       }
-      for (const lockedKey of companyPolicy.centrallyControlledFields) {
-        if (lockedKey in companyPolicy.activation) {
-          (policyInput.activation as any)[lockedKey] = (companyPolicy.activation as any)[
-            lockedKey
-          ];
-        }
-      }
+      applyCentrallyControlledLocks(companyPolicy, policyInput);
     }
 
     const { normalized, warnings } = validateAndNormalizePolicy({
@@ -1903,7 +2001,8 @@ export const prGovernancePolicyService = {
           !activation.mrpPrCreationEnabled &&
           !activation.repairPrEnabled &&
           !activation.maintenancePrEnabled &&
-          !activation.capexAssetPrEnabled
+          !activation.capexAssetPrEnabled &&
+          activation.expensePrEnabled === false
         ) {
           return deny('All PR creation types are disabled under the active governance policy.');
         }
@@ -1929,6 +2028,10 @@ export const prGovernancePolicyService = {
         return activation.capexAssetPrEnabled
           ? allow()
           : deny('Capex / Asset PR Creation is disabled by active governance policy.');
+      case 'CREATE_EXPENSE_PR':
+        return activation.expensePrEnabled !== false
+          ? allow()
+          : deny('Expense PR Creation is disabled by active governance policy.');
 
       case 'EDIT_PR_HEADER': {
         if (!activation.prEditingEnabled) {
@@ -2914,5 +3017,184 @@ export const prGovernancePolicyService = {
     }
 
     return candidate;
+  },
+
+  /**
+   * Authoritative Conditional Budget Validation Flag:
+   * True ONLY when both effective activation flag AND budget section toggle are ON.
+   */
+  isBudgetValidationEnabled(
+    companyId: string,
+    branchId?: string,
+    evaluationDate?: string
+  ): boolean {
+    const eff = this.getEffectivePolicy(companyId, branchId, evaluationDate);
+    return Boolean(eff.activation?.budgetValidationEnabled && eff.budget?.enableBudgetValidation);
+  },
+
+  /**
+   * Computes PR valuation amount in both transaction currency and company reporting currency
+   * respecting PR landed valuation rules (items + applicable charges/tax when present).
+   */
+  resolvePrValuationAmount(
+    pr: Pick<
+      PurchaseRequisitionHeader,
+      | 'estimatedTotalValue'
+      | 'grandTotalWithCharges'
+      | 'currency'
+      | 'companyId'
+      | 'branchId'
+      | 'budgetGovernance'
+    >,
+    effPolicy?: PrGovernancePolicyConfig
+  ): {
+    transactionCurrency: string;
+    reportingCurrency: string;
+    transactionAmount: number;
+    reportingAmount: number;
+    exchangeRateUsed: number;
+    exchangeRateRef: string;
+  } {
+    const eff = effPolicy || this.getEffectivePolicy(pr.companyId, pr.branchId);
+    const transactionCurrency = (pr.currency || 'INR').toUpperCase();
+    const reportingCurrency = (
+      pr.budgetGovernance?.companyReportingCurrency ||
+      eff.budget?.companyReportingCurrency ||
+      'INR'
+    ).toUpperCase();
+    const fxInfo = this.getExchangeRate(transactionCurrency, reportingCurrency);
+    const exchangeRateUsed = pr.budgetGovernance?.exchangeRateUsed ?? fxInfo.rate;
+    const transactionAmount = Number(pr.grandTotalWithCharges ?? pr.estimatedTotalValue ?? 0);
+    const reportingAmount = Number((transactionAmount * exchangeRateUsed).toFixed(2));
+    return {
+      transactionCurrency,
+      reportingCurrency,
+      transactionAmount,
+      reportingAmount,
+      exchangeRateUsed,
+      exchangeRateRef: pr.budgetGovernance?.exchangeRateRef || fxInfo.ref,
+    };
+  },
+
+  /**
+   * Resolves the configured PR Approval Workflow plan from effective Company/Branch policy,
+   * PR valuation, matrix tiers, branch/department approvers, maker-checker, delegation, and SLA.
+   */
+  resolveApprovalWorkflowPlan(
+    pr: Pick<
+      PurchaseRequisitionHeader,
+      | 'companyId'
+      | 'branchId'
+      | 'department'
+      | 'estimatedTotalValue'
+      | 'grandTotalWithCharges'
+      | 'currency'
+      | 'status'
+      | 'approvalCycleCount'
+      | 'approvalHistory'
+      | 'creatorId'
+      | 'creatorName'
+    >,
+    effPolicy?: PrGovernancePolicyConfig
+  ): {
+    enabled: boolean;
+    configuredLevels: number;
+    requiredLevels: number;
+    currentStepIndex: number;
+    currentTier: PrApprovalMatrixTier | null;
+    applicableTiers: PrApprovalMatrixTier[];
+    authorizedRoles: string[];
+    valuationReportingAmount: number;
+    reportingCurrency: string;
+    branchScopedRequired: boolean;
+    departmentScopedRequired: boolean;
+    managerL1Required: boolean;
+    makerCheckerRequired: boolean;
+    mandatoryApprovalRemarks: boolean;
+    delegationAllowed: boolean;
+    escalationEnabled: boolean;
+    escalationAfterHours: number;
+  } {
+    const eff = effPolicy || this.getEffectivePolicy(pr.companyId, pr.branchId);
+    const approvalCfg = eff.approval;
+    const enabled = Boolean(eff.activation.prApprovalEnabled && approvalCfg.enableApprovalWorkflow);
+    const valuation = this.resolvePrValuationAmount(pr, eff);
+    const configuredLevels = Math.max(1, Number(approvalCfg.approvalLevels) || 1);
+    const matrix = [...(approvalCfg.approvalMatrix || [])].sort(
+      (a, b) => a.levelNumber - b.levelNumber
+    );
+
+    let requiredLevels = configuredLevels;
+    if (approvalCfg.amountBasedApproval && matrix.length > 0) {
+      const matchedHighest = [...matrix]
+        .reverse()
+        .find(
+          (tier) =>
+            valuation.reportingAmount >= Number(tier.minAmount || 0) &&
+            (tier.maxAmount === null ||
+              tier.maxAmount === undefined ||
+              valuation.reportingAmount <= Number(tier.maxAmount))
+        );
+      if (matchedHighest) {
+        requiredLevels = Math.max(1, Math.min(configuredLevels, matchedHighest.levelNumber));
+      }
+    }
+
+    const applicableTiers = matrix.slice(0, requiredLevels);
+    const currentCycle = pr.approvalCycleCount || 1;
+    const approvalsInCurrentCycle = (pr.approvalHistory || []).filter(
+      (h) =>
+        (h.cycleNumber || 1) === currentCycle &&
+        (h.decision === 'APPROVED' || h.decision === 'DELEGATED_APPROVAL')
+    ).length;
+
+    let currentStepIndex = Math.min(requiredLevels, approvalsInCurrentCycle + 1);
+    if (
+      (pr.status === 'PENDING_SUBSEQUENT_APPROVAL' || pr.status === 'PENDING_REAPPROVAL') &&
+      currentStepIndex < 2 &&
+      requiredLevels >= 2
+    ) {
+      currentStepIndex = 2;
+    }
+
+    const currentTier =
+      applicableTiers.find((t) => t.levelNumber === currentStepIndex) ||
+      applicableTiers[applicableTiers.length - 1] ||
+      null;
+
+    const authorizedRoles = Array.from(
+      new Set(
+        [
+          'PLATFORM_ADMIN',
+          'ORG_ADMIN',
+          currentTier?.approverRole,
+          currentTier?.alternateApproverRole,
+        ].filter((r): r is string => Boolean(r))
+      )
+    );
+
+    return {
+      enabled,
+      configuredLevels,
+      requiredLevels,
+      currentStepIndex,
+      currentTier,
+      applicableTiers,
+      authorizedRoles,
+      valuationReportingAmount: valuation.reportingAmount,
+      reportingCurrency: valuation.reportingCurrency,
+      branchScopedRequired: Boolean(
+        approvalCfg.branchLevelApprovers && (currentTier?.branchScoped ?? true)
+      ),
+      departmentScopedRequired: Boolean(
+        approvalCfg.departmentLevelApprovers && (currentTier?.departmentScoped ?? false)
+      ),
+      managerL1Required: Boolean(approvalCfg.managerL1Approval),
+      makerCheckerRequired: Boolean(eff.requireMakerCheckerApproval),
+      mandatoryApprovalRemarks: Boolean(approvalCfg.mandatoryApprovalRemarks),
+      delegationAllowed: Boolean(approvalCfg.approvalDelegation),
+      escalationEnabled: Boolean(approvalCfg.approvalEscalation),
+      escalationAfterHours: Number(currentTier?.slaHours || approvalCfg.escalationAfterHours || 48),
+    };
   },
 };

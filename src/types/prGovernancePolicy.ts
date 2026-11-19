@@ -58,6 +58,10 @@ export interface PrGovernanceActivationSettings {
   repairPrEnabled: boolean;
   maintenancePrEnabled: boolean;
   capexAssetPrEnabled?: boolean;
+  expensePrEnabled?: boolean;
+  allowSameChargeAtHeaderAndLine?: boolean;
+  taxInclusivePricingSupported?: boolean;
+  includeTaxInBudgetBasis?: boolean;
   prEditingEnabled: boolean;
   prSubmissionEnabled: boolean;
   prApprovalEnabled: boolean;
@@ -237,6 +241,10 @@ export interface PrDuplicatePreventionSettings {
   quantityVarianceTolerancePercent: number; // e.g. 15%
   warningLevel: 'WARNING_WITH_JUSTIFICATION' | 'HARD_BLOCK' | 'ADVISORY_ONLY';
   requireJustificationToProceed: boolean;
+  allowOverride?: boolean;
+  requireCheckerApprovalForOverride?: boolean;
+  authorizedOverrideRoles?: string[];
+  checkerApprovalRoles?: string[];
 }
 
 /**
@@ -486,6 +494,7 @@ export type PrGovernedActionType =
   | 'CREATE_REPAIR_PR'
   | 'CREATE_MAINTENANCE_PR'
   | 'CREATE_CAPEX_PR'
+  | 'CREATE_EXPENSE_PR'
   | 'EDIT_PR_HEADER'
   | 'EDIT_PR_LINES'
   | 'AMEND_APPROVED_PR_LINE'

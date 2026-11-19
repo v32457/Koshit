@@ -284,6 +284,71 @@ export function matchesDateRange(
 }
 
 /**
+ * Parses a multi-select filter state (either 'ALL', comma-separated string, or string[])
+ * into a normalized list of active selected values. Empty array means 'ALL' (no filter).
+ */
+export function parseMultiSelectFilter(rawFilter: string | string[] | undefined | null): string[] {
+  if (!rawFilter) return [];
+  if (Array.isArray(rawFilter)) {
+    return rawFilter
+      .map((v) => String(v ?? '').trim())
+      .filter((v) => v.length > 0 && v.toUpperCase() !== 'ALL');
+  }
+  const str = String(rawFilter).trim();
+  if (!str || str.toUpperCase() === 'ALL') return [];
+  return str
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.toUpperCase() !== 'ALL');
+}
+
+/**
+ * Evaluates whether a candidate scalar or array of scalars matches a multi-select quick filter.
+ * If no values are selected ('ALL' or empty), returns true.
+ */
+export function matchesMultiSelectFilter(
+  rawFilter: string | string[] | undefined | null,
+  candidate: string | string[] | undefined | null
+): boolean {
+  const selected = parseMultiSelectFilter(rawFilter).map((s) => s.toLowerCase());
+  if (selected.length === 0) return true;
+  if (candidate === null || candidate === undefined) return false;
+  const candidates = (Array.isArray(candidate) ? candidate : [candidate]).map((c) =>
+    String(c ?? '')
+      .trim()
+      .toLowerCase()
+  );
+  return candidates.some((c) => selected.includes(c));
+}
+
+/**
+ * Formats a human-readable summary label for a multi-select quick filter chip.
+ */
+export function formatMultiSelectFilterLabel(
+  rawFilter: string | string[] | undefined | null,
+  options?: FilterOptionItem[]
+): string {
+  const selected = parseMultiSelectFilter(rawFilter);
+  if (selected.length === 0) return 'All';
+  return selected
+    .map((val) => options?.find((o) => o.value === val)?.label || val)
+    .join(', ');
+}
+
+export function getConditionSelectedDropdownValues(condition: FilterCondition): string[] {
+  if (condition.values && condition.values.length > 0) {
+    return condition.values.map((s) => String(s).trim()).filter(Boolean);
+  }
+  if (condition.value) {
+    return String(condition.value)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+/**
  * Determines whether a condition has meaningful user input to be evaluated as active.
  */
 export function isConditionActive(
@@ -297,17 +362,8 @@ export function isConditionActive(
     return true;
   }
 
-  if (op === 'IS_ANY_OF') {
-    const list =
-      condition.values && condition.values.length > 0
-        ? condition.values
-        : condition.value
-          ? condition.value
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : [];
-    return list.length > 0;
+  if (op === 'IS_ANY_OF' || fieldDef?.type === 'DROPDOWN') {
+    return getConditionSelectedDropdownValues(condition).length > 0;
   }
 
   if (op === 'BETWEEN') {
@@ -430,24 +486,15 @@ function evaluateSingleScalarCondition(
 
   if (fieldType === 'DROPDOWN') {
     const strVal = String(rawScalar ?? '').trim().toLowerCase();
-    const target = String(condition.value ?? '').trim().toLowerCase();
+    const allowedList = getConditionSelectedDropdownValues(condition).map((v) =>
+      v.toLowerCase()
+    );
 
-    if (op === 'EQUALS') {
-      return strVal === target;
+    if (op === 'EQUALS' || op === 'IS_ANY_OF') {
+      return allowedList.includes(strVal);
     }
     if (op === 'NOT_EQUALS') {
-      return strVal !== target;
-    }
-    if (op === 'IS_ANY_OF') {
-      const allowedList = (
-        condition.values && condition.values.length > 0
-          ? condition.values
-          : String(condition.value ?? '')
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-      ).map((v) => v.toLowerCase());
-      return allowedList.includes(strVal);
+      return !allowedList.includes(strVal);
     }
     return false;
   }
@@ -613,20 +660,11 @@ export function buildAdvancedFilterChips<T>(
         valueLabel = 'False';
       } else if (cond.operator === 'BETWEEN') {
         valueLabel = `${cond.value || 'Any'} to ${cond.valueTo || 'Any'}`;
-      } else if (cond.operator === 'IS_ANY_OF') {
-        const vals =
-          cond.values && cond.values.length > 0
-            ? cond.values
-            : cond.value
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean);
+      } else if (cond.operator === 'IS_ANY_OF' || fieldDef.type === 'DROPDOWN') {
+        const vals = getConditionSelectedDropdownValues(cond);
         valueLabel = vals
           .map((v) => fieldDef.options?.find((o) => o.value === v)?.label || v)
           .join(', ');
-      } else if (fieldDef.type === 'DROPDOWN' && fieldDef.options) {
-        valueLabel =
-          fieldDef.options.find((o) => o.value === cond.value)?.label || cond.value;
       }
 
       chips.push({

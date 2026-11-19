@@ -1,16 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { Search, Plus, CheckCircle2, AlertTriangle, Lock, Layers } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Plus, CheckCircle2, AlertTriangle, Lock, Layers, ChevronDown } from 'lucide-react';
 import { EffectiveMappedChargeOption } from '../../types/chargeManagement';
 import { PRChargeItem } from '../../types/purchaseRequisition';
-import { formatChargeAmount } from '../../services/prChargeItemService';
+import { formatChargeAmount, getCurrencySymbol } from '../../services/prChargeItemService';
 
 interface PrMappedChargesSelectorProps {
   effectiveOptions: EffectiveMappedChargeOption[];
   selectedChargeItems: PRChargeItem[];
   companyName: string;
   branchName: string;
-  onAddChargeOption: (option: EffectiveMappedChargeOption) => void;
-  onAddMultipleOptions: (options: EffectiveMappedChargeOption[]) => void;
+  currency?: string;
+  referenceSubtotal?: number;
+  title?: string;
+  onAddChargeOption: (option: EffectiveMappedChargeOption, customAmount?: number) => void;
+  onAddMultipleOptions?: (options: EffectiveMappedChargeOption[]) => void;
   errorNotice?: string | null;
   onDismissError?: () => void;
 }
@@ -20,14 +23,30 @@ export const PrMappedChargesSelector: React.FC<PrMappedChargesSelectorProps> = (
   selectedChargeItems,
   companyName,
   branchName,
+  currency = 'INR',
+  referenceSubtotal = 0,
+  title = 'Select & Add Charge Item',
   onAddChargeOption,
-  onAddMultipleOptions,
   errorNotice,
   onDismissError,
 }) => {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [applicabilityFilter, setApplicabilityFilter] = useState<string>('ALL');
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [selectedChargeId, setSelectedChargeId] = useState<string>('');
+  const [amountInput, setAmountInput] = useState<string>('');
+  const [localError, setLocalError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
 
   const addedCodes = useMemo(() => {
     const s = new Set<string>();
@@ -41,218 +60,278 @@ export const PrMappedChargesSelector: React.FC<PrMappedChargesSelectorProps> = (
   const isAlreadyAdded = (opt: EffectiveMappedChargeOption): boolean =>
     addedCodes.has(opt.chargeCode.toUpperCase()) || addedCodes.has(opt.chargeMasterId);
 
-  const filteredOptions = useMemo(() => {
-    return effectiveOptions.filter((opt) => {
-      if (applicabilityFilter !== 'ALL' && opt.applicability !== applicabilityFilter) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        return (
-          opt.chargeCode.toLowerCase().includes(q) ||
-          opt.chargeName.toLowerCase().includes(q) ||
-          opt.chargeCategory.toLowerCase().includes(q) ||
-          opt.calculationMethod.toLowerCase().includes(q) ||
-          (opt.chargeDescription || '').toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [effectiveOptions, applicabilityFilter, searchQuery]);
-
-  const toggleCheck = (optId: string) => {
-    setCheckedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(optId)) next.delete(optId);
-      else next.add(optId);
-      return next;
-    });
-  };
-
-  const selectedOptionsToAdd = useMemo(
-    () => filteredOptions.filter((opt) => checkedIds.has(opt.chargeMasterId) && !isAlreadyAdded(opt)),
-    [filteredOptions, checkedIds, addedCodes]
+  const selectedOption = useMemo(
+    () => effectiveOptions.find((o) => o.chargeMasterId === selectedChargeId) || null,
+    [effectiveOptions, selectedChargeId]
   );
 
-  const handleBulkAdd = () => {
-    if (selectedOptionsToAdd.length === 0) return;
-    onAddMultipleOptions(selectedOptionsToAdd);
-    setCheckedIds(new Set());
+  // Clear selection if selected option disappears on company/branch change
+  useEffect(() => {
+    if (selectedChargeId && !selectedOption) {
+      setSelectedChargeId('');
+      setAmountInput('');
+    }
+  }, [selectedChargeId, selectedOption]);
+
+  const computeDefaultAmount = (opt: EffectiveMappedChargeOption): number => {
+    if (opt.calculationMethod === 'PERCENTAGE') {
+      return Math.round(((referenceSubtotal || 0) * Number(opt.rate || 0)) / 100);
+    }
+    return Number(opt.rate || 0);
   };
 
+  const filteredOptions = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return effectiveOptions;
+    return effectiveOptions.filter(
+      (opt) =>
+        opt.chargeCode.toLowerCase().includes(q) ||
+        opt.chargeName.toLowerCase().includes(q) ||
+        opt.chargeCategory.toLowerCase().includes(q) ||
+        opt.calculationMethod.toLowerCase().includes(q)
+    );
+  }, [effectiveOptions, searchQuery]);
+
+  const handleSelectOption = (opt: EffectiveMappedChargeOption) => {
+    setSelectedChargeId(opt.chargeMasterId);
+    setAmountInput(String(computeDefaultAmount(opt)));
+    setLocalError(null);
+    if (onDismissError) onDismissError();
+    setDropdownOpen(false);
+  };
+
+  const handleAddClick = () => {
+    if (!selectedOption) {
+      setLocalError('Please select a charge item first.');
+      return;
+    }
+    if (isAlreadyAdded(selectedOption)) {
+      setLocalError(`${selectedOption.chargeName} (${selectedOption.chargeCode}) is already added.`);
+      return;
+    }
+    const parsedAmount = Number(amountInput);
+    if (amountInput.trim() === '' || Number.isNaN(parsedAmount) || parsedAmount < 0) {
+      setLocalError('Please enter a valid non-negative charge amount.');
+      return;
+    }
+    setLocalError(null);
+    onAddChargeOption(selectedOption, parsedAmount);
+    setSelectedChargeId('');
+    setAmountInput('');
+    setSearchQuery('');
+  };
+
+  const displayError = errorNotice || localError;
+  const availableCount = effectiveOptions.filter((o) => !isAlreadyAdded(o)).length;
+
   return (
-    <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-3.5 space-y-3">
+    <div
+      ref={containerRef}
+      className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-3.5 space-y-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h5 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Mapped Charges Catalog ({companyName} / {branchName})</span>
+            <span>
+              {title} ({companyName} / {branchName})
+            </span>
           </h5>
           <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
             <Lock className="w-3 h-3 text-slate-400 shrink-0" />
             <span>
-              Only active charges mapped to this Company &amp; Branch are selectable. Free-text custom charge creation is restricted to Charge Master Administrators.
+              Select an active charge mapped to this Company &amp; Branch, enter its amount, and add it.
             </span>
           </p>
         </div>
-
-        <button
-          type="button"
-          disabled={selectedOptionsToAdd.length === 0}
-          onClick={handleBulkAdd}
-          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Selected ({selectedOptionsToAdd.length})</span>
-        </button>
+        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-indigo-200 text-indigo-700">
+          {availableCount} Available to Add
+        </span>
       </div>
 
-      {errorNotice && (
+      {displayError && (
         <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-[11px] font-bold flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-            <span>{errorNotice}</span>
+            <span>{displayError}</span>
           </div>
-          {onDismissError && (
-            <button
-              type="button"
-              onClick={onDismissError}
-              className="px-1.5 text-rose-600 hover:text-rose-900 cursor-pointer"
-            >
-              ✕
-            </button>
-          )}
+          <button
+            type="button"
+            aria-label="Dismiss charge error"
+            onClick={() => {
+              setLocalError(null);
+              if (onDismissError) onDismissError();
+            }}
+            className="px-1.5 text-rose-600 hover:text-rose-900 cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Search & Filter */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+      {/* Select Charge Item + Amount Input + Add Button */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-start">
+        {/* Searchable Charge Item Select */}
+        <div className="md:col-span-6 relative">
+          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+            Charge Item *
+          </label>
+          <button
+            type="button"
+            aria-label="Select Charge Item"
+            aria-expanded={dropdownOpen}
+            aria-haspopup="listbox"
+            onClick={() => setDropdownOpen((prev) => !prev)}
+            className="w-full px-3 py-2 bg-white border border-slate-300 hover:border-indigo-400 rounded-lg text-xs flex items-center justify-between gap-2 text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+          >
+            {selectedOption ? (
+              <span className="truncate font-semibold text-slate-900">
+                <span className="font-mono text-indigo-700 mr-1.5">{selectedOption.chargeCode}</span>
+                {selectedOption.chargeName}
+              </span>
+            ) : (
+              <span className="text-slate-400 truncate">
+                Select mapped charge item ({effectiveOptions.length} configured)...
+              </span>
+            )}
+            <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+          </button>
+
+          {dropdownOpen && (
+            <div
+              role="listbox"
+              aria-label="Company and Branch Charge Options"
+              className="absolute left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+            >
+              <div className="p-2 border-b border-slate-100 bg-slate-50">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    aria-label="Search mapped charge options"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search charge by code or name..."
+                    autoFocus
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                {filteredOptions.length === 0 ? (
+                  <div className="p-3 text-center text-[11px] text-slate-500">
+                    No active mapped charges match "{searchQuery}".
+                  </div>
+                ) : (
+                  filteredOptions.map((opt) => {
+                    const added = isAlreadyAdded(opt);
+                    const isSelected = opt.chargeMasterId === selectedChargeId;
+                    return (
+                      <button
+                        key={opt.chargeMasterId}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        disabled={added}
+                        onClick={() => handleSelectOption(opt)}
+                        className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2 transition ${
+                          added
+                            ? 'bg-emerald-50/40 text-slate-400 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-indigo-50 text-indigo-900'
+                            : 'hover:bg-slate-50 text-slate-800 cursor-pointer'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold truncate">
+                            {opt.chargeName}
+                          </div>
+                          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            <span className="font-mono text-indigo-700">{opt.chargeCode}</span>
+                            <span>·</span>
+                            <span>{opt.chargeCategory.replace(/_/g, ' ')}</span>
+                            <span>·</span>
+                            <span>{opt.calculationMethod.replace(/_/g, ' ')}</span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          {added ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Added
+                            </span>
+                          ) : (
+                            <div className="font-mono font-bold text-[11px] text-slate-700">
+                              {opt.calculationMethod === 'PERCENTAGE'
+                                ? `${opt.rate}%`
+                                : formatChargeAmount(opt.rate, opt.currency)}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {selectedOption && (
+            <div className="text-[10px] text-slate-600 mt-1 flex flex-wrap items-center gap-1.5">
+              <span>
+                Default:{' '}
+                <strong className="font-mono">
+                  {selectedOption.calculationMethod === 'PERCENTAGE'
+                    ? `${selectedOption.rate}% (${formatChargeAmount(computeDefaultAmount(selectedOption), currency)})`
+                    : formatChargeAmount(selectedOption.rate, selectedOption.currency)}
+                </strong>
+              </span>
+              <span>·</span>
+              <span>GST {selectedOption.taxRatePercent ?? 0}%</span>
+              <span>·</span>
+              <span className="font-semibold text-indigo-700">
+                {selectedOption.sourceScope === 'BRANCH_OVERRIDE' ? 'Branch Override' : 'Company Policy'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Amount Input */}
+        <div className="md:col-span-3">
+          <label
+            htmlFor="pr-charge-amount-input"
+            className="block text-[11px] font-bold text-slate-700 mb-1"
+          >
+            Amount ({getCurrencySymbol(currency).trim()}) *
+          </label>
           <input
-            type="text"
-            aria-label="Search effective mapped charges"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search mapped charges by code, name, category, or method..."
-            className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+            id="pr-charge-amount-input"
+            type="number"
+            min="0"
+            step="any"
+            aria-label="Charge Amount"
+            disabled={!selectedOption}
+            value={amountInput}
+            onChange={(e) => {
+              setAmountInput(e.target.value);
+              setLocalError(null);
+            }}
+            placeholder={selectedOption ? 'Enter amount...' : 'Select charge first'}
+            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-right text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
-        <select
-          aria-label="Filter mapped charges by applicability"
-          value={applicabilityFilter}
-          onChange={(e) => setApplicabilityFilter(e.target.value)}
-          className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
-        >
-          <option value="ALL">All Applicability ({effectiveOptions.length})</option>
-          <option value="MANDATORY">Mandatory</option>
-          <option value="OPTIONAL">Optional</option>
-          <option value="CONDITIONAL">Conditional</option>
-        </select>
-      </div>
 
-      {/* Searchable Selection Table */}
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-        <div className="overflow-x-auto max-h-52">
-          <table className="w-full text-left text-[11px] border-collapse min-w-[760px]">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
-                <th className="p-2 w-9 text-center">Sel</th>
-                <th className="p-2">Charge Code &amp; Name</th>
-                <th className="p-2">Category</th>
-                <th className="p-2">Method &amp; Effective Tariff</th>
-                <th className="p-2">Tax &amp; Allocation</th>
-                <th className="p-2">Applicability</th>
-                <th className="p-2">Scope</th>
-                <th className="p-2 text-center w-28">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredOptions.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-4 text-center text-slate-500">
-                    No active mapped charges match your search for {companyName} / {branchName}.
-                  </td>
-                </tr>
-              ) : (
-                filteredOptions.map((opt) => {
-                  const added = isAlreadyAdded(opt);
-                  const checked = checkedIds.has(opt.chargeMasterId);
-                  return (
-                    <tr
-                      key={opt.chargeMasterId}
-                      className={added ? 'bg-emerald-50/40 text-slate-500' : 'hover:bg-slate-50'}
-                    >
-                      <td className="p-2 text-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select charge ${opt.chargeCode}`}
-                          disabled={added}
-                          checked={added || checked}
-                          onChange={() => toggleCheck(opt.chargeMasterId)}
-                          className="rounded border-slate-300 text-indigo-600 cursor-pointer disabled:cursor-not-allowed"
-                        />
-                      </td>
-                      <td className="p-2">
-                        <div className="font-bold text-slate-900">{opt.chargeName}</div>
-                        <div className="font-mono text-[10px] text-indigo-700">{opt.chargeCode}</div>
-                      </td>
-                      <td className="p-2 font-semibold text-slate-700">
-                        {opt.chargeCategory.replace(/_/g, ' ')}
-                      </td>
-                      <td className="p-2 font-mono">
-                        <div className="font-bold text-slate-900">
-                          {opt.calculationMethod === 'PERCENTAGE'
-                            ? `${opt.rate}%`
-                            : formatChargeAmount(opt.rate, opt.currency)}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-sans">
-                          {opt.calculationMethod.replace(/_/g, ' ')}
-                        </div>
-                      </td>
-                      <td className="p-2">
-                        <div className="text-slate-800">{opt.taxTreatment.replace(/_/g, ' ')}</div>
-                        <div className="text-[10px] text-slate-500">
-                          {opt.allocationBasis.replace(/_/g, ' ')}
-                        </div>
-                      </td>
-                      <td className="p-2 font-bold">
-                        <span
-                          className={
-                            opt.applicability === 'MANDATORY'
-                              ? 'text-rose-700'
-                              : opt.applicability === 'CONDITIONAL'
-                              ? 'text-amber-700'
-                              : 'text-slate-700'
-                          }
-                        >
-                          {opt.applicability}
-                        </span>
-                      </td>
-                      <td className="p-2 text-[10px] font-medium text-slate-600">
-                        {opt.sourceScope === 'BRANCH_OVERRIDE' ? 'Branch Override' : 'Company Policy'}
-                      </td>
-                      <td className="p-2 text-center">
-                        {added ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[10px]">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Added
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => onAddChargeOption(opt)}
-                            aria-label={`Add mapped charge ${opt.chargeCode}`}
-                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-[11px] cursor-pointer"
-                          >
-                            Add Charge
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        {/* Add Button */}
+        <div className="md:col-span-3 md:pt-5">
+          <button
+            type="button"
+            disabled={!selectedOption}
+            onClick={handleAddClick}
+            className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition shadow-2xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Charge Item</span>
+          </button>
         </div>
       </div>
     </div>

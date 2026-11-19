@@ -7,19 +7,26 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { User } from '../../types';
+import { User, Branch, GlobalItem } from '../../types';
 import {
   PurchaseRequisitionHeader,
+  PRType,
   PRPriority,
   PRChargeItem,
   PRChargeApplicability,
   PRChargeType,
 } from '../../types/purchaseRequisition';
+import { INITIAL_BRANCHES, INITIAL_GLOBAL_ITEMS } from '../../data/seedData';
+import { getBranchActiveItems } from '../../utils/branchItemHelper';
 import { EffectiveMappedChargeOption } from '../../types/chargeManagement';
 import { PurchaseRequisitionService } from '../../services/purchaseRequisitionService';
-import { prGovernancePolicyService } from '../../services/prGovernancePolicyService';
+import { prGovernancePolicyService, normalizeBranchId } from '../../services/prGovernancePolicyService';
+import { prTypeMasterService, normalizeItemCategoryCode } from '../../services/prTypeMasterService';
+import { prGovernanceBackendClient } from '../../services/prGovernanceBackendClient';
 import { prChargeItemService, formatChargeAmount, getCurrencySymbol } from '../../services/prChargeItemService';
 import { PrMappedChargesSelector } from './PrMappedChargesSelector';
+import { prDuplicateGovernanceService } from '../../services/prDuplicateGovernanceService';
+import { DuplicatePrGovernancePanel } from './DuplicatePrGovernancePanel';
 import { prRfqConversionService } from '../../services/prRfqConversionService';
 import { inventoryValidationService } from '../../services/inventoryValidationService';
 import { prAgingService } from '../../services/prAgingService';
@@ -27,6 +34,8 @@ import { rbacPermissionService } from '../../services/rbacPermissionService';
 import { budgetControlService } from '../../services/budgetControlService';
 import { financialYearService } from '../../services/financialYearService';
 import { EnterpriseAuditService } from '../../services/enterpriseAuditService';
+import { sapB1IntegrationService } from '../../services/sapB1IntegrationService';
+import { calculateExpensePrFinancials } from '../../services/prFinancialCalculator';
 import {
   formatEstimatedValue,
   getExpectedDeliveryDate,
@@ -105,6 +114,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
   } | null>(null);
 
   // Editable PR Header & Lines State
+  const [editPrType, setEditPrType] = useState<PRType>(pr.prType);
   const [editPriority, setEditPriority] = useState<PRPriority>(pr.priority);
   const [editDepartment, setEditDepartment] = useState<string>(pr.department);
   const [editCurrency, setEditCurrency] = useState<string>(getPrCurrency(pr));
@@ -117,12 +127,111 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
   const [chargeItems, setChargeItems] = useState<PRChargeItem[]>(() =>
     pr.chargeItems && pr.chargeItems.length > 0 ? pr.chargeItems : []
   );
+  const [activeChargeLineIdx, setActiveChargeLineIdx] = useState<number | null>(null);
+  const [lineChargeSelectorError, setLineChargeSelectorError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [sapTrace, setSapTrace] = useState(() =>
+    sapB1IntegrationService.getTraceForPr(pr.id) || pr.sapIntegrationTrace
+  );
+  const [showSapPayload, setShowSapPayload] = useState(false);
+
+  const [governanceTick, setGovernanceTick] = useState(0);
+
+  React.useEffect(() => {
+    const onPolicyUpdated = () => setGovernanceTick((t) => t + 1);
+    window.addEventListener('cip-pr-governance-updated', onPolicyUpdated);
+    return () => window.removeEventListener('cip-pr-governance-updated', onPolicyUpdated);
+  }, []);
 
   // Authoritative Effective Policy & Line Conversion Summaries
   const effectivePolicy = useMemo(
     () => prGovernancePolicyService.getEffectivePolicy(pr.companyId, pr.branchId),
-    [pr.companyId, pr.branchId]
+    [pr.companyId, pr.branchId, governanceTick]
+  );
+
+  const isBudgetValidationEnabled = Boolean(
+    effectivePolicy.activation?.budgetValidationEnabled &&
+      effectivePolicy.budget?.enableBudgetValidation
+  );
+
+  const activePrType = isEditMode ? editPrType : pr.prType;
+
+  const eligiblePrTypes = useMemo(() => {
+    const act = effectivePolicy.activation;
+    return prTypeMasterService.getPrTypes().filter((prt) => {
+      if (prt.code === pr.prType) return true;
+      if (prt.status !== 'ACTIVE' || prt.approvalStatus !== 'APPROVED') return false;
+      const code = prt.code as PRType;
+      if (code === 'MANUAL' && !act.manualPrCreationEnabled) return false;
+      if (code === 'MRP' && !act.mrpPrCreationEnabled) return false;
+      if (code === 'REPAIR' && !act.repairPrEnabled) return false;
+      if (code === 'MAINTENANCE' && !act.maintenancePrEnabled) return false;
+      if (code === 'CAPEX_ASSET' && !act.capexAssetPrEnabled) return false;
+      return prTypeMasterService.evaluatePrTypeEligibility({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        itemCategoryCode: 'ALL',
+        prTypeCode: code,
+        userRole: currentUser.role,
+      }).eligible;
+    });
+  }, [effectivePolicy, pr.prType, pr.companyId, pr.branchId, currentUser.role, governanceTick]);
+
+  const eligibleCategoriesForPrType = useMemo(
+    () =>
+      prTypeMasterService.getEligibleCategoriesForContext({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        prTypeCode: activePrType,
+        userRole: currentUser.role,
+      }),
+    [pr.companyId, pr.branchId, activePrType, currentUser.role, governanceTick]
+  );
+
+  const eligibleBranchItems = useMemo(() => {
+    let branches: Branch[] = INITIAL_BRANCHES;
+    let items: GlobalItem[] = INITIAL_GLOBAL_ITEMS;
+    try {
+      const sb = localStorage.getItem('kosh_branches');
+      if (sb) {
+        const parsed = JSON.parse(sb);
+        if (Array.isArray(parsed) && parsed.length > 0) branches = parsed;
+      }
+    } catch {}
+    try {
+      const si = localStorage.getItem('kosh_global_items');
+      if (si) {
+        const parsed = JSON.parse(si);
+        if (Array.isArray(parsed) && parsed.length > 0) items = parsed;
+      }
+    } catch {}
+    const normBr = normalizeBranchId(pr.branchId);
+    const branchObj = branches.find((b) => b.id === normBr || b.id === pr.branchId) || branches[0];
+    const branchPool = getBranchActiveItems(items, branchObj);
+    const pool = branchPool.length > 0 ? branchPool : items;
+    const allowedCats = new Set(eligibleCategoriesForPrType.map((c) => c.code));
+    return pool.filter((item) => allowedCats.has(normalizeItemCategoryCode(item.categoryCode || 'OT')));
+  }, [pr.branchId, eligibleCategoriesForPrType]);
+
+  const categoryValidationResult = useMemo(
+    () =>
+      prTypeMasterService.validateLinesCategoriesForPrType({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        prTypeCode: activePrType,
+        lines: lines.map((l) => ({
+          id: l.id,
+          itemCode: l.itemCode,
+          itemCategory: l.itemCategory,
+        })),
+        userRole: currentUser.role,
+      }),
+    [pr.companyId, pr.branchId, activePrType, lines, currentUser.role, governanceTick]
+  );
+
+  const invalidLineIdSet = useMemo(
+    () => new Set(categoryValidationResult.invalidLines.map((b) => b.lineIndex)),
+    [categoryValidationResult]
   );
 
   const convertedQtyMap = useMemo(() => {
@@ -163,9 +272,73 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
   const isHistoricalLocked = !fyMutationGuard.allowed;
 
   // Part K & Part L Live Snapshots & Exception States
-  const [governanceTick, setGovernanceTick] = useState(0);
+  const [dupRefreshTick, setDupRefreshTick] = useState(0);
   const [invExceptionReason, setInvExceptionReason] = useState('');
   const [bgtExceptionReason, setBgtExceptionReason] = useState('');
+
+  React.useEffect(() => {
+    let active = true;
+    void prDuplicateGovernanceService.hydrateFromBackend().then(() => {
+      if (active) setDupRefreshTick((t) => t + 1);
+    });
+    const onPrsUpdated = () => {
+      if (active) setDupRefreshTick((t) => t + 1);
+    };
+    window.addEventListener('cip-prs-updated', onPrsUpdated);
+    return () => {
+      active = false;
+      window.removeEventListener('cip-prs-updated', onPrsUpdated);
+    };
+  }, [pr.id]);
+
+  const dupDraftKey = pr.duplicateGovernanceKey || pr.id;
+  const dupLinesInput = useMemo(
+    () =>
+      lines.map((l) => ({
+        id: l.id,
+        itemCode: l.itemCode,
+        description: l.description,
+        requestedQuantity: Number(l.requestedQuantity) || 0,
+        inventoryUom: l.inventoryUom,
+        purchasePurpose: l.purchasePurpose,
+      })),
+    [lines]
+  );
+
+  const duplicateSnapshot = useMemo(
+    () =>
+      prDuplicateGovernanceService.evaluateDuplicateConditions({
+        draftKey: dupDraftKey,
+        prId: pr.id,
+        prNumber: pr.prNumber,
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        requesterId: pr.requesterId,
+        purchasePurpose: editPurpose || pr.purchasePurpose,
+        expectedDeliveryDate: editExpectedDeliveryDate || pr.expectedDeliveryDate || pr.requiredBy,
+        lines: dupLinesInput,
+        actorUser: currentUser,
+        persistedSnapshot: pr.duplicateGovernance,
+      }),
+    [
+      dupDraftKey,
+      pr.id,
+      pr.prNumber,
+      pr.companyId,
+      pr.branchId,
+      pr.requesterId,
+      pr.purchasePurpose,
+      editPurpose,
+      editExpectedDeliveryDate,
+      pr.expectedDeliveryDate,
+      pr.requiredBy,
+      pr.duplicateGovernance,
+      dupLinesInput,
+      currentUser,
+      governanceTick,
+      dupRefreshTick,
+    ]
+  );
 
   const [partKTab, setPartKTab] = useState<'CONTEXT' | 'WAREHOUSE' | 'STOCK_AGING' | 'COMPANY_WIDE' | 'PR_AGING'>('WAREHOUSE');
   const [transferReason, setTransferReason] = useState('');
@@ -220,8 +393,10 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     [currentUser]
   );
 
-  const budgetControlSnapshot = useMemo(
-    () =>
+  const budgetControlSnapshot = useMemo(() => {
+    if (!isBudgetValidationEnabled) return null;
+    const valuation = prGovernancePolicyService.resolvePrValuationAmount(pr, effectivePolicy);
+    return (
       pr.budgetValidationSnapshot ||
       budgetControlService.validateBudgetAtStage({
         transactionId: pr.id,
@@ -233,12 +408,12 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
         department: pr.department,
         costCenter: pr.costCentre || 'CC-PROD-101',
         financialYear: pr.financialYearCode || pr.financialPeriod,
-        proposedAmount: pr.estimatedTotalValue,
+        proposedAmount: valuation.reportingAmount,
         validatedBy: currentUser.fullName,
         transactionDate: pr.createdAt?.slice(0, 10),
-      }),
-    [pr, currentUser.fullName, governanceTick]
-  );
+      })
+    );
+  }, [pr, isBudgetValidationEnabled, effectivePolicy, currentUser.fullName, governanceTick]);
 
   const prAuditLogs = useMemo(
     () =>
@@ -337,16 +512,50 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     return pr.chargeItems && pr.chargeItems.length > 0 ? pr.chargeItems : [];
   }, [isEditMode, chargeItems, calculatedTotalValue, editCurrency, pr.chargeItems]);
 
+  const displayedLines = useMemo(() => {
+    if (isEditMode) {
+      return prChargeItemService.recalculateLinesCharges(lines, editCurrency);
+    }
+    return pr.lines;
+  }, [isEditMode, lines, editCurrency, pr.lines]);
+
   const chargesSummary = useMemo(() => {
     const subtotal = isEditMode ? calculatedTotalValue : pr.estimatedTotalValue;
-    return prChargeItemService.calculateRequisitionChargesSummary(displayedChargeItems, subtotal);
-  }, [displayedChargeItems, isEditMode, calculatedTotalValue, pr.estimatedTotalValue]);
+    return prChargeItemService.calculateFullRequisitionSummary(
+      displayedChargeItems,
+      displayedLines,
+      subtotal
+    );
+  }, [displayedChargeItems, displayedLines, isEditMode, calculatedTotalValue, pr.estimatedTotalValue]);
+
+  const approvalWorkflowPlan = useMemo(
+    () =>
+      prGovernancePolicyService.resolveApprovalWorkflowPlan(
+        {
+          ...pr,
+          estimatedTotalValue: isEditMode ? calculatedTotalValue : pr.estimatedTotalValue,
+          grandTotalWithCharges: chargesSummary.grandTotalWithCharges,
+          currency: isEditMode ? editCurrency : getPrCurrency(pr),
+        },
+        effectivePolicy
+      ),
+    [pr, isEditMode, calculatedTotalValue, chargesSummary.grandTotalWithCharges, editCurrency, effectivePolicy]
+  );
 
   const handleUpdateChargeApplicability = (chargeId: string, applicability: PRChargeApplicability) => {
     setChargeItems((prev) =>
       prev.map((item) =>
         item.id === chargeId
-          ? prChargeItemService.calculateChargeItem({ ...item, applicability }, calculatedTotalValue)
+          ? prChargeItemService.calculateChargeItem(
+              {
+                ...item,
+                applicability,
+                ...(applicability === 'APPLICABLE' && item.chargeType === 'AT_ACTUALS'
+                  ? { rateOrPercentage: 0 }
+                  : {}),
+              },
+              calculatedTotalValue
+            )
           : item
       )
     );
@@ -356,7 +565,14 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     setChargeItems((prev) =>
       prev.map((item) =>
         item.id === chargeId
-          ? prChargeItemService.calculateChargeItem({ ...item, chargeType }, calculatedTotalValue)
+          ? prChargeItemService.calculateChargeItem(
+              {
+                ...item,
+                chargeType,
+                ...(chargeType === 'AT_ACTUALS' ? { rateOrPercentage: 0 } : {}),
+              },
+              calculatedTotalValue
+            )
           : item
       )
     );
@@ -414,11 +630,28 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     setChargeItems(mandatory);
   };
 
-  const handleAddMappedCharge = (option: EffectiveMappedChargeOption) => {
+  const handleAddMappedCharge = (option: EffectiveMappedChargeOption, customAmount?: number) => {
     setChargeSelectorError(null);
     try {
+      const context =
+        customAmount !== undefined
+          ? {
+              rateOverride: customAmount,
+              chargeTypeOverride: 'FIXED' as PRChargeType,
+              applicabilityOverride:
+                option.calculationMethod !== 'PERCENTAGE' && customAmount === Number(option.rate)
+                  ? ('AS_PER_FIXED_CHARGES' as PRChargeApplicability)
+                  : ('APPLICABLE' as PRChargeApplicability),
+            }
+          : undefined;
       setChargeItems((prev) =>
-        prChargeItemService.addMappedChargeToPrList(prev, option, calculatedTotalValue, editCurrency)
+        prChargeItemService.addMappedChargeToPrList(
+          prev,
+          option,
+          calculatedTotalValue,
+          editCurrency,
+          context
+        )
       );
     } catch (err: any) {
       setChargeSelectorError(err?.message || 'Unable to add charge.');
@@ -444,8 +677,92 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     setChargeItems((prev) => prev.filter((item) => item.id !== chargeId));
   };
 
+  const handleAddLineMappedCharge = (
+    lineIdx: number,
+    option: EffectiveMappedChargeOption,
+    customAmount?: number
+  ) => {
+    setLineChargeSelectorError(null);
+    try {
+      setLines((prev) =>
+        prev.map((line, i) => {
+          if (i !== lineIdx) return line;
+          const lineSub =
+            (Number(line.requestedQuantity) || 0) * (Number(line.approximateUnitPrice) || 0);
+          const context =
+            customAmount !== undefined
+              ? {
+                  quantity: Number(line.requestedQuantity) || 1,
+                  rateOverride: customAmount,
+                  chargeTypeOverride: 'FIXED' as PRChargeType,
+                  applicabilityOverride:
+                    option.calculationMethod !== 'PERCENTAGE' && customAmount === Number(option.rate)
+                      ? ('AS_PER_FIXED_CHARGES' as PRChargeApplicability)
+                      : ('APPLICABLE' as PRChargeApplicability),
+                }
+              : { quantity: Number(line.requestedQuantity) || 1 };
+          const nextCharges = prChargeItemService.addMappedChargeToPrList(
+            line.lineCharges || [],
+            option,
+            lineSub,
+            editCurrency,
+            context
+          );
+          return { ...line, lineCharges: nextCharges };
+        })
+      );
+    } catch (err: any) {
+      setLineChargeSelectorError(err?.message || 'Unable to add line charge.');
+    }
+  };
+
+  const handleUpdateLineChargeField = (
+    lineIdx: number,
+    chargeId: string,
+    patch: Partial<PRChargeItem>
+  ) => {
+    setLines((prev) =>
+      prev.map((line, i) => {
+        if (i !== lineIdx) return line;
+        const lineSub =
+          (Number(line.requestedQuantity) || 0) * (Number(line.approximateUnitPrice) || 0);
+        const nextCharges = (line.lineCharges || []).map((c) => {
+          if (c.id !== chargeId) return c;
+          const merged = {
+            ...c,
+            ...patch,
+            ...(patch.chargeType === 'AT_ACTUALS' ? { rateOrPercentage: 0 } : {}),
+          };
+          return prChargeItemService.calculateChargeItem(merged, lineSub, {
+            quantity: Number(line.requestedQuantity) || 1,
+          });
+        });
+        return { ...line, lineCharges: nextCharges };
+      })
+    );
+  };
+
+  const handleRemoveLineCharge = (lineIdx: number, chargeId: string) => {
+    setLines((prev) =>
+      prev.map((line, i) =>
+        i === lineIdx
+          ? { ...line, lineCharges: (line.lineCharges || []).filter((c) => c.id !== chargeId) }
+          : line
+      )
+    );
+  };
+
   const handleSaveEdit = () => {
     setEditError(null);
+    if (!categoryValidationResult.valid) {
+      const msg =
+        categoryValidationResult.prTypeReason ||
+        categoryValidationResult.invalidLines
+          .map((bad) => `Line #${bad.lineIndex + 1} (${bad.itemCode || 'Item'}): ${bad.reason}`)
+          .join(' | ');
+      setEditError(`PR Type / Category validation failed: ${msg}`);
+      return;
+    }
     if (effectivePolicy.activation.expectedDeliveryDateEnabled) {
       if (effectivePolicy.activation.expectedDeliveryDateMandatory && (!editExpectedDeliveryDate || !editExpectedDeliveryDate.trim())) {
         setEditError('Expected Delivery Date is mandatory under active company policy.');
@@ -462,12 +779,15 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     }
 
     try {
-      const updatedLines = lines.map((l) => ({
-        ...l,
-        currency: editCurrency,
-        estimatedTotalValue:
-          (Number(l.requestedQuantity) || 0) * (Number(l.approximateUnitPrice) || 0),
-      }));
+      const updatedLines = prChargeItemService.recalculateLinesCharges(
+        lines.map((l) => ({
+          ...l,
+          currency: editCurrency,
+          estimatedTotalValue:
+            (Number(l.requestedQuantity) || 0) * (Number(l.approximateUnitPrice) || 0),
+        })),
+        editCurrency
+      );
 
       const finalCharges =
         displayedChargeItems.length > 0 ? displayedChargeItems : undefined;
@@ -475,6 +795,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
       PurchaseRequisitionService.updatePR(
         pr.id,
         {
+          prType: editPrType,
           priority: editPriority,
           department: editDepartment,
           currency: editCurrency,
@@ -556,7 +877,58 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     }
   };
 
-  const handleResubmit = () => {
+  const handleResubmit = async () => {
+    if (!categoryValidationResult.valid) {
+      setActionFeedback({
+        type: 'error',
+        message:
+          categoryValidationResult.prTypeReason ||
+          categoryValidationResult.invalidLines.map((b) => b.reason).join(' | '),
+      });
+      return;
+    }
+
+    const remoteGov = await prGovernanceBackendClient.validatePrRemote({
+      action: 'SUBMIT',
+      pr: {
+        id: pr.id,
+        prNumber: pr.prNumber,
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        prType: activePrType,
+        department: isEditMode ? editDepartment : pr.department,
+        costCentre: pr.costCentre,
+        currency: activeCurrency,
+        estimatedTotalValue: activeEstimatedValue,
+        grandTotalWithCharges: chargesSummary.grandTotalWithCharges,
+        lines: lines.map((l) => ({ id: l.id, itemCode: l.itemCode, itemCategory: l.itemCategory })),
+      },
+      actorUser: currentUser,
+    });
+    if (remoteGov && !remoteGov.allowed) {
+      setActionFeedback({ type: 'error', message: remoteGov.errors[0] || 'Backend governance check failed.' });
+      return;
+    }
+
+    const remoteCheck = await prDuplicateGovernanceService.validateSubmissionRemote({
+      draftKey: dupDraftKey,
+      prId: pr.id,
+      prNumber: pr.prNumber,
+      companyId: pr.companyId,
+      branchId: pr.branchId,
+      requesterId: pr.requesterId,
+      purchasePurpose: pr.purchasePurpose,
+      expectedDeliveryDate: pr.expectedDeliveryDate || pr.requiredBy,
+      lines: dupLinesInput,
+      actorUser: currentUser,
+      persistedSnapshot: pr.duplicateGovernance,
+    });
+    setDupRefreshTick((t) => t + 1);
+    if (!remoteCheck.allowed) {
+      setActionFeedback({ type: 'error', message: remoteCheck.message });
+      return;
+    }
+
     const res = PurchaseRequisitionService.resubmitPR(
       pr.id,
       currentUser.fullName,
@@ -571,7 +943,58 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
     onClose();
   };
 
-  const handleSubmitDraft = () => {
+  const handleSubmitDraft = async () => {
+    if (!categoryValidationResult.valid) {
+      setActionFeedback({
+        type: 'error',
+        message:
+          categoryValidationResult.prTypeReason ||
+          categoryValidationResult.invalidLines.map((b) => b.reason).join(' | '),
+      });
+      return;
+    }
+
+    const remoteGov = await prGovernanceBackendClient.validatePrRemote({
+      action: 'SUBMIT',
+      pr: {
+        id: pr.id,
+        prNumber: pr.prNumber,
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        prType: activePrType,
+        department: isEditMode ? editDepartment : pr.department,
+        costCentre: pr.costCentre,
+        currency: activeCurrency,
+        estimatedTotalValue: activeEstimatedValue,
+        grandTotalWithCharges: chargesSummary.grandTotalWithCharges,
+        lines: lines.map((l) => ({ id: l.id, itemCode: l.itemCode, itemCategory: l.itemCategory })),
+      },
+      actorUser: currentUser,
+    });
+    if (remoteGov && !remoteGov.allowed) {
+      setActionFeedback({ type: 'error', message: remoteGov.errors[0] || 'Backend governance check failed.' });
+      return;
+    }
+
+    const remoteCheck = await prDuplicateGovernanceService.validateSubmissionRemote({
+      draftKey: dupDraftKey,
+      prId: pr.id,
+      prNumber: pr.prNumber,
+      companyId: pr.companyId,
+      branchId: pr.branchId,
+      requesterId: pr.requesterId,
+      purchasePurpose: pr.purchasePurpose,
+      expectedDeliveryDate: pr.expectedDeliveryDate || pr.requiredBy,
+      lines: dupLinesInput,
+      actorUser: currentUser,
+      persistedSnapshot: pr.duplicateGovernance,
+    });
+    setDupRefreshTick((t) => t + 1);
+    if (!remoteCheck.allowed) {
+      setActionFeedback({ type: 'error', message: remoteCheck.message });
+      return;
+    }
+
     const res = PurchaseRequisitionService.submitPR(pr.id, currentUser);
     if (!res.success) {
       setActionFeedback({ type: 'error', message: res.message });
@@ -910,6 +1333,10 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
   };
 
   const handleRequestBudgetException = () => {
+    if (!isBudgetValidationEnabled || !budgetControlSnapshot) {
+      setActionFeedback({ type: 'error', message: 'Budget validation is disabled for this Company / Branch.' });
+      return;
+    }
     try {
       budgetControlService.requestBudgetException({
         transactionType: 'PR',
@@ -1016,6 +1443,12 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                 Governed Policy: {pr.policyVersion || effectivePolicy.policyVersion} (
                 {pr.policySnapshot?.resolutionSource || effectivePolicy.resolutionSource})
               </span>
+              <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 font-mono font-bold text-[10px] text-emerald-800">
+                Approval Workflow:{' '}
+                {approvalWorkflowPlan.enabled
+                  ? `Level ${approvalWorkflowPlan.currentStepIndex}/${approvalWorkflowPlan.requiredLevels} (${approvalWorkflowPlan.currentTier?.approverRole || 'Approver'})`
+                  : 'Direct'}
+              </span>
               {(pr.financialYearCode || pr.financialPeriod) && (
                 <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-300 font-mono font-bold text-[10px] text-slate-700">
                   FY: {pr.financialYearCode || pr.financialPeriod}
@@ -1091,6 +1524,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                     type="button"
                     onClick={() => {
                       setIsEditMode(false);
+                      setEditPrType(pr.prType);
                       setEditPriority(pr.priority);
                       setEditDepartment(pr.department);
                       setEditCurrency(getPrCurrency(pr));
@@ -1135,8 +1569,41 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
             </div>
           )}
 
-          {/* Budget Governance & Dual-Currency Uncommitted Reconciliation Summary Strip (Requirement F) */}
-          {effectivePolicy.activation.budgetValidationEnabled && (
+          {/* Unified Duplicate PR Governance Panel */}
+          {(duplicateSnapshot.hasDuplicates || (duplicateSnapshot.auditHistory?.length ?? 0) > 0) && (
+            <DuplicatePrGovernancePanel
+              draftKey={dupDraftKey}
+              prId={pr.id}
+              prNumber={pr.prNumber}
+              companyId={pr.companyId}
+              branchId={pr.branchId}
+              requesterId={pr.requesterId}
+              purchasePurpose={editPurpose || pr.purchasePurpose}
+              expectedDeliveryDate={editExpectedDeliveryDate || pr.expectedDeliveryDate || pr.requiredBy}
+              lines={dupLinesInput}
+              currentUser={currentUser}
+              snapshot={duplicateSnapshot}
+              readOnly={
+                isHistoricalLocked ||
+                ['CANCELLED', 'SHORT_CLOSED', 'WITHDRAWN', 'REJECTED', 'ARCHIVED', 'COMPLETED'].includes(
+                  pr.status
+                )
+              }
+              onSnapshotUpdated={() => {
+                setActionFeedback(null);
+                setDupRefreshTick((t) => t + 1);
+                onUpdated();
+              }}
+              onRefresh={() => {
+                void prDuplicateGovernanceService.hydrateFromBackend().then(() => {
+                  setDupRefreshTick((t) => t + 1);
+                });
+              }}
+            />
+          )}
+
+          {/* Budget Governance & Dual-Currency Uncommitted Reconciliation Summary Strip (Conditional on Enable Budget Validation) */}
+          {isBudgetValidationEnabled && (
             <div className="bg-slate-900 text-white p-3.5 rounded-xl space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2 text-[10px]">
                 <span className="font-bold text-indigo-300 uppercase tracking-wider">
@@ -1228,9 +1695,24 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
             </div>
             <div>
               <label className="font-bold text-slate-700 mb-1 block">PR Type</label>
-              <div className="w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg font-bold text-slate-800 text-xs">
-                {pr.prType}
-              </div>
+              {isEditMode && (pr.status === 'DRAFT' || pr.status === 'RETURNED_FOR_CORRECTION') ? (
+                <select
+                  aria-label="Edit PR Type"
+                  value={editPrType}
+                  onChange={(e) => setEditPrType(e.target.value as PRType)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-indigo-300 rounded-lg font-bold text-slate-800 text-xs"
+                >
+                  {eligiblePrTypes.map((prt) => (
+                    <option key={prt.code} value={prt.code}>
+                      {prt.name} ({prt.code})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg font-bold text-slate-800 text-xs">
+                  {pr.prType}
+                </div>
+              )}
             </div>
             <div>
               <label className="block font-bold text-slate-700 mb-1">Priority</label>
@@ -1295,7 +1777,11 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                 {formatEstimatedValue(activeEstimatedValue, activeCurrency)}
                 {chargesSummary.applicableChargesCount > 0 && (
                   <span className="ml-1.5 text-[10px] font-semibold text-indigo-700">
-                    (+{formatChargeAmount(chargesSummary.applicableChargesBaseTotal, activeCurrency)} charges)
+                    (+{formatChargeAmount(chargesSummary.applicableChargesBaseTotal, activeCurrency)} charges
+                    {chargesSummary.applicableChargesTaxTotal > 0
+                      ? ` + ${formatChargeAmount(chargesSummary.applicableChargesTaxTotal, activeCurrency)} tax`
+                      : ''}
+                    )
                   </span>
                 )}
               </div>
@@ -1357,7 +1843,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
             )}
           </div>
 
-          {/* SEPARATE TABS: PR Item Lines vs Charge Items */}
+          {/* SEPARATE TABS: PR Item/Expense Lines vs Charge Items (Charge Items tab hidden for EXPENSE PRs) */}
           <div className="flex items-center gap-2 border-b border-slate-200 pt-1">
             <button
               type="button"
@@ -1369,37 +1855,167 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
               }`}
             >
               <Package className="w-3.5 h-3.5" />
-              <span>PR Item Lines & Conversion Tracking</span>
+              <span>
+                {activePrType === 'EXPENSE'
+                  ? 'Expense & Service Lines (SAP dDocument_Service)'
+                  : 'PR Item Lines & Conversion Tracking'}
+              </span>
               <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700">
-                {lines.length}
+                {activePrType === 'EXPENSE' ? (pr.expenseLines || []).length : lines.length}
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('CHARGES')}
-              className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-                activeTab === 'CHARGES'
-                  ? 'border-indigo-600 text-indigo-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Coins className="w-3.5 h-3.5" />
-              <span>Charge Items (Loading, Unloading, Customs Duty, Freight & Fixed Tariffs)</span>
-              <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  chargesSummary.applicableChargesCount > 0
-                    ? 'bg-indigo-100 text-indigo-800'
-                    : 'bg-slate-100 text-slate-600'
+            {activePrType !== 'EXPENSE' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('CHARGES')}
+                className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                  activeTab === 'CHARGES'
+                    ? 'border-indigo-600 text-indigo-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                {chargesSummary.applicableChargesCount} Applicable
-              </span>
-            </button>
+                <Coins className="w-3.5 h-3.5" />
+                <span>Charge Items</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    chargesSummary.applicableChargesCount > 0
+                      ? 'bg-indigo-100 text-indigo-800'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {`${chargesSummary.applicableChargesCount} Applicable`}
+                </span>
+              </button>
+            )}
           </div>
 
-          {activeTab === 'LINES' && (
+          {activeTab === 'LINES' && activePrType === 'EXPENSE' && (() => {
+            const expFin = calculateExpensePrFinancials(pr.expenseLines || [], activeCurrency);
+            return (
+              <div className="space-y-3 min-w-0">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="text-[11px] font-medium text-slate-500">Expense Base Total</div>
+                    <div className="text-sm font-extrabold text-slate-800 font-mono mt-0.5">
+                      {formatChargeAmount(expFin.expenseBaseTotal, activeCurrency)}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="text-[11px] font-medium text-slate-500">Applicable Expense Tax</div>
+                    <div className="text-sm font-extrabold text-slate-700 font-mono mt-0.5">
+                      {formatChargeAmount(expFin.expenseTaxTotal, activeCurrency)}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200 shadow-2xs">
+                    <div className="text-[11px] font-bold text-indigo-800">Total Expense PR Value</div>
+                    <div className="text-base font-extrabold text-indigo-900 font-mono mt-0.5">
+                      {formatChargeAmount(expFin.totalExpensePrValue, activeCurrency)}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 shadow-2xs">
+                    <div className="text-[11px] font-bold text-emerald-900">SAP Service Mode</div>
+                    <div className="text-xs font-extrabold text-emerald-800 font-mono mt-0.5">
+                      dDocument_Service
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs bg-white">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1260px]">
+                      <thead>
+                        <tr className="bg-[#0B192C] text-white font-bold text-[11px]">
+                          <th className="p-2.5 text-center border-r border-slate-800 w-10">#</th>
+                          <th className="p-2.5 border-r border-slate-800">Expense Category &amp; SAP GL</th>
+                          <th className="p-2.5 border-r border-slate-800">Description</th>
+                          <th className="p-2.5 border-r border-slate-800">Cost Centre</th>
+                          <th className="p-2.5 border-r border-slate-800">Service From Date</th>
+                          <th className="p-2.5 border-r border-slate-800">Service To Date</th>
+                          <th className="p-2.5 text-right border-r border-slate-800">Base Amount</th>
+                          <th className="p-2.5 text-center border-r border-slate-800">Tax %</th>
+                          <th className="p-2.5 text-right border-r border-slate-800">Total with Tax</th>
+                          <th className="p-2.5 border-r border-slate-800">Purpose &amp; Justification</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {(pr.expenseLines || []).map((el, idx) => (
+                          <tr key={el.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 text-center font-mono text-slate-600 border-r border-slate-200">
+                              {idx + 1}
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200">
+                              <div className="font-bold text-slate-900">{el.expenseCategoryName}</div>
+                              <div className="text-[10px] font-mono text-emerald-700 mt-0.5">
+                                {el.expenseCategoryCode} · SAP GL: {el.sapGlAccountCode || '—'}
+                              </div>
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200 text-slate-800">
+                              {el.description || el.expenseDescription}
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono font-bold text-slate-800">
+                              {el.costCentre || el.costCenter}
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono text-slate-700">
+                              {el.serviceFromDate || el.expectedServiceDate || '—'}
+                            </td>
+                            <td className="p-2.5 border-r border-slate-200 font-mono text-slate-700">
+                              {el.serviceToDate || el.expectedServiceDate || '—'}
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                              {formatChargeAmount(el.baseAmount, activeCurrency)}
+                            </td>
+                            <td className="p-2.5 text-center font-mono text-slate-700 border-r border-slate-200">
+                              {el.taxPercent ?? el.taxRatePercent}% ({el.taxCode})
+                            </td>
+                            <td className="p-2.5 text-right font-mono font-extrabold text-indigo-900 border-r border-slate-200">
+                              {formatChargeAmount(
+                                Number(el.totalWithTax ?? el.totalAmountWithTax ?? el.totalAmount ?? 0),
+                                activeCurrency
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <div className="font-bold text-slate-800">{el.purchasePurpose}</div>
+                              <div className="text-[11px] text-slate-600 mt-0.5">
+                                {el.businessJustification}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {activeTab === 'LINES' && activePrType !== 'EXPENSE' && (
             <>
+              {!categoryValidationResult.valid && (
+                <div
+                  role="alert"
+                  className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 space-y-1"
+                >
+                  <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>
+                      PR Type &amp; Category Mapping Validation ({activePrType}): {categoryValidationResult.invalidLines.length} incompatible line(s) retained
+                    </span>
+                  </div>
+                  {categoryValidationResult.prTypeReason && (
+                    <p className="text-[11px] font-semibold">{categoryValidationResult.prTypeReason}</p>
+                  )}
+                  <ul className="list-disc pl-5 text-[11px] space-y-0.5">
+                    {categoryValidationResult.invalidLines.map((bad) => (
+                      <li key={bad.lineIndex}>
+                        <strong>Line #{bad.lineIndex + 1} ({bad.itemCode} · {bad.rawCategory}):</strong> {bad.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Item Lines Section Header */}
               <div className="flex items-center justify-between bg-slate-100 p-3 rounded-xl border border-slate-200">
                 <div>
@@ -1430,18 +2046,26 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                         <th className="p-2.5 text-center border-r border-slate-800">Currency</th>
                         <th className="p-2.5 text-right border-r border-slate-800">Unit Price</th>
                         <th className="p-2.5 text-right border-r border-slate-800">Subtotal</th>
+                        <th className="p-2.5 border-r border-slate-800">Line Charges</th>
                         <th className="p-2.5 border-r border-slate-800">Purpose & Buyer</th>
                         <th className="p-2.5 text-center">Controlled Amendment</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {lines.map((line, idx) => {
+                      {displayedLines.map((line, idx) => {
                         const lineCurrency = isEditMode ? editCurrency : line.currency || activeCurrency;
                         const lineSubtotal =
                           (Number(line.requestedQuantity) || 0) *
                           (Number(line.approximateUnitPrice) || 0);
                         const convQty = convertedQtyMap[line.id] || 0;
                         const lockInfo = prGovernancePolicyService.getLineLockStatus(line, convQty);
+                        const activeLineCharges = (line.lineCharges || []).filter(
+                          (c) => c.applicability !== 'NOT_APPLICABLE'
+                        );
+                        const lineChargesTotal = activeLineCharges.reduce(
+                          (sum, c) => sum + (c.estimatedAmount || 0),
+                          0
+                        );
                         const canAmendUnconvertedLine =
                           !isHistoricalLocked &&
                           (pr.status === 'APPROVED_PENDING_BUYER' ||
@@ -1450,19 +2074,71 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                           convQty === 0 &&
                           !lockInfo.isLockedForEdit;
 
+                        const lineHasCategoryError = invalidLineIdSet.has(idx);
                         return (
                           <tr
                             key={line.id || idx}
                             className={`hover:bg-indigo-50/30 transition align-top ${
-                              idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'
+                              lineHasCategoryError
+                                ? 'bg-rose-50/75'
+                                : idx % 2 === 0
+                                ? 'bg-white'
+                                : 'bg-slate-50/50'
                             }`}
                           >
                             <td className="p-2 text-center border-r border-slate-200 font-bold bg-slate-100 text-slate-700 font-mono">
                               #{idx + 1}
                             </td>
-                            <td className="p-2 border-r border-slate-200">
-                              <div className="font-bold text-indigo-700 text-xs">{line.itemCode}</div>
-                              <div className="text-[10px] text-slate-500">Cat: {line.itemCategory}</div>
+                            <td className="p-2 border-r border-slate-200 space-y-1">
+                              {isEditMode && !lockInfo.isLockedForEdit && eligibleBranchItems.length > 0 ? (
+                                <select
+                                  aria-label={`Replace Item Line ${idx + 1}`}
+                                  value={eligibleBranchItems.some((it) => it.globalItemCode === line.itemCode) ? line.itemCode : ''}
+                                  onChange={(e) => {
+                                    const picked = eligibleBranchItems.find((it) => it.globalItemCode === e.target.value);
+                                    if (!picked) return;
+                                    const updated = [...lines];
+                                    updated[idx] = {
+                                      ...updated[idx],
+                                      itemCode: picked.globalItemCode,
+                                      description: picked.description,
+                                      itemCategory: picked.categoryCode || 'OT',
+                                      inventoryUom: picked.inventoryUom || updated[idx].inventoryUom,
+                                    };
+                                    setLines(updated);
+                                  }}
+                                  className={`w-full px-1.5 py-1 bg-white border rounded font-mono font-bold text-xs ${
+                                    lineHasCategoryError ? 'border-rose-400 text-rose-700' : 'border-indigo-300 text-indigo-700'
+                                  }`}
+                                >
+                                  {!eligibleBranchItems.some((it) => it.globalItemCode === line.itemCode) && (
+                                    <option value="">
+                                      {line.itemCode} (
+                                      {lineHasCategoryError
+                                        ? `Incompatible: ${line.itemCategory}`
+                                        : `Current: ${line.itemCategory}`}
+                                      )
+                                    </option>
+                                  )}
+                                  {eligibleBranchItems.map((it) => (
+                                    <option key={it.id || it.globalItemCode} value={it.globalItemCode}>
+                                      {it.globalItemCode} ({it.categoryCode})
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="font-bold text-indigo-700 text-xs">{line.itemCode}</div>
+                              )}
+                              <div className="text-[10px] flex items-center gap-1.5">
+                                <span className={lineHasCategoryError ? 'text-rose-700 font-bold' : 'text-slate-500'}>
+                                  Cat: {line.itemCategory}
+                                </span>
+                                {lineHasCategoryError && (
+                                  <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 border border-rose-300 rounded font-bold text-[9px]">
+                                    Incompatible with {activePrType}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-2 border-r border-slate-200 text-[11px] font-semibold text-slate-800">
                               {line.description}
@@ -1549,6 +2225,29 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                             <td className="p-2 text-right border-r border-slate-200 font-mono font-bold text-xs text-indigo-700">
                               {formatEstimatedValue(lineSubtotal, lineCurrency)}
                             </td>
+                            <td className="p-2 border-r border-slate-200 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLineChargeSelectorError(null);
+                                  setActiveChargeLineIdx(idx);
+                                }}
+                                className={`px-2 py-1 rounded border text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer ${
+                                  activeLineCharges.length > 0
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                                    : 'bg-slate-50 hover:bg-indigo-50 text-indigo-700 border-slate-200'
+                                }`}
+                              >
+                                <Coins className="w-3 h-3" />
+                                <span>
+                                  {activeLineCharges.length > 0
+                                    ? `${activeLineCharges.length} (+${formatChargeAmount(lineChargesTotal, lineCurrency)})`
+                                    : isEditMode && !lockInfo.isLockedForEdit
+                                    ? '+ Add Charge'
+                                    : '0 Charges'}
+                                </span>
+                              </button>
+                            </td>
                             <td className="p-2 text-[10px] border-r border-slate-200">
                               <div className="font-bold text-slate-800">{line.purchasePurpose}</div>
                               <div className="text-indigo-700 font-semibold mt-0.5">
@@ -1587,15 +2286,15 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                 <div className="min-w-0 flex-1">
                   <h4 className="font-bold text-slate-800 text-xs flex items-center gap-2">
                     <Coins className="w-4 h-4 text-indigo-600" />
-                    <span>Charge Items (Loading, Unloading, Customs Duty, Freight, etc.)</span>
+                    <span>Charge Items</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
                       {chargesSummary.applicableChargesCount} Applicable
                     </span>
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {isEditMode
-                      ? 'Specify whether each charge is Applicable, As Per Fixed Charges tariff, or Exempt / N/A.'
-                      : 'Non-inventory cost components and fixed charge tariffs attached to this Purchase Requisition.'}
+                      ? 'Select a charge item belonging to this Company & Branch, enter its amount, and add it to this requisition.'
+                      : 'Non-inventory cost components and charge items attached to this Purchase Requisition.'}
                   </p>
                 </div>
 
@@ -1618,6 +2317,9 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                   selectedChargeItems={displayedChargeItems}
                   companyName={pr.companyId}
                   branchName={pr.branchName || pr.branchId}
+                  currency={editCurrency}
+                  referenceSubtotal={calculatedTotalValue}
+                  title="Add PR Charge Item"
                   onAddChargeOption={handleAddMappedCharge}
                   onAddMultipleOptions={handleAddMultipleMappedCharges}
                   errorNotice={chargeSelectorError}
@@ -1639,7 +2341,9 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                     {formatChargeAmount(chargesSummary.applicableChargesBaseTotal, activeCurrency)}
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    {chargesSummary.applicableChargesCount} items active
+                    {chargesSummary.lineChargesCount
+                      ? `Header ${formatChargeAmount(chargesSummary.headerChargesBaseTotal || 0, activeCurrency)} + Line ${formatChargeAmount(chargesSummary.lineChargesBaseTotal || 0, activeCurrency)}`
+                      : `${chargesSummary.applicableChargesCount} items active`}
                   </div>
                 </div>
                 <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
@@ -1654,7 +2358,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                     {formatChargeAmount(chargesSummary.grandTotalWithCharges, activeCurrency)}
                   </div>
                   <div className="text-[10px] text-indigo-600 font-medium">
-                    Items + Applicable Charges
+                    Items + Charges + Tax
                   </div>
                 </div>
               </div>
@@ -1673,18 +2377,18 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
               ) : (
                 <div className="rounded-xl border border-slate-200 overflow-hidden shadow-2xs bg-white">
                   <div className="overflow-x-auto max-h-[42vh]">
-                    <table className="w-full text-left text-xs border-collapse min-w-[1060px]">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1140px]">
                       <thead>
                         <tr className="bg-[#0B192C] text-white font-bold sticky top-0 z-10 border-b border-slate-800 text-[11px]">
-                          <th className="p-2.5 text-center border-r border-slate-800 w-12">#</th>
-                          <th className="p-2.5 border-r border-slate-800 w-60">Charge Item & Category</th>
-                          <th className="p-2.5 border-r border-slate-800 w-60">Applicability</th>
-                          <th className="p-2.5 border-r border-slate-800 w-52">Rate / Tariff Basis</th>
-                          <th className="p-2.5 text-right border-r border-slate-800 w-28">Base Amount</th>
-                          <th className="p-2.5 text-center border-r border-slate-800 w-20">GST %</th>
-                          <th className="p-2.5 text-right border-r border-slate-800 w-32">Total with Tax</th>
-                          <th className="p-2.5 border-r border-slate-800 w-40">Payee / Entity</th>
-                          <th className="p-2.5 border-r border-slate-800">Remarks</th>
+                          <th className="p-2.5 text-center border-r border-slate-800 w-10">#</th>
+                          <th className="p-2.5 border-r border-slate-800 w-48">Charge Item & Category</th>
+                          <th className="p-2.5 border-r border-slate-800 w-52">Applicability</th>
+                          <th className="p-2.5 border-r border-slate-800 w-44">Rate / Tariff Basis</th>
+                          <th className="p-2.5 text-right border-r border-slate-800 w-24">Base Amount</th>
+                          <th className="p-2.5 text-center border-r border-slate-800 w-16">GST %</th>
+                          <th className="p-2.5 text-right border-r border-slate-800 w-24">Total with Tax</th>
+                          <th className="p-2.5 border-r border-slate-800 w-36">Payee / Entity</th>
+                          <th className="p-2.5 border-r border-slate-800 min-w-[160px]">Remarks</th>
                           {isEditMode && <th className="p-2.5 text-center w-16">Action</th>}
                         </tr>
                       </thead>
@@ -1693,6 +2397,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                           const isNotApp = ci.applicability === 'NOT_APPLICABLE';
                           const isFixed = ci.applicability === 'AS_PER_FIXED_CHARGES';
                           const isApp = ci.applicability === 'APPLICABLE';
+                          const isActuals = isApp && ci.chargeType === 'AT_ACTUALS';
 
                           return (
                             <tr
@@ -1817,22 +2522,24 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                                         <option value="PERCENTAGE">% of Items</option>
                                         <option value="AT_ACTUALS">At Actuals</option>
                                       </select>
-                                      <input
-                                        type="number"
-                                        aria-label="Edit Charge Rate"
-                                        value={ci.rateOrPercentage}
-                                        onChange={(e) =>
-                                          handleUpdateChargeRate(ci.id, Number(e.target.value) || 0)
-                                        }
-                                        className="w-20 p-1 text-[11px] font-mono border border-slate-300 rounded bg-white text-right text-slate-900"
-                                      />
+                                      {!isActuals && (
+                                        <input
+                                          type="number"
+                                          aria-label="Edit Charge Rate"
+                                          value={ci.rateOrPercentage}
+                                          onChange={(e) =>
+                                            handleUpdateChargeRate(ci.id, Number(e.target.value) || 0)
+                                          }
+                                          className="w-20 p-1 text-[11px] font-mono border border-slate-300 rounded bg-white text-right text-slate-900"
+                                        />
+                                      )}
                                     </div>
                                   ) : (
                                     <span className="font-mono font-semibold text-slate-800">
                                       {ci.chargeType === 'PERCENTAGE'
                                         ? `${ci.rateOrPercentage}% of Items`
                                         : ci.chargeType === 'AT_ACTUALS'
-                                        ? `At Actuals (${formatChargeAmount(ci.rateOrPercentage, activeCurrency)})`
+                                        ? 'At Actuals'
                                         : `Fixed ${formatChargeAmount(ci.rateOrPercentage, activeCurrency)}`}
                                     </span>
                                   )
@@ -1843,12 +2550,12 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                                 )}
                               </td>
                               <td className="p-2.5 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
-                                {isNotApp
+                                {isNotApp || isActuals
                                   ? '—'
                                   : formatChargeAmount(ci.estimatedAmount || 0, activeCurrency)}
                               </td>
                               <td className="p-2.5 text-center border-r border-slate-200 font-mono">
-                                {isNotApp ? (
+                                {isNotApp || isActuals ? (
                                   '—'
                                 ) : isEditMode ? (
                                   <select
@@ -1870,15 +2577,16 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                                 )}
                               </td>
                               <td className="p-2.5 text-right font-mono font-extrabold text-indigo-900 border-r border-slate-200">
-                                {isNotApp
+                                {isNotApp || isActuals
                                   ? '—'
                                   : formatChargeAmount(ci.totalWithTax || 0, activeCurrency)}
                               </td>
                               <td className="p-2.5 border-r border-slate-200">
-                                {isEditMode ? (
+                                {isNotApp || isActuals ? (
+                                  <span className="text-slate-400 block text-center">—</span>
+                                ) : isEditMode ? (
                                   <select
                                     aria-label="Edit Payee Type"
-                                    disabled={isNotApp}
                                     value={ci.payeeType || 'SUPPLIER'}
                                     onChange={(e) =>
                                       handleUpdateChargePayee(
@@ -1886,7 +2594,7 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                                         e.target.value as PRChargeItem['payeeType']
                                       )
                                     }
-                                    className="w-full p-1 text-[11px] border border-slate-300 rounded bg-white text-slate-800 disabled:bg-slate-100 disabled:text-slate-400"
+                                    className="w-full p-1 text-[11px] border border-slate-300 rounded bg-white text-slate-800"
                                   >
                                     <option value="SUPPLIER">Supplier (Inclusive/Bill)</option>
                                     <option value="THIRD_PARTY_LOGISTICS">3PL Transporter</option>
@@ -1984,6 +2692,89 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                         {formatChargeAmount(chargesSummary.grandTotalWithCharges, activeCurrency)}
                       </span>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Line-Level Charge Items Breakdown */}
+              {displayedLines.some((l) => (l.lineCharges || []).length > 0) && (
+                <div className="rounded-xl border border-amber-200 overflow-hidden shadow-2xs bg-white">
+                  <div className="px-3.5 py-2.5 bg-amber-50/70 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-amber-700" />
+                      <span className="text-xs font-bold text-amber-950">Line-Level Charge Items</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                        {chargesSummary.lineChargesCount || 0} Applicable ({formatChargeAmount(chargesSummary.lineChargesBaseTotal || 0, activeCurrency)})
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-amber-800">Attached directly to individual PR item lines</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[820px]">
+                      <thead>
+                        <tr className="bg-slate-800 text-white font-bold text-[11px]">
+                          <th className="p-2 border-r border-slate-700 w-36">Item Line</th>
+                          <th className="p-2 border-r border-slate-700">Charge Item & Category</th>
+                          <th className="p-2 border-r border-slate-700 w-36">Applicability</th>
+                          <th className="p-2 text-right border-r border-slate-700 w-28">Base Amount</th>
+                          <th className="p-2 text-center border-r border-slate-700 w-16">GST %</th>
+                          <th className="p-2 text-right border-r border-slate-700 w-28">Total with Tax</th>
+                          <th className="p-2 text-center w-28">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {displayedLines.flatMap((line, lineIdx) =>
+                          (line.lineCharges || []).map((ci) => {
+                            const isNotApp = ci.applicability === 'NOT_APPLICABLE';
+                            const isActuals = ci.applicability === 'APPLICABLE' && ci.chargeType === 'AT_ACTUALS';
+                            return (
+                              <tr key={`${line.id || lineIdx}-${ci.id}`} className={isNotApp ? 'opacity-60 bg-slate-50/50' : 'hover:bg-amber-50/30'}>
+                                <td className="p-2 border-r border-slate-200 font-mono text-[11px] font-bold text-slate-800">
+                                  Line #{lineIdx + 1} · {line.itemCode || 'N/A'}
+                                </td>
+                                <td className="p-2 border-r border-slate-200">
+                                  <div className="font-bold text-slate-900">{ci.chargeName}</div>
+                                  <div className="text-[10px] text-slate-500 font-mono">
+                                    {ci.chargeCode} · {ci.category}
+                                    {ci.snapshotLockedAt ? ' · Snapshot Locked' : ''}
+                                  </div>
+                                </td>
+                                <td className="p-2 border-r border-slate-200 text-[11px] font-semibold text-slate-700">
+                                  {ci.applicability === 'AS_PER_FIXED_CHARGES'
+                                    ? 'As Per Fixed Charges'
+                                    : isActuals
+                                    ? 'Applicable · At Actuals'
+                                    : ci.applicability === 'APPLICABLE'
+                                    ? 'Applicable'
+                                    : 'Exempt / N/A'}
+                                </td>
+                                <td className="p-2 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                  {isNotApp || isActuals ? '—' : formatChargeAmount(ci.estimatedAmount || 0, activeCurrency)}
+                                </td>
+                                <td className="p-2 text-center font-mono text-slate-700 border-r border-slate-200">
+                                  {isNotApp || isActuals ? '—' : `${ci.gstRatePercent ?? 0}%`}
+                                </td>
+                                <td className="p-2 text-right font-mono font-extrabold text-indigo-900 border-r border-slate-200">
+                                  {isNotApp || isActuals ? '—' : formatChargeAmount(ci.totalWithTax || 0, activeCurrency)}
+                                </td>
+                                <td className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setLineChargeSelectorError(null);
+                                      setActiveChargeLineIdx(lineIdx);
+                                    }}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded font-bold text-[10px] cursor-pointer"
+                                  >
+                                    {isEditMode ? 'Manage' : 'View Line'}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -2642,86 +3433,243 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
               )}
           </div>
 
-          {/* Part L: Budget Control Validation Snapshot & Exception Workflow */}
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-2">
-                <Coins className="w-4 h-4 text-emerald-600" />
-                <h4 className="font-bold text-slate-900 text-xs">
-                  Part L — Budget Control Validation ({budgetControlSnapshot.costCenter} • {budgetControlSnapshot.enforcementMode.replace(/_/g, ' ')})
-                </h4>
+          {/* Part L: Budget Control Validation Snapshot & Exception Workflow (Hidden when Budget Validation OFF) */}
+          {isBudgetValidationEnabled && budgetControlSnapshot && (
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  <h4 className="font-bold text-slate-900 text-xs">
+                    Part L — Budget Control Validation ({budgetControlSnapshot.costCenter} • {budgetControlSnapshot.enforcementMode.replace(/_/g, ' ')})
+                  </h4>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    budgetControlSnapshot.overallOutcome === 'SUFFICIENT' ||
+                    budgetControlSnapshot.overallOutcome === 'EXCEPTION_APPROVED'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : budgetControlSnapshot.overallOutcome === 'BLOCKED_INSUFFICIENT_BUDGET' ||
+                        budgetControlSnapshot.overallOutcome === 'PENDING_EXCEPTION_APPROVAL'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {budgetControlSnapshot.overallOutcome.replace(/_/g, ' ')}
+                </span>
               </div>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  budgetControlSnapshot.overallOutcome === 'SUFFICIENT' ||
-                  budgetControlSnapshot.overallOutcome === 'EXCEPTION_APPROVED'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : budgetControlSnapshot.overallOutcome === 'BLOCKED_INSUFFICIENT_BUDGET' ||
-                      budgetControlSnapshot.overallOutcome === 'PENDING_EXCEPTION_APPROVAL'
-                    ? 'bg-rose-100 text-rose-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}
-              >
-                {budgetControlSnapshot.overallOutcome.replace(/_/g, ' ')}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-[11px]">
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="text-[10px] text-slate-500 font-bold">Approved Budget</div>
-                <div className="font-mono font-bold text-slate-900">₹{budgetControlSnapshot.approvedBudget.toLocaleString()}</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="text-[10px] text-slate-500 font-bold">Revised Budget</div>
-                <div className="font-mono font-bold text-slate-900">₹{budgetControlSnapshot.revisedBudget.toLocaleString()}</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="text-[10px] text-slate-500 font-bold">Committed</div>
-                <div className="font-mono font-bold text-indigo-700">₹{budgetControlSnapshot.committedAmount.toLocaleString()}</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="text-[10px] text-slate-500 font-bold">Actual Exp.</div>
-                <div className="font-mono font-bold text-slate-800">₹{budgetControlSnapshot.actualExpenditure.toLocaleString()}</div>
-              </div>
-              <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="text-[10px] text-slate-500 font-bold">Available</div>
-                <div className="font-mono font-bold text-emerald-700">₹{budgetControlSnapshot.availableBudget.toLocaleString()}</div>
-              </div>
-              <div className={`p-2 rounded-lg border ${budgetControlSnapshot.budgetShortfall > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                <div className="text-[10px] text-slate-600 font-bold">Shortfall</div>
-                <div className={`font-mono font-bold ${budgetControlSnapshot.budgetShortfall > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                  ₹{budgetControlSnapshot.budgetShortfall.toLocaleString()}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-[11px]">
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-bold">Approved Budget</div>
+                  <div className="font-mono font-bold text-slate-900">₹{budgetControlSnapshot.approvedBudget.toLocaleString()}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-bold">Revised Budget</div>
+                  <div className="font-mono font-bold text-slate-900">₹{budgetControlSnapshot.revisedBudget.toLocaleString()}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-bold">Committed</div>
+                  <div className="font-mono font-bold text-indigo-700">₹{budgetControlSnapshot.committedAmount.toLocaleString()}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-bold">Actual Exp.</div>
+                  <div className="font-mono font-bold text-slate-800">₹{budgetControlSnapshot.actualExpenditure.toLocaleString()}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-bold">Available</div>
+                  <div className="font-mono font-bold text-emerald-700">₹{budgetControlSnapshot.availableBudget.toLocaleString()}</div>
+                </div>
+                <div className={`p-2 rounded-lg border ${budgetControlSnapshot.budgetShortfall > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                  <div className="text-[10px] text-slate-600 font-bold">Shortfall</div>
+                  <div className={`font-mono font-bold ${budgetControlSnapshot.budgetShortfall > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                    ₹{budgetControlSnapshot.budgetShortfall.toLocaleString()}
+                  </div>
                 </div>
               </div>
+
+              {!isHistoricalLocked &&
+                budgetControlSnapshot.budgetShortfall > 0 &&
+                !budgetControlSnapshot.exceptionRecord && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Justification for Budget Exception Approval..."
+                      value={bgtExceptionReason}
+                      onChange={(e) => setBgtExceptionReason(e.target.value)}
+                      className="flex-1 min-w-[200px] px-2.5 py-1.5 bg-white border border-amber-300 rounded text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRequestBudgetException}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold text-xs cursor-pointer"
+                    >
+                      Request Budget Exception
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApproveBudgetException}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-xs cursor-pointer"
+                    >
+                      Approve Budget Exception
+                    </button>
+                  </div>
+                )}
+            </div>
+          )}
+
+          {/* SAP Business One 10.0 HANA Service Layer Integration & Traceability Panel */}
+          <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-xs text-white">
+                  SAP Business One 10.0 HANA Service Layer Integration &amp; Traceability
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-indigo-300 border border-slate-700">
+                  {pr.prType === 'EXPENSE' ? 'dDocument_Service (Service PR)' : 'dDocument_Items + PO AdditionalExpenses'}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                    sapTrace?.status === 'INTEGRATED'
+                      ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-700'
+                      : sapTrace?.status === 'REQUIRES_RECONCILIATION'
+                      ? 'bg-amber-900/80 text-amber-300 border border-amber-700'
+                      : sapTrace?.status === 'FAILED'
+                      ? 'bg-rose-900/80 text-rose-300 border border-rose-700'
+                      : 'bg-slate-800 text-slate-300 border border-slate-700'
+                  }`}
+                >
+                  Status: {sapTrace?.status || 'NOT_STARTED'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSapPayload((v) => !v)}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-[11px] font-bold cursor-pointer"
+                >
+                  {showSapPayload ? 'Hide SL Payload' : 'Inspect Service Layer Payload'}
+                </button>
+                {isPrStatusApproved(pr.status) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = sapB1IntegrationService.postPrToSapServiceLayer(pr, {
+                          actorName: currentUser.fullName,
+                        });
+                        setSapTrace(res.trace);
+                        setActionFeedback({
+                          type: res.success ? 'success' : 'error',
+                          message: res.message,
+                        });
+                        onUpdated();
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold cursor-pointer"
+                    >
+                      Post to SAP Service Layer (Simulated SL)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const res = sapB1IntegrationService.postPrToSapServiceLayer(pr, {
+                          actorName: currentUser.fullName,
+                          simulateMode: 'TIMEOUT_AMBIGUOUS',
+                        });
+                        setSapTrace(res.trace);
+                        setActionFeedback({
+                          type: 'error',
+                          message: res.message,
+                        });
+                        onUpdated();
+                      }}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold cursor-pointer"
+                    >
+                      Simulate SL Timeout
+                    </button>
+                    {(sapTrace?.status === 'REQUIRES_RECONCILIATION' || sapTrace?.status === 'FAILED') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const res = sapB1IntegrationService.reconcileSapIntegrationState({
+                            prId: pr.id,
+                            prNumber: pr.prNumber,
+                            resolution: 'CONFIRM_NOT_POSTED_ALLOW_RETRY',
+                            actorName: currentUser.fullName,
+                            remarks: 'Verified via SAP Service Layer query; cleared for retry.',
+                          });
+                          setSapTrace(res.trace);
+                          setActionFeedback({
+                            type: res.success ? 'success' : 'error',
+                            message: res.message,
+                          });
+                          onUpdated();
+                        }}
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[11px] font-bold cursor-pointer"
+                      >
+                        Reconcile SAP State (Allow Retry)
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
-            {!isHistoricalLocked &&
-              budgetControlSnapshot.budgetShortfall > 0 &&
-              !budgetControlSnapshot.exceptionRecord && (
-                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex flex-wrap items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Justification for Budget Exception Approval..."
-                    value={bgtExceptionReason}
-                    onChange={(e) => setBgtExceptionReason(e.target.value)}
-                    className="flex-1 min-w-[200px] px-2.5 py-1.5 bg-white border border-amber-300 rounded text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRequestBudgetException}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold text-xs cursor-pointer"
-                  >
-                    Request Budget Exception
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleApproveBudgetException}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-xs cursor-pointer"
-                  >
-                    Approve Budget Exception
-                  </button>
-                </div>
-              )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[11px]">
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">Idempotency Key</span>
+                <span className="font-mono font-bold text-slate-200">
+                  {sapTrace?.idempotencyKey || `KOSH-SAP-PR-${pr.companyCode}-${pr.prNumber}`}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">SAP PR DocEntry / DocNum</span>
+                <span className="font-mono font-bold text-emerald-300">
+                  {sapTrace?.sapPrDocEntry
+                    ? `DocEntry: ${sapTrace.sapPrDocEntry} / DocNum: ${sapTrace.sapPrDocNum}`
+                    : 'Not Posted'}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">Last Attempt / Reconciled By</span>
+                <span className="font-mono text-slate-200">
+                  {sapTrace?.lastAttemptAt
+                    ? new Date(sapTrace.lastAttemptAt).toLocaleTimeString()
+                    : '—'}
+                  {sapTrace?.reconciledBy ? ` (${sapTrace.reconciledBy})` : ''}
+                </span>
+              </div>
+              <div className="p-2 bg-slate-800/80 rounded border border-slate-700">
+                <span className="text-slate-400 block text-[10px]">SAP Error / Guard Notice</span>
+                <span className="font-mono text-rose-300 truncate block" title={sapTrace?.errorMessage}>
+                  {sapTrace?.errorCode
+                    ? `${sapTrace.errorCode}: ${sapTrace.errorMessage}`
+                    : 'Service Layer Only (No Direct SQL)'}
+                </span>
+              </div>
+            </div>
+
+            {showSapPayload && (
+              <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 font-mono text-[10px] text-emerald-300 overflow-x-auto max-h-52">
+                <pre>
+                  {JSON.stringify(
+                    {
+                      purchaseRequestServiceLayerPayload:
+                        sapB1IntegrationService.buildSapPurchaseRequestPayload(pr),
+                      ...(pr.prType !== 'EXPENSE'
+                        ? {
+                            purchaseOrderAdditionalExpensesPreview:
+                              sapB1IntegrationService.buildSapAdditionalExpensesFromPr(pr),
+                          }
+                        : {}),
+                    },
+                    null,
+                    2
+                  )}
+                </pre>
+              </div>
+            )}
           </div>
 
           {/* Approval Cycle History (Preserved across Return for Correction & Resubmission) */}
@@ -3027,40 +3975,42 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
               </button>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-800">
-                Automated Budget Reconciliation & Uncommitted Release Preview
+            {isBudgetValidationEnabled && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-800">
+                  Automated Budget Reconciliation &amp; Uncommitted Release Preview
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    Original Reservation:{' '}
+                    <strong className="font-mono">
+                      {activeCurrency} {formatEstimatedValue(budgetRecon.originalReservation, activeCurrency)}
+                    </strong>
+                  </div>
+                  <div>
+                    Protected Commitments:{' '}
+                    <strong className="font-mono text-indigo-700">
+                      {activeCurrency}{' '}
+                      {formatEstimatedValue(budgetRecon.validOutstandingCommitments, activeCurrency)}
+                    </strong>
+                  </div>
+                  <div>
+                    Previously Released:{' '}
+                    <strong className="font-mono">
+                      {activeCurrency}{' '}
+                      {formatEstimatedValue(budgetRecon.previouslyReleasedAmount, activeCurrency)}
+                    </strong>
+                  </div>
+                  <div>
+                    Eligible Release:{' '}
+                    <strong className="font-mono text-emerald-700">
+                      {activeCurrency}{' '}
+                      {formatEstimatedValue(budgetRecon.eligibleReleaseAmount, activeCurrency)}
+                    </strong>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  Original Reservation:{' '}
-                  <strong className="font-mono">
-                    {activeCurrency} {formatEstimatedValue(budgetRecon.originalReservation, activeCurrency)}
-                  </strong>
-                </div>
-                <div>
-                  Protected Commitments:{' '}
-                  <strong className="font-mono text-indigo-700">
-                    {activeCurrency}{' '}
-                    {formatEstimatedValue(budgetRecon.validOutstandingCommitments, activeCurrency)}
-                  </strong>
-                </div>
-                <div>
-                  Previously Released:{' '}
-                  <strong className="font-mono">
-                    {activeCurrency}{' '}
-                    {formatEstimatedValue(budgetRecon.previouslyReleasedAmount, activeCurrency)}
-                  </strong>
-                </div>
-                <div>
-                  Eligible Release:{' '}
-                  <strong className="font-mono text-emerald-700">
-                    {activeCurrency}{' '}
-                    {formatEstimatedValue(budgetRecon.eligibleReleaseAmount, activeCurrency)}
-                  </strong>
-                </div>
-              </div>
-            </div>
+            )}
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">
@@ -3111,8 +4061,12 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
                 }`}
               >
                 {closureActionType === 'SHORT_CLOSE'
-                  ? 'Confirm Short Close & Release Budget'
-                  : 'Confirm Cancellation & Release Budget'}
+                  ? isBudgetValidationEnabled
+                    ? 'Confirm Short Close & Release Budget'
+                    : 'Confirm Short Close PR'
+                  : isBudgetValidationEnabled
+                  ? 'Confirm Cancellation & Release Budget'
+                  : 'Confirm Cancellation'}
               </button>
             </div>
           </div>
@@ -3178,6 +4132,221 @@ export const PurchaseRequisitionDetailsModal: React.FC<PurchaseRequisitionDetail
           </div>
         </div>
       )}
+      {/* LINE-LEVEL CHARGE ITEMS MODAL */}
+      {activeChargeLineIdx !== null && displayedLines[activeChargeLineIdx] && (() => {
+        const targetLine = displayedLines[activeChargeLineIdx];
+        const lineCurr = isEditMode ? editCurrency : targetLine.currency || activeCurrency;
+        const lineSub =
+          (Number(targetLine.requestedQuantity) || 0) *
+          (Number(targetLine.approximateUnitPrice) || 0);
+        const convQty = convertedQtyMap[targetLine.id] || 0;
+        const lockInfo = prGovernancePolicyService.getLineLockStatus(targetLine, convQty);
+        const canEditLineCharges = isEditMode && !lockInfo.isLockedForEdit;
+        const lineChgs = targetLine.lineCharges || [];
+        const lineChgSummary = prChargeItemService.calculateRequisitionChargesSummary(lineChgs, lineSub);
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-xs z-70 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full flex flex-col overflow-hidden max-h-[90vh]">
+              <div className="p-4 bg-[#0B192C] text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+                <div>
+                  <h4 className="text-sm font-bold flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-400" />
+                    Line #{activeChargeLineIdx + 1} — Line-Level Charge Items ({targetLine.itemCode})
+                  </h4>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    {targetLine.description} · Qty: {targetLine.requestedQuantity} {targetLine.inventoryUom} · Line Subtotal:{' '}
+                    <strong className="font-mono text-white">{formatChargeAmount(lineSub, lineCurr)}</strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveChargeLineIdx(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+                {canEditLineCharges && (
+                  <PrMappedChargesSelector
+                    effectiveOptions={effectiveMappedCharges}
+                    selectedChargeItems={lineChgs}
+                    companyName={pr.companyId}
+                    branchName={pr.branchName || pr.branchId}
+                    currency={lineCurr}
+                    referenceSubtotal={lineSub}
+                    title={`Add Charge Item to Line #${activeChargeLineIdx + 1}`}
+                    onAddChargeOption={(opt, customAmount) =>
+                      handleAddLineMappedCharge(activeChargeLineIdx, opt, customAmount)
+                    }
+                    errorNotice={lineChargeSelectorError}
+                    onDismissError={() => setLineChargeSelectorError(null)}
+                  />
+                )}
+
+                {lineChgs.length === 0 ? (
+                  <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
+                    {canEditLineCharges
+                      ? `No charge items attached to Line #${activeChargeLineIdx + 1}. Select a charge item above, enter its amount, and click Add Charge Item.`
+                      : `No line-level charge items recorded on Line #${activeChargeLineIdx + 1}.`}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+                    <div className="overflow-x-auto max-h-64">
+                      <table className="w-full text-left text-xs border-collapse min-w-[720px]">
+                        <thead>
+                          <tr className="bg-[#0B192C] text-white font-bold text-[11px] border-b border-slate-800">
+                            <th className="p-2 text-center border-r border-slate-800 w-10">#</th>
+                            <th className="p-2 border-r border-slate-800">Charge Item</th>
+                            <th className="p-2 border-r border-slate-800 w-44">Rate / Basis</th>
+                            <th className="p-2 text-right border-r border-slate-800 w-24">Base</th>
+                            <th className="p-2 text-center border-r border-slate-800 w-20">GST %</th>
+                            <th className="p-2 text-right border-r border-slate-800 w-28">Total</th>
+                            <th className="p-2 border-r border-slate-800">Remarks</th>
+                            {canEditLineCharges && <th className="p-2 text-center w-14">Del</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {lineChgs.map((ci, cIdx) => {
+                            const isNotApp = ci.applicability === 'NOT_APPLICABLE';
+                            const isActuals = ci.applicability === 'APPLICABLE' && ci.chargeType === 'AT_ACTUALS';
+                            return (
+                            <tr key={ci.id} className="hover:bg-slate-50">
+                              <td className="p-2 text-center font-mono text-slate-500 border-r border-slate-200">
+                                {cIdx + 1}
+                              </td>
+                              <td className="p-2 border-r border-slate-200">
+                                <div className="font-bold text-slate-900">{ci.chargeName}</div>
+                                <div className="text-[10px] font-mono text-indigo-700">
+                                  {ci.chargeCode} · {ci.category}
+                                </div>
+                              </td>
+                              <td className="p-2 border-r border-slate-200">
+                                {canEditLineCharges ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={ci.chargeType}
+                                      onChange={(e) =>
+                                        handleUpdateLineChargeField(activeChargeLineIdx, ci.id, {
+                                          applicability: 'APPLICABLE',
+                                          chargeType: e.target.value as PRChargeType,
+                                        })
+                                      }
+                                      className="p-1 text-[11px] border border-slate-300 rounded bg-white"
+                                    >
+                                      <option value="FIXED">Fixed</option>
+                                      <option value="PERCENTAGE">%</option>
+                                      <option value="AT_ACTUALS">Actual</option>
+                                    </select>
+                                    {!isActuals && (
+                                      <input
+                                        type="number"
+                                        value={ci.rateOrPercentage}
+                                        onChange={(e) =>
+                                          handleUpdateLineChargeField(activeChargeLineIdx, ci.id, {
+                                            applicability: 'APPLICABLE',
+                                            rateOrPercentage: Number(e.target.value) || 0,
+                                          })
+                                        }
+                                        className="w-20 p-1 text-[11px] font-mono border border-slate-300 rounded bg-white text-right"
+                                      />
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="font-mono font-semibold text-slate-800">
+                                    {ci.chargeType === 'PERCENTAGE'
+                                      ? `${ci.rateOrPercentage}%`
+                                      : isActuals
+                                      ? 'At Actuals'
+                                      : formatChargeAmount(ci.rateOrPercentage || 0, lineCurr)}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 text-right font-mono font-bold text-slate-800 border-r border-slate-200">
+                                {isNotApp || isActuals ? '—' : formatChargeAmount(ci.estimatedAmount || 0, lineCurr)}
+                              </td>
+                              <td className="p-2 text-center border-r border-slate-200 font-mono">
+                                {isNotApp || isActuals ? '—' : `${ci.gstRatePercent ?? 0}%`}
+                              </td>
+                              <td className="p-2 text-right font-mono font-extrabold text-indigo-900 border-r border-slate-200">
+                                {isNotApp || isActuals ? '—' : formatChargeAmount(ci.totalWithTax || 0, lineCurr)}
+                              </td>
+                              <td className="p-2 border-r border-slate-200">
+                                {canEditLineCharges ? (
+                                  <input
+                                    type="text"
+                                    value={ci.remarks || ''}
+                                    onChange={(e) =>
+                                      handleUpdateLineChargeField(activeChargeLineIdx, ci.id, {
+                                        remarks: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Optional notes..."
+                                    className="w-full p-1 text-[11px] border border-slate-300 rounded bg-white"
+                                  />
+                                ) : (
+                                  <span className="text-[11px] text-slate-600">{ci.remarks || '—'}</span>
+                                )}
+                              </td>
+                              {canEditLineCharges && (
+                                <td className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveLineCharge(activeChargeLineIdx, ci.id)}
+                                    className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0 text-xs">
+                <div className="flex flex-wrap items-center gap-4 font-bold text-slate-700">
+                  <span>
+                    Line Material: <span className="font-mono text-slate-900">{formatChargeAmount(lineSub, lineCurr)}</span>
+                  </span>
+                  <span>
+                    Line Charges ({lineChgSummary.applicableChargesCount}):{' '}
+                    <span className="font-mono text-indigo-700">
+                      {formatChargeAmount(lineChgSummary.applicableChargesBaseTotal, lineCurr)}
+                    </span>
+                  </span>
+                  <span>
+                    Tax on Charges:{' '}
+                    <span className="font-mono text-slate-600">
+                      {formatChargeAmount(lineChgSummary.applicableChargesTaxTotal, lineCurr)}
+                    </span>
+                  </span>
+                  <span>
+                    Line Landed Total:{' '}
+                    <span className="font-mono text-indigo-900 text-sm">
+                      {formatChargeAmount(lineChgSummary.grandTotalWithCharges, lineCurr)}
+                    </span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveChargeLineIdx(null)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 };

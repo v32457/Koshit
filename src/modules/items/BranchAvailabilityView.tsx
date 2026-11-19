@@ -57,12 +57,15 @@ import {
   matchesDateRange,
   buildAdvancedFilterChips,
   countActiveAdvancedConditions,
+  matchesMultiSelectFilter,
+  formatMultiSelectFilterLabel,
 } from '../../services/advancedFilterEngine';
 import {
   AdvancedFilterPanel,
   AdvancedFilterToggleButton,
   ActiveFilterChipsBar,
   DateRangeFilterControl,
+  MultiSelectFilterDropdown,
 } from '../../components/AdvancedFilterPanel';
 import { CLASSIFICATION_DIMENSIONS } from '../../data/seedData';
 
@@ -290,7 +293,12 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         label: 'Branch',
         type: 'DROPDOWN',
         options: allBranches.map((b) => ({ value: b.name, label: `${b.name} (${b.portalBranchCode})` })),
-        accessor: () => selectedBranch?.name || '',
+        accessor: (item) => {
+          const permittedNames = allBranches
+            .filter((b) => isItemAvailableInBranch(item, b))
+            .map((b) => b.name);
+          return Array.from(new Set([...permittedNames, selectedBranch?.name || ''])).filter(Boolean);
+        },
       },
       {
         key: 'globalItemCode',
@@ -367,7 +375,9 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
           { value: 'DRAFT', label: 'DRAFT' },
           { value: 'RETURNED_FOR_CORRECTION', label: 'RETURNED_FOR_CORRECTION' },
         ],
-        accessor: (item) => branchRecords[`${selectedBranch.id}_${item.id}`]?.branchStatus || 'APPROVED',
+        accessor: (item) =>
+          branchRecords[`${selectedBranch.id}_${item.id}`]?.branchStatus ||
+          (item.status === 'SAP_CREATED' && isItemAvailableInBranch(item, selectedBranch) ? 'APPROVED' : 'DRAFT'),
       },
       {
         key: 'createdAt',
@@ -377,6 +387,15 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
       },
     ];
   }, [allBranches, selectedBranch, branchClassifications, branchRecords, uniqueItemTypes, uniqueMaterials, uniqueMaterialForms]);
+
+  const getEffectiveBranchStatus = (item: GlobalItem): BranchItemWorkflowStatus => {
+    const key = `${selectedBranch.id}_${item.id}`;
+    const branchRecord = branchRecords[key];
+    if (branchRecord?.branchStatus) return branchRecord.branchStatus;
+    return item.status === 'SAP_CREATED' && isItemAvailableInBranch(item, selectedBranch)
+      ? 'APPROVED'
+      : 'DRAFT';
+  };
 
   // Filtered items combining Quick Filters + Date Ranges + Advanced Filter Engine
   const filteredItems = useMemo(() => {
@@ -391,7 +410,9 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         categoryCode: selectedBranch.portalBranchCode === '001' ? 'FG' : selectedBranch.portalBranchCode === '002' ? 'RM' : 'SF',
       };
       const isPermitted = isItemAvailableInBranch(item, selectedBranch);
-      const status = branchRecord?.branchStatus || 'APPROVED';
+      const status =
+        branchRecord?.branchStatus ||
+        (item.status === 'SAP_CREATED' && isPermitted ? 'APPROVED' : 'DRAFT');
       const itemTypeVal = getItemType(item);
       const materialVal = getMaterial(item);
       const materialFormVal = getMaterialForm(item);
@@ -406,16 +427,16 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         if (!matchSearch) return false;
       }
 
-      if (filterGlobalItem !== 'ALL' && item.globalItemCode !== filterGlobalItem) return false;
-      if (filterCategory !== 'ALL' && bic.categoryCode !== filterCategory) return false;
-      if (filterItemType !== 'ALL' && itemTypeVal !== filterItemType) return false;
-      if (filterMaterial !== 'ALL' && materialVal !== filterMaterial) return false;
-      if (filterMaterialForm !== 'ALL' && materialFormVal !== filterMaterialForm) return false;
+      if (!matchesMultiSelectFilter(filterGlobalItem, item.globalItemCode)) return false;
+      if (!matchesMultiSelectFilter(filterCategory, bic.categoryCode)) return false;
+      if (!matchesMultiSelectFilter(filterItemType, itemTypeVal)) return false;
+      if (!matchesMultiSelectFilter(filterMaterial, materialVal)) return false;
+      if (!matchesMultiSelectFilter(filterMaterialForm, materialFormVal)) return false;
 
-      if (filterAvailabilityStatus === 'PERMITTED' && !isPermitted) return false;
-      if (filterAvailabilityStatus === 'NOT_PERMITTED' && isPermitted) return false;
+      const availVal = isPermitted ? 'PERMITTED' : 'NOT_PERMITTED';
+      if (!matchesMultiSelectFilter(filterAvailabilityStatus, availVal)) return false;
 
-      if (filterApprovalStatus !== 'ALL' && status !== filterApprovalStatus) return false;
+      if (!matchesMultiSelectFilter(filterApprovalStatus, status)) return false;
 
       const createdDate = branchRecord?.createdAt || item.createdAt;
       if (!matchesDateRange(createdDate, createdDateRange)) return false;
@@ -512,7 +533,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Global Item',
         operatorLabel: '=',
-        valueLabel: filterGlobalItem,
+        valueLabel: formatMultiSelectFilterLabel(filterGlobalItem),
         onRemove: () => setFilterGlobalItem('ALL'),
       });
     }
@@ -522,7 +543,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Branch Category',
         operatorLabel: '=',
-        valueLabel: filterCategory,
+        valueLabel: formatMultiSelectFilterLabel(filterCategory),
         onRemove: () => setFilterCategory('ALL'),
       });
     }
@@ -532,7 +553,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Item Type',
         operatorLabel: '=',
-        valueLabel: filterItemType,
+        valueLabel: formatMultiSelectFilterLabel(filterItemType),
         onRemove: () => setFilterItemType('ALL'),
       });
     }
@@ -542,7 +563,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Material',
         operatorLabel: '=',
-        valueLabel: filterMaterial,
+        valueLabel: formatMultiSelectFilterLabel(filterMaterial),
         onRemove: () => setFilterMaterial('ALL'),
       });
     }
@@ -552,7 +573,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Material Form',
         operatorLabel: '=',
-        valueLabel: filterMaterialForm,
+        valueLabel: formatMultiSelectFilterLabel(filterMaterialForm),
         onRemove: () => setFilterMaterialForm('ALL'),
       });
     }
@@ -562,7 +583,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Availability',
         operatorLabel: '=',
-        valueLabel: filterAvailabilityStatus,
+        valueLabel: formatMultiSelectFilterLabel(filterAvailabilityStatus),
         onRemove: () => setFilterAvailabilityStatus('ALL'),
       });
     }
@@ -572,7 +593,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         category: 'QUICK',
         fieldLabel: 'Approval Status',
         operatorLabel: '=',
-        valueLabel: filterApprovalStatus,
+        valueLabel: formatMultiSelectFilterLabel(filterApprovalStatus),
         onRemove: () => setFilterApprovalStatus('ALL'),
       });
     }
@@ -645,6 +666,14 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
   };
 
   const handleUpdateBranchCategory = (itemId: string, newCategoryCode: string) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (targetItem && getEffectiveBranchStatus(targetItem) === 'APPROVED') {
+      setSaveMessage('Immutable Record: Approved Branch Item Availability cannot be modified.');
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3500);
+      return;
+    }
+
     const existing = branchClassifications.find(
       (bc) => (bc.branchId === selectedBranch.id || bc.branchCode === selectedBranch.portalBranchCode) && bc.globalItemId === itemId
     );
@@ -711,6 +740,14 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
     itemId: string,
     field: 'isActive' | 'isStocked' | 'isPurchased' | 'isManufactured'
   ) => {
+    const targetItem = items.find((i) => i.id === itemId);
+    if (targetItem && getEffectiveBranchStatus(targetItem) === 'APPROVED') {
+      setSaveMessage('Immutable Record: Approved Branch Item Availability cannot be modified.');
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3500);
+      return;
+    }
+
     setItems((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
@@ -751,6 +788,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
         (b.branchId === selectedBranch.id || b.branchCode === selectedBranch.portalBranchCode) &&
         b.globalItemId === item.id
     );
+    const defaultStatus = getEffectiveBranchStatus(item);
     const existing = branchRecords[key] || {
       id: key,
       globalItemId: item.id,
@@ -814,27 +852,30 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
       isActive: true,
       effectiveFrom: new Date().toISOString().split('T')[0],
       activationReason: 'Initial branch availability setup',
-      branchStatus: 'APPROVED' as BranchItemWorkflowStatus,
-      approvalStatus: 'APPROVED',
+      branchStatus: defaultStatus,
+      approvalStatus: defaultStatus === 'APPROVED' ? 'APPROVED' : 'DRAFT',
       createdBy: 'Platform Admin',
       createdByName: 'Platform Admin',
       createdAt: new Date().toISOString(),
       updatedBy: 'Platform Admin',
       updatedByName: 'Platform Admin',
       updatedAt: new Date().toISOString(),
-      approvalHistory: [
-        {
-          id: 'appr-init',
-          action: 'APPROVE',
-          actorId: 'usr-admin-01',
-          actorName: 'Platform Checker',
-          actorRole: 'BRANCH_CHECKER',
-          timestamp: new Date().toISOString(),
-          remarks: 'Initial activation approved',
-          previousStatus: 'SUBMITTED',
-          newStatus: 'APPROVED',
-        },
-      ],
+      approvalHistory:
+        defaultStatus === 'APPROVED'
+          ? [
+              {
+                id: 'appr-init',
+                action: 'APPROVE',
+                actorId: 'usr-admin-01',
+                actorName: 'Platform Checker',
+                actorRole: 'BRANCH_CHECKER',
+                timestamp: new Date().toISOString(),
+                remarks: 'Initial activation approved',
+                previousStatus: 'SUBMITTED',
+                newStatus: 'APPROVED',
+              },
+            ]
+          : [],
     };
     setConfigForm(existing);
     setConfigError('');
@@ -1096,11 +1137,24 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
     setConfigSuccess(`Revision ${newRev.revisionNumber} logged.`);
   };
 
+  const isApprovedImmutable =
+    configForm.branchStatus === 'APPROVED' || (configForm as any).approvalStatus === 'APPROVED';
+
   // Persist helper used by Save Draft & Submit for Checker Approval
   const persistConfigRecord = async (statusOverride?: BranchItemWorkflowStatus, remarksOverride?: string) => {
     if (!configItem) return false;
     const key = `${selectedBranch.id}_${configItem.id}`;
     const prevRecord = branchRecords[key];
+    if (
+      prevRecord?.branchStatus === 'APPROVED' ||
+      prevRecord?.approvalStatus === 'APPROVED' ||
+      (isApprovedImmutable && statusOverride !== 'APPROVED')
+    ) {
+      setConfigError(
+        'Immutable Governance Lock: Once a Branch Item Availability record is APPROVED, it is permanently immutable and cannot be modified.'
+      );
+      return false;
+    }
 
     const nextStatus = statusOverride || configForm.branchStatus || 'DRAFT';
     const nextApprovalStatus =
@@ -1279,8 +1333,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
     let approvedCount = 0;
     for (const item of items) {
       if (isItemAvailableInBranch(item, selectedBranch)) permittedCount++;
-      const rec = branchRecords[`${selectedBranch.id}_${item.id}`];
-      const st = rec?.branchStatus || 'APPROVED';
+      const st = getEffectiveBranchStatus(item);
       if (st === 'SUBMITTED') pendingApprovalCount++;
       if (st === 'APPROVED') approvedCount++;
     }
@@ -1399,102 +1452,111 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
           </div>
 
           {/* Global Item Filter */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Global Item"
+            allLabel="All Global Items"
+            ariaLabel="Filter by Global Item"
             value={filterGlobalItem}
-            onChange={(e) => setFilterGlobalItem(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Global Items</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.globalItemCode}>
-                {i.globalItemCode}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterGlobalItem}
+            options={items.map((i) => ({
+              value: i.globalItemCode,
+              label: `${i.globalItemCode} — ${i.description}`,
+            }))}
+            className="w-full"
+          />
 
           {/* Branch Category Filter */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Branch Category"
+            allLabel="All Branch Categories"
+            ariaLabel="Filter by Branch Category"
             value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Branch Categories</option>
-            <option value="FG">FG (Finished Goods)</option>
-            <option value="RM">RM (Raw Materials)</option>
-            <option value="SF">SF (Semi-Finished)</option>
-            <option value="PK">PK (Packaging)</option>
-            <option value="CO">CO (Consumables)</option>
-            <option value="MA">MA (Spares)</option>
-            <option value="BO">BO (Bought-Out)</option>
-          </select>
+            onChange={setFilterCategory}
+            options={[
+              { value: 'FG', label: 'FG (Finished Goods)' },
+              { value: 'RM', label: 'RM (Raw Materials)' },
+              { value: 'SF', label: 'SF (Semi-Finished)' },
+              { value: 'PK', label: 'PK (Packaging)' },
+              { value: 'CO', label: 'CO (Consumables)' },
+              { value: 'MA', label: 'MA (Spares)' },
+              { value: 'BO', label: 'BO (Bought-Out)' },
+            ]}
+            className="w-full"
+          />
 
           {/* Availability Status Filter */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Availability Status"
+            allLabel="All Availability Statuses"
+            ariaLabel="Filter by Availability Status"
             value={filterAvailabilityStatus}
-            onChange={(e) => setFilterAvailabilityStatus(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Availability Statuses</option>
-            <option value="PERMITTED">Permitted in Branch</option>
-            <option value="NOT_PERMITTED">Not Permitted</option>
-          </select>
+            onChange={setFilterAvailabilityStatus}
+            options={[
+              { value: 'PERMITTED', label: 'Permitted in Branch' },
+              { value: 'NOT_PERMITTED', label: 'Not Permitted' },
+            ]}
+            className="w-full"
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
           {/* Item Type */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Item Type"
+            allLabel="All Item Types"
+            ariaLabel="Filter by Item Type"
             value={filterItemType}
-            onChange={(e) => setFilterItemType(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Item Types</option>
-            {uniqueItemTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterItemType}
+            options={uniqueItemTypes.map((t) => ({
+              value: t,
+              label: t,
+            }))}
+            className="w-full"
+          />
 
           {/* Material */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Material"
+            allLabel="All Materials"
+            ariaLabel="Filter by Material"
             value={filterMaterial}
-            onChange={(e) => setFilterMaterial(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Materials</option>
-            {uniqueMaterials.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterMaterial}
+            options={uniqueMaterials.map((m) => ({
+              value: m,
+              label: m,
+            }))}
+            className="w-full"
+          />
 
           {/* Material Form */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Material Form"
+            allLabel="All Material Forms"
+            ariaLabel="Filter by Material Form"
             value={filterMaterialForm}
-            onChange={(e) => setFilterMaterialForm(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Material Forms</option>
-            {uniqueMaterialForms.map((mf) => (
-              <option key={mf} value={mf}>
-                {mf}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterMaterialForm}
+            options={uniqueMaterialForms.map((mf) => ({
+              value: mf,
+              label: mf,
+            }))}
+            className="w-full"
+          />
 
           {/* Approval Status */}
-          <select
+          <MultiSelectFilterDropdown
+            label="Approval Status"
+            allLabel="All Approval Statuses"
+            ariaLabel="Filter by Approval Status"
             value={filterApprovalStatus}
-            onChange={(e) => setFilterApprovalStatus(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Approval Statuses</option>
-            <option value="APPROVED">APPROVED</option>
-            <option value="SUBMITTED">SUBMITTED</option>
-            <option value="DRAFT">DRAFT</option>
-            <option value="RETURNED_FOR_CORRECTION">RETURNED_FOR_CORRECTION</option>
-          </select>
+            onChange={setFilterApprovalStatus}
+            options={[
+              { value: 'APPROVED', label: 'APPROVED' },
+              { value: 'SUBMITTED', label: 'SUBMITTED' },
+              { value: 'DRAFT', label: 'DRAFT' },
+              { value: 'RETURNED_FOR_CORRECTION', label: 'RETURNED_FOR_CORRECTION' },
+            ]}
+            className="w-full"
+          />
         </div>
 
         {/* Date Range Filters + Advanced Filter Toggle */}
@@ -1636,9 +1698,8 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     categoryCode: selectedBranch.portalBranchCode === '001' ? 'FG' : selectedBranch.portalBranchCode === '002' ? 'RM' : 'SF',
                   };
 
-                  const key = `${selectedBranch.id}_${item.id}`;
-                  const branchRecord = branchRecords[key];
-                  const status = branchRecord?.branchStatus || 'APPROVED';
+                  const status = getEffectiveBranchStatus(item);
+                  const isRowImmutable = status === 'APPROVED';
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition">
@@ -1646,8 +1707,10 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                       <td className="p-3.5">
                         <select
                           value={bic.categoryCode}
+                          disabled={isRowImmutable}
+                          title={isRowImmutable ? 'Approved branch record is immutable' : 'Select Branch Category'}
                           onChange={(e) => handleUpdateBranchCategory(item.id, e.target.value)}
-                          className="p-1 text-xs font-bold rounded border border-slate-300 bg-white text-indigo-900 shadow-2xs"
+                          className="p-1 text-xs font-bold rounded border border-slate-300 bg-white text-indigo-900 shadow-2xs disabled:opacity-60 disabled:bg-slate-100 disabled:cursor-not-allowed"
                         >
                           <option value="FG">FG (Finished Goods)</option>
                           <option value="RM">RM (Raw Materials)</option>
@@ -1667,8 +1730,10 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                       </td>
                       <td className="p-3.5 text-center">
                         <button
+                          disabled={isRowImmutable}
+                          title={isRowImmutable ? 'Approved branch record is immutable' : 'Toggle Branch Permission'}
                           onClick={() => handleToggleSetting(item.id, 'isActive')}
-                          className={`w-6 h-6 rounded-full font-bold text-xs text-center cursor-pointer ${
+                          className={`w-6 h-6 rounded-full font-bold text-xs text-center cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                             isPermitted ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'
                           }`}
                         >
@@ -1678,30 +1743,33 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                       <td className="p-3.5 text-center">
                         <input
                           type="checkbox"
+                          disabled={isRowImmutable}
                           checked={avail?.isStocked ?? false}
                           onChange={() => handleToggleSetting(item.id, 'isStocked')}
-                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </td>
                       <td className="p-3.5 text-center">
                         <input
                           type="checkbox"
+                          disabled={isRowImmutable}
                           checked={avail?.isPurchased ?? false}
                           onChange={() => handleToggleSetting(item.id, 'isPurchased')}
-                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </td>
                       <td className="p-3.5 text-center">
                         <input
                           type="checkbox"
+                          disabled={isRowImmutable}
                           checked={avail?.isManufactured ?? false}
                           onChange={() => handleToggleSetting(item.id, 'isManufactured')}
-                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </td>
                       <td className="p-3.5 text-center">
                         <span
-                          className={`px-2.5 py-1 rounded text-[10px] font-bold ${
+                          className={`px-2.5 py-1 rounded text-[10px] font-bold inline-flex items-center gap-1 ${
                             status === 'APPROVED'
                               ? 'bg-emerald-100 text-emerald-800'
                               : status === 'SUBMITTED'
@@ -1711,7 +1779,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          {status}
+                          {status === 'APPROVED' ? 'APPROVED (IMMUTABLE)' : status}
                         </span>
                       </td>
                       <td className="p-3.5 text-center">
@@ -1720,7 +1788,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                             onClick={() => handleOpenConfigModal(item, 'ALL_14_SECTIONS')}
                             className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
                           >
-                            <Settings2 className="w-3.5 h-3.5" /> Configure (14 Sec)
+                            <Settings2 className="w-3.5 h-3.5" /> Configure
                           </button>
                           <button
                             onClick={() => handleOpenConfigModal(item, 'K_AUDIT_HISTORY')}
@@ -1774,7 +1842,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                       onClick={expandAllSections}
                       className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-bold cursor-pointer"
                     >
-                      Expand All 14
+                      Expand All
                     </button>
                     <button
                       type="button"
@@ -1805,7 +1873,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                All 14 Sections (Accordion)
+                All
               </button>
               <button
                 type="button"
@@ -1814,7 +1882,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'C_UOM' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 1–6: Context, Category & UOM
+                Context, Category & UOM
               </button>
               <button
                 type="button"
@@ -1823,7 +1891,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'D_COMPLIANCE' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 7–9: Controls & Quality
+                Controls & Quality
               </button>
               <button
                 type="button"
@@ -1832,7 +1900,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'E_WAREHOUSE' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 10: Warehouses ({configForm.warehouseConfigs?.length || 0})
+                Warehouses ({configForm.warehouseConfigs?.length || 0})
               </button>
               <button
                 type="button"
@@ -1841,7 +1909,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'F_ALTERNATIVES' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 11: Alternatives ({configForm.alternativeItems?.length || 0})
+                Alternatives ({configForm.alternativeItems?.length || 0})
               </button>
               <button
                 type="button"
@@ -1850,7 +1918,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'G_ATTACHMENTS' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 12: Documents ({configForm.attachments?.length || 0})
+                Documents ({configForm.attachments?.length || 0})
               </button>
               <button
                 type="button"
@@ -1859,7 +1927,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   activeTab === 'H_BARCODES' ? 'border-indigo-600 text-indigo-700 bg-white rounded-t' : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Sec 13: Barcodes & Revisions ({configForm.barcodes?.length || 0})
+                Barcodes & Revisions ({configForm.barcodes?.length || 0})
               </button>
               <button
                 type="button"
@@ -1869,7 +1937,7 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Sec 14: 25-Checkpoint Audit & Approval</span>
+                <span>25-Checkpoint Audit & Approval</span>
                 {auditReport && (
                   <span
                     className={`ml-1 px-1.5 py-0.2 rounded text-[9px] font-bold ${
@@ -1890,6 +1958,19 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
 
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/60">
+              {isApprovedImmutable && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-lg font-bold text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600" />
+                    <span>
+                      Immutable Approved Record: This Branch Item Availability configuration is APPROVED and permanently locked against modification.
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-emerald-200 text-emerald-950 rounded text-[10px] font-mono uppercase shrink-0">
+                    IMMUTABLE
+                  </span>
+                </div>
+              )}
               {configError && (
                 <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-lg font-bold text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -2015,59 +2096,61 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     </div>
                   </button>
                   {expandedSections[3] && (
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Mandatory Branch Category *</label>
-                        <select
-                          value={configForm.categoryCode || 'RM'}
-                          onChange={(e) => {
-                            const code = e.target.value;
-                            const names: Record<string, string> = {
-                              FG: 'Finished Goods',
-                              RM: 'Raw Materials',
-                              SF: 'Semi-Finished Goods',
-                              PK: 'Packaging Materials',
-                              CO: 'Consumables',
-                              MA: 'Maintenance / Spares',
-                              BO: 'Bought-Out',
-                            };
-                            setConfigForm({
-                              ...configForm,
-                              categoryCode: code,
-                              categoryName: names[code] || 'Raw Materials',
-                            });
-                          }}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs"
-                        >
-                          <option value="FG">FG — Finished Goods</option>
-                          <option value="RM">RM — Raw Materials</option>
-                          <option value="SF">SF — Semi-Finished Goods</option>
-                          <option value="PK">PK — Packaging Materials</option>
-                          <option value="CO">CO — Consumables</option>
-                          <option value="MA">MA — Maintenance / Spares</option>
-                          <option value="BO">BO — Bought-Out</option>
-                        </select>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Mandatory Branch Category *</label>
+                          <select
+                            value={configForm.categoryCode || 'RM'}
+                            onChange={(e) => {
+                              const code = e.target.value;
+                              const names: Record<string, string> = {
+                                FG: 'Finished Goods',
+                                RM: 'Raw Materials',
+                                SF: 'Semi-Finished Goods',
+                                PK: 'Packaging Materials',
+                                CO: 'Consumables',
+                                MA: 'Maintenance / Spares',
+                                BO: 'Bought-Out',
+                              };
+                              setConfigForm({
+                                ...configForm,
+                                categoryCode: code,
+                                categoryName: names[code] || 'Raw Materials',
+                              });
+                            }}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          >
+                            <option value="FG">FG — Finished Goods</option>
+                            <option value="RM">RM — Raw Materials</option>
+                            <option value="SF">SF — Semi-Finished Goods</option>
+                            <option value="PK">PK — Packaging Materials</option>
+                            <option value="CO">CO — Consumables</option>
+                            <option value="MA">MA — Maintenance / Spares</option>
+                            <option value="BO">BO — Bought-Out</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Operational Item Role</label>
+                          <select
+                            value={configForm.itemRole || 'PURCHASE'}
+                            onChange={(e) => setConfigForm({ ...configForm, itemRole: e.target.value as any })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          >
+                            <option value="PURCHASE">PURCHASE</option>
+                            <option value="MANUFACTURE">MANUFACTURE</option>
+                            <option value="STOCK">STOCK</option>
+                            <option value="BOTH">BOTH (Purchase & Manufacture)</option>
+                          </select>
+                        </div>
+                        <div className="p-2.5 bg-indigo-50/70 rounded-lg border border-indigo-200 flex flex-col justify-center">
+                          <span className="text-[10px] font-bold uppercase text-indigo-600">Unique Branch Category Rule</span>
+                          <span className="text-[11px] text-slate-700">
+                            One active Category per (Global Item, Company, Branch). Independent of other branches.
+                          </span>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Operational Item Role</label>
-                        <select
-                          value={configForm.itemRole || 'PURCHASE'}
-                          onChange={(e) => setConfigForm({ ...configForm, itemRole: e.target.value as any })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs"
-                        >
-                          <option value="PURCHASE">PURCHASE</option>
-                          <option value="MANUFACTURE">MANUFACTURE</option>
-                          <option value="STOCK">STOCK</option>
-                          <option value="BOTH">BOTH (Purchase & Manufacture)</option>
-                        </select>
-                      </div>
-                      <div className="p-2.5 bg-indigo-50/70 rounded-lg border border-indigo-200 flex flex-col justify-center">
-                        <span className="text-[10px] font-bold uppercase text-indigo-600">Unique Branch Category Rule</span>
-                        <span className="text-[11px] text-slate-700">
-                          One active Category per (Global Item, Company, Branch). Independent of other branches.
-                        </span>
-                      </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2091,53 +2174,55 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[4] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[4] && (
-                    <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                      <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={configForm.isPurchaseEnabled ?? true}
-                          onChange={(e) => setConfigForm({ ...configForm, isPurchaseEnabled: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600"
-                        />
-                        <span>Purchase Enabled</span>
-                      </label>
-                      <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={configForm.isInventoryEnabled ?? true}
-                          onChange={(e) => setConfigForm({ ...configForm, isInventoryEnabled: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600"
-                        />
-                        <span>Inventory Enabled</span>
-                      </label>
-                      <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={configForm.isStocked ?? true}
-                          onChange={(e) => setConfigForm({ ...configForm, isStocked: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600"
-                        />
-                        <span>Stocked in Plant</span>
-                      </label>
-                      <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={configForm.isManufactured ?? false}
-                          onChange={(e) => setConfigForm({ ...configForm, isManufactured: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600"
-                        />
-                        <span>Manufactured</span>
-                      </label>
-                      <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={configForm.isActive ?? true}
-                          onChange={(e) => setConfigForm({ ...configForm, isActive: e.target.checked })}
-                          className="w-4 h-4 rounded text-indigo-600"
-                        />
-                        <span>Active in Branch</span>
-                      </label>
-                    </div>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={configForm.isPurchaseEnabled ?? true}
+                            onChange={(e) => setConfigForm({ ...configForm, isPurchaseEnabled: e.target.checked })}
+                            className="w-4 h-4 rounded text-indigo-600"
+                          />
+                          <span>Purchase Enabled</span>
+                        </label>
+                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={configForm.isInventoryEnabled ?? true}
+                            onChange={(e) => setConfigForm({ ...configForm, isInventoryEnabled: e.target.checked })}
+                            className="w-4 h-4 rounded text-indigo-600"
+                          />
+                          <span>Inventory Enabled</span>
+                        </label>
+                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={configForm.isStocked ?? true}
+                            onChange={(e) => setConfigForm({ ...configForm, isStocked: e.target.checked })}
+                            className="w-4 h-4 rounded text-indigo-600"
+                          />
+                          <span>Stocked in Plant</span>
+                        </label>
+                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={configForm.isManufactured ?? false}
+                            onChange={(e) => setConfigForm({ ...configForm, isManufactured: e.target.checked })}
+                            className="w-4 h-4 rounded text-indigo-600"
+                          />
+                          <span>Manufactured</span>
+                        </label>
+                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer font-bold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={configForm.isActive ?? true}
+                            onChange={(e) => setConfigForm({ ...configForm, isActive: e.target.checked })}
+                            className="w-4 h-4 rounded text-indigo-600"
+                          />
+                          <span>Active in Branch</span>
+                        </label>
+                      </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2161,53 +2246,55 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[5] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[5] && (
-                    <div className="p-4 space-y-3">
-                      <p className="text-[11px] text-slate-500">
-                        Overrides default Global Item UOM for this branch. Defaults to Global UOM ({configItem.defaultPurchaseUom} / {configItem.defaultInventoryUom}) when not overridden.
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Branch Purchase UOM</label>
-                          <select
-                            value={configForm.branchPurchaseUom || configItem.defaultPurchaseUom}
-                            onChange={(e) => setConfigForm({ ...configForm, branchPurchaseUom: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs"
-                          >
-                            {uomList.map((u) => (
-                              <option key={u.code} value={u.code}>
-                                {u.code} - {u.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Branch Inventory UOM</label>
-                          <select
-                            value={configForm.branchInventoryUom || configItem.defaultInventoryUom}
-                            onChange={(e) => setConfigForm({ ...configForm, branchInventoryUom: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs"
-                          >
-                            {uomList.map((u) => (
-                              <option key={u.code} value={u.code}>
-                                {u.code} - {u.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Conversion Factor</label>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            value={configForm.effectiveConversionFactor ?? 1}
-                            onChange={(e) =>
-                              setConfigForm({ ...configForm, effectiveConversionFactor: parseFloat(e.target.value) || 1 })
-                            }
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs"
-                          />
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-3">
+                        <p className="text-[11px] text-slate-500">
+                          Overrides default Global Item UOM for this branch. Defaults to Global UOM ({configItem.defaultPurchaseUom} / {configItem.defaultInventoryUom}) when not overridden.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Branch Purchase UOM</label>
+                            <select
+                              value={configForm.branchPurchaseUom || configItem.defaultPurchaseUom}
+                              onChange={(e) => setConfigForm({ ...configForm, branchPurchaseUom: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs disabled:opacity-60 disabled:bg-slate-100"
+                            >
+                              {uomList.map((u) => (
+                                <option key={u.code} value={u.code}>
+                                  {u.code} - {u.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Branch Inventory UOM</label>
+                            <select
+                              value={configForm.branchInventoryUom || configItem.defaultInventoryUom}
+                              onChange={(e) => setConfigForm({ ...configForm, branchInventoryUom: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-bold text-xs disabled:opacity-60 disabled:bg-slate-100"
+                            >
+                              {uomList.map((u) => (
+                                <option key={u.code} value={u.code}>
+                                  {u.code} - {u.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Conversion Factor</label>
+                            <input
+                              type="number"
+                              step="0.0001"
+                              value={configForm.effectiveConversionFactor ?? 1}
+                              onChange={(e) =>
+                                setConfigForm({ ...configForm, effectiveConversionFactor: parseFloat(e.target.value) || 1 })
+                              }
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg font-mono font-bold text-xs disabled:opacity-60 disabled:bg-slate-100"
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2231,55 +2318,57 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[6] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[6] && (
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Preferred Warehouse</label>
-                        <select
-                          value={configForm.preferredWarehouseId || ''}
-                          onChange={(e) => setConfigForm({ ...configForm, preferredWarehouseId: e.target.value })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                        >
-                          <option value="">Default Plant Warehouse</option>
-                          {branchWarehouses.map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {w.warehouseCode} ({w.warehouseName})
-                            </option>
-                          ))}
-                        </select>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Preferred Warehouse</label>
+                          <select
+                            value={configForm.preferredWarehouseId || ''}
+                            onChange={(e) => setConfigForm({ ...configForm, preferredWarehouseId: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          >
+                            <option value="">Default Plant Warehouse</option>
+                            {branchWarehouses.map((w) => (
+                              <option key={w.id} value={w.id}>
+                                {w.warehouseCode} ({w.warehouseName})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Preferred Buyer</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Sourcing Lead - Polymers"
+                            value={configForm.preferredBuyerId || ''}
+                            onChange={(e) => setConfigForm({ ...configForm, preferredBuyerId: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Preferred Supplier</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Reliance Petrochemicals Ltd"
+                            value={configForm.preferredSupplierId || ''}
+                            onChange={(e) => setConfigForm({ ...configForm, preferredSupplierId: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Procurement Lead Time (Days)</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 14"
+                            value={configForm.procurementLeadTimeDays || ''}
+                            onChange={(e) =>
+                              setConfigForm({ ...configForm, procurementLeadTimeDays: parseInt(e.target.value) || 0 })
+                            }
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Preferred Buyer</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Sourcing Lead - Polymers"
-                          value={configForm.preferredBuyerId || ''}
-                          onChange={(e) => setConfigForm({ ...configForm, preferredBuyerId: e.target.value })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Preferred Supplier</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Reliance Petrochemicals Ltd"
-                          value={configForm.preferredSupplierId || ''}
-                          onChange={(e) => setConfigForm({ ...configForm, preferredSupplierId: e.target.value })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Procurement Lead Time (Days)</label>
-                        <input
-                          type="number"
-                          placeholder="e.g. 14"
-                          value={configForm.procurementLeadTimeDays || ''}
-                          onChange={(e) =>
-                            setConfigForm({ ...configForm, procurementLeadTimeDays: parseInt(e.target.value) || 0 })
-                          }
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                        />
-                      </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2303,144 +2392,146 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[7] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[7] && (
-                    <div className="p-4 space-y-3 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.shelfLifeControlled || false}
-                            onChange={(e) => setConfigForm({ ...configForm, shelfLifeControlled: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Shelf-Life Controlled</span>
-                        </label>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-3 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.shelfLifeControlled || false}
+                              onChange={(e) => setConfigForm({ ...configForm, shelfLifeControlled: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Shelf-Life Controlled</span>
+                          </label>
 
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.serialTrackingEnabled || false}
-                            onChange={(e) => setConfigForm({ ...configForm, serialTrackingEnabled: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Serial Number Tracked</span>
-                        </label>
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.serialTrackingEnabled || false}
+                              onChange={(e) => setConfigForm({ ...configForm, serialTrackingEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Serial Number Tracked</span>
+                          </label>
 
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.warrantyApplicable || false}
-                            onChange={(e) => setConfigForm({ ...configForm, warrantyApplicable: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Warranty Applicable</span>
-                        </label>
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.warrantyApplicable || false}
+                              onChange={(e) => setConfigForm({ ...configForm, warrantyApplicable: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Warranty Applicable</span>
+                          </label>
+                        </div>
+
+                        {configForm.shelfLifeControlled && (
+                          <div className="grid grid-cols-3 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Shelf-Life Duration *</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 12"
+                                value={configForm.shelfLifeDuration || ''}
+                                onChange={(e) =>
+                                  setConfigForm({ ...configForm, shelfLifeDuration: parseInt(e.target.value) || 0 })
+                                }
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Shelf-Life Unit *</label>
+                              <select
+                                value={configForm.shelfLifeUnit || 'MONTHS'}
+                                onChange={(e) => setConfigForm({ ...configForm, shelfLifeUnit: e.target.value as any })}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              >
+                                <option value="DAYS">Days</option>
+                                <option value="MONTHS">Months</option>
+                                <option value="YEARS">Years</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Min Remaining Shelf-Life (Days)</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 60"
+                                value={configForm.minRemainingShelfLifeDays || ''}
+                                onChange={(e) =>
+                                  setConfigForm({ ...configForm, minRemainingShelfLifeDays: parseInt(e.target.value) || 0 })
+                                }
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {configForm.serialTrackingEnabled && (
+                          <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Serial Number Prefix</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. SN-KOSH-"
+                                value={configForm.serialPrefix || ''}
+                                onChange={(e) => setConfigForm({ ...configForm, serialPrefix: e.target.value })}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Serial Number Format</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. {PREFIX}{YY}{MM}-{SEQ:6}"
+                                value={configForm.serialFormat || ''}
+                                onChange={(e) => setConfigForm({ ...configForm, serialFormat: e.target.value })}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {configForm.warrantyApplicable && (
+                          <div className="grid grid-cols-3 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Warranty Duration *</label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 24"
+                                value={configForm.warrantyDuration || ''}
+                                onChange={(e) =>
+                                  setConfigForm({ ...configForm, warrantyDuration: parseInt(e.target.value) || 0 })
+                                }
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Warranty Unit *</label>
+                              <select
+                                value={configForm.warrantyUnit || 'MONTHS'}
+                                onChange={(e) => setConfigForm({ ...configForm, warrantyUnit: e.target.value as any })}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              >
+                                <option value="DAYS">Days</option>
+                                <option value="MONTHS">Months</option>
+                                <option value="YEARS">Years</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Warranty Terms</label>
+                              <input
+                                type="text"
+                                placeholder="Standard comprehensive warranty"
+                                value={configForm.warrantyTerms || ''}
+                                onChange={(e) => setConfigForm({ ...configForm, warrantyTerms: e.target.value })}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-
-                      {configForm.shelfLifeControlled && (
-                        <div className="grid grid-cols-3 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Shelf-Life Duration *</label>
-                            <input
-                              type="number"
-                              placeholder="e.g. 12"
-                              value={configForm.shelfLifeDuration || ''}
-                              onChange={(e) =>
-                                setConfigForm({ ...configForm, shelfLifeDuration: parseInt(e.target.value) || 0 })
-                              }
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Shelf-Life Unit *</label>
-                            <select
-                              value={configForm.shelfLifeUnit || 'MONTHS'}
-                              onChange={(e) => setConfigForm({ ...configForm, shelfLifeUnit: e.target.value as any })}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            >
-                              <option value="DAYS">Days</option>
-                              <option value="MONTHS">Months</option>
-                              <option value="YEARS">Years</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Min Remaining Shelf-Life (Days)</label>
-                            <input
-                              type="number"
-                              placeholder="e.g. 60"
-                              value={configForm.minRemainingShelfLifeDays || ''}
-                              onChange={(e) =>
-                                setConfigForm({ ...configForm, minRemainingShelfLifeDays: parseInt(e.target.value) || 0 })
-                              }
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {configForm.serialTrackingEnabled && (
-                        <div className="grid grid-cols-2 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Serial Number Prefix</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. SN-KOSH-"
-                              value={configForm.serialPrefix || ''}
-                              onChange={(e) => setConfigForm({ ...configForm, serialPrefix: e.target.value })}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Serial Number Format</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. {PREFIX}{YY}{MM}-{SEQ:6}"
-                              value={configForm.serialFormat || ''}
-                              onChange={(e) => setConfigForm({ ...configForm, serialFormat: e.target.value })}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {configForm.warrantyApplicable && (
-                        <div className="grid grid-cols-3 gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Warranty Duration *</label>
-                            <input
-                              type="number"
-                              placeholder="e.g. 24"
-                              value={configForm.warrantyDuration || ''}
-                              onChange={(e) =>
-                                setConfigForm({ ...configForm, warrantyDuration: parseInt(e.target.value) || 0 })
-                              }
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Warranty Unit *</label>
-                            <select
-                              value={configForm.warrantyUnit || 'MONTHS'}
-                              onChange={(e) => setConfigForm({ ...configForm, warrantyUnit: e.target.value as any })}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            >
-                              <option value="DAYS">Days</option>
-                              <option value="MONTHS">Months</option>
-                              <option value="YEARS">Years</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Warranty Terms</label>
-                            <input
-                              type="text"
-                              placeholder="Standard comprehensive warranty"
-                              value={configForm.warrantyTerms || ''}
-                              onChange={(e) => setConfigForm({ ...configForm, warrantyTerms: e.target.value })}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2464,37 +2555,39 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[8] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[8] && (
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Minimum Order Qty (MOQ)</label>
-                        <input
-                          type="number"
-                          value={configForm.moq ?? 1}
-                          onChange={(e) => setConfigForm({ ...configForm, moq: parseFloat(e.target.value) || 1 })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                        />
-                      </div>
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Order Multiple</label>
-                        <input
-                          type="number"
-                          value={configForm.orderMultiple ?? 1}
-                          onChange={(e) => setConfigForm({ ...configForm, orderMultiple: parseFloat(e.target.value) || 1 })}
-                          className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                        />
-                      </div>
-                      <div className="flex items-end">
-                        <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer w-full">
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Minimum Order Qty (MOQ)</label>
                           <input
-                            type="checkbox"
-                            checked={configForm.serviceControlEnabled || false}
-                            onChange={(e) => setConfigForm({ ...configForm, serviceControlEnabled: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
+                            type="number"
+                            value={configForm.moq ?? 1}
+                            onChange={(e) => setConfigForm({ ...configForm, moq: parseFloat(e.target.value) || 1 })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
                           />
-                          <span className="font-bold text-slate-800">Service / AMC Control Required</span>
-                        </label>
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Order Multiple</label>
+                          <input
+                            type="number"
+                            value={configForm.orderMultiple ?? 1}
+                            onChange={(e) => setConfigForm({ ...configForm, orderMultiple: parseFloat(e.target.value) || 1 })}
+                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <label className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer w-full">
+                            <input
+                              type="checkbox"
+                              checked={configForm.serviceControlEnabled || false}
+                              onChange={(e) => setConfigForm({ ...configForm, serviceControlEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Service / AMC Control Required</span>
+                          </label>
+                        </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2518,73 +2611,75 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[9] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[9] && (
-                    <div className="p-4 space-y-3 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.batchTrackingEnabled ?? true}
-                            onChange={(e) => setConfigForm({ ...configForm, batchTrackingEnabled: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Batch Tracking Enabled</span>
-                        </label>
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.lotTrackingEnabled || false}
-                            onChange={(e) => setConfigForm({ ...configForm, lotTrackingEnabled: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Lot Tracking Enabled</span>
-                        </label>
-                        <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={configForm.qualityInspectionRequired ?? true}
-                            onChange={(e) => setConfigForm({ ...configForm, qualityInspectionRequired: e.target.checked })}
-                            className="w-4 h-4 rounded text-indigo-600"
-                          />
-                          <span className="font-bold text-slate-800">Quality Inspection Required</span>
-                        </label>
-                      </div>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-3 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.batchTrackingEnabled ?? true}
+                              onChange={(e) => setConfigForm({ ...configForm, batchTrackingEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Batch Tracking Enabled</span>
+                          </label>
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.lotTrackingEnabled || false}
+                              onChange={(e) => setConfigForm({ ...configForm, lotTrackingEnabled: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Lot Tracking Enabled</span>
+                          </label>
+                          <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={configForm.qualityInspectionRequired ?? true}
+                              onChange={(e) => setConfigForm({ ...configForm, qualityInspectionRequired: e.target.checked })}
+                              className="w-4 h-4 rounded text-indigo-600"
+                            />
+                            <span className="font-bold text-slate-800">Quality Inspection Required</span>
+                          </label>
+                        </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Inspection Type</label>
-                          <select
-                            value={configForm.inspectionType || 'RECEIVING'}
-                            onChange={(e) => setConfigForm({ ...configForm, inspectionType: e.target.value as any })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                          >
-                            <option value="RECEIVING">Receiving Inspection</option>
-                            <option value="IN_PROCESS">In-Process Inspection</option>
-                            <option value="PRE_DISPATCH">Pre-Dispatch Inspection</option>
-                            <option value="LAB_CERT">Lab Certificate Required</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Storage Conditions</label>
-                          <input
-                            type="text"
-                            placeholder="Ambient / Dry / < 25°C"
-                            value={configForm.storageConditions || ''}
-                            onChange={(e) => setConfigForm({ ...configForm, storageConditions: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Regulatory Compliance Notes</label>
-                          <input
-                            type="text"
-                            placeholder="RoHS / REACH / BIS / UL94"
-                            value={configForm.regulatoryCompliance || ''}
-                            onChange={(e) => setConfigForm({ ...configForm, regulatoryCompliance: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                          />
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Inspection Type</label>
+                            <select
+                              value={configForm.inspectionType || 'RECEIVING'}
+                              onChange={(e) => setConfigForm({ ...configForm, inspectionType: e.target.value as any })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                            >
+                              <option value="RECEIVING">Receiving Inspection</option>
+                              <option value="IN_PROCESS">In-Process Inspection</option>
+                              <option value="PRE_DISPATCH">Pre-Dispatch Inspection</option>
+                              <option value="LAB_CERT">Lab Certificate Required</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Storage Conditions</label>
+                            <input
+                              type="text"
+                              placeholder="Ambient / Dry / < 25°C"
+                              value={configForm.storageConditions || ''}
+                              onChange={(e) => setConfigForm({ ...configForm, storageConditions: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Regulatory Compliance Notes</label>
+                            <input
+                              type="text"
+                              placeholder="RoHS / REACH / BIS / UL94"
+                              value={configForm.regulatoryCompliance || ''}
+                              onChange={(e) => setConfigForm({ ...configForm, regulatoryCompliance: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2608,120 +2703,122 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[10] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[10] && (
-                    <div className="p-4 space-y-2.5">
-                      {(configForm.warehouseConfigs || []).map((whConf, idx) => (
-                        <div key={whConf.warehouseId} className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={whConf.isEligible}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].isEligible = e.target.checked;
-                                  setConfigForm({ ...configForm, warehouseConfigs: updated });
-                                }}
-                                className="w-4 h-4 rounded text-indigo-600"
-                              />
-                              <span className="font-mono font-bold text-indigo-800">[{whConf.warehouseCode}]</span>
-                              <span className="font-bold text-slate-900">{whConf.warehouseName}</span>
-                              {whConf.isPreferred && (
-                                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">
-                                  ★ Preferred Warehouse
-                                </span>
-                              )}
-                            </div>
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-2.5">
+                        {(configForm.warehouseConfigs || []).map((whConf, idx) => (
+                          <div key={whConf.warehouseId} className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={whConf.isEligible}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].isEligible = e.target.checked;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  className="w-4 h-4 rounded text-indigo-600"
+                                />
+                                <span className="font-mono font-bold text-indigo-800">[{whConf.warehouseCode}]</span>
+                                <span className="font-bold text-slate-900">{whConf.warehouseName}</span>
+                                {whConf.isPreferred && (
+                                  <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">
+                                    ★ Preferred Warehouse
+                                  </span>
+                                )}
+                              </div>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = (configForm.warehouseConfigs || []).map((w, i) => ({
-                                  ...w,
-                                  isPreferred: i === idx,
-                                }));
-                                setConfigForm({ ...configForm, warehouseConfigs: updated });
-                              }}
-                              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
-                            >
-                              Set as Preferred
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                            <div>
-                              <label className="block text-[11px] text-slate-500 font-medium mb-1">Bin / Location</label>
-                              <input
-                                type="text"
-                                value={whConf.storageLocation || ''}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].storageLocation = e.target.value;
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (configForm.warehouseConfigs || []).map((w, i) => ({
+                                    ...w,
+                                    isPreferred: i === idx,
+                                  }));
                                   setConfigForm({ ...configForm, warehouseConfigs: updated });
                                 }}
-                                placeholder="BIN-A1-01"
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-mono text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-slate-500 font-medium mb-1">Safety Stock</label>
-                              <input
-                                type="number"
-                                value={whConf.safetyStock || 0}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].safetyStock = parseFloat(e.target.value) || 0;
-                                  setConfigForm({ ...configForm, warehouseConfigs: updated });
-                                }}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-slate-500 font-medium mb-1">Reorder Level</label>
-                              <input
-                                type="number"
-                                value={whConf.reorderLevel || 0}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].reorderLevel = parseFloat(e.target.value) || 0;
-                                  setConfigForm({ ...configForm, warehouseConfigs: updated });
-                                }}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-slate-500 font-medium mb-1">Maximum Stock</label>
-                              <input
-                                type="number"
-                                value={whConf.maximumStock || 0}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].maximumStock = parseFloat(e.target.value) || 0;
-                                  setConfigForm({ ...configForm, warehouseConfigs: updated });
-                                }}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-slate-500 font-medium mb-1">Replenishment</label>
-                              <select
-                                value={whConf.replenishmentMethod || 'REORDER_POINT'}
-                                onChange={(e) => {
-                                  const updated = [...(configForm.warehouseConfigs || [])];
-                                  updated[idx].replenishmentMethod = e.target.value as any;
-                                  setConfigForm({ ...configForm, warehouseConfigs: updated });
-                                }}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer disabled:opacity-50"
                               >
-                                <option value="MIN_MAX">Min / Max</option>
-                                <option value="REORDER_POINT">Reorder Point</option>
-                                <option value="MRP">MRP Driven</option>
-                                <option value="ON_DEMAND">On Demand</option>
-                              </select>
+                                Set as Preferred
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                              <div>
+                                <label className="block text-[11px] text-slate-500 font-medium mb-1">Bin / Location</label>
+                                <input
+                                  type="text"
+                                  value={whConf.storageLocation || ''}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].storageLocation = e.target.value;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  placeholder="BIN-A1-01"
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded font-mono text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-slate-500 font-medium mb-1">Safety Stock</label>
+                                <input
+                                  type="number"
+                                  value={whConf.safetyStock || 0}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].safetyStock = parseFloat(e.target.value) || 0;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-slate-500 font-medium mb-1">Reorder Level</label>
+                                <input
+                                  type="number"
+                                  value={whConf.reorderLevel || 0}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].reorderLevel = parseFloat(e.target.value) || 0;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-slate-500 font-medium mb-1">Maximum Stock</label>
+                                <input
+                                  type="number"
+                                  value={whConf.maximumStock || 0}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].maximumStock = parseFloat(e.target.value) || 0;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] text-slate-500 font-medium mb-1">Replenishment</label>
+                                <select
+                                  value={whConf.replenishmentMethod || 'REORDER_POINT'}
+                                  onChange={(e) => {
+                                    const updated = [...(configForm.warehouseConfigs || [])];
+                                    updated[idx].replenishmentMethod = e.target.value as any;
+                                    setConfigForm({ ...configForm, warehouseConfigs: updated });
+                                  }}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                                >
+                                  <option value="MIN_MAX">Min / Max</option>
+                                  <option value="REORDER_POINT">Reorder Point</option>
+                                  <option value="MRP">MRP Driven</option>
+                                  <option value="ON_DEMAND">On Demand</option>
+                                </select>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2745,105 +2842,107 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[11] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[11] && (
-                    <div className="p-4 space-y-3">
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Target Alternative Item</label>
-                            <select
-                              value={newAltItemId}
-                              onChange={(e) => setNewAltItemId(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            >
-                              <option value="">Select Approved Item...</option>
-                              {items
-                                .filter((i) => i.id !== configItem.id)
-                                .map((i) => (
-                                  <option key={i.id} value={i.id}>
-                                    [{i.globalItemCode}] {i.description}
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Relationship Type</label>
-                            <select
-                              value={newAltRelType}
-                              onChange={(e) => setNewAltRelType(e.target.value as any)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            >
-                              <option value="ALTERNATIVE">Alternative (Form/Fit/Function Compatible)</option>
-                              <option value="SUBSTITUTE">Substitute (Conditional Approval)</option>
-                              <option value="EQUIVALENT">Equivalent (Exact Technical Match)</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Justification Reason</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="e.g. Dual-source alternative supplier"
-                                value={newAltReason}
-                                onChange={(e) => setNewAltReason(e.target.value)}
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-3">
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Target Alternative Item</label>
+                              <select
+                                value={newAltItemId}
+                                onChange={(e) => setNewAltItemId(e.target.value)}
                                 className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                              />
-                              <button
-                                type="button"
-                                onClick={handleAddAlternative}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer"
                               >
-                                Add
-                              </button>
+                                <option value="">Select Approved Item...</option>
+                                {items
+                                  .filter((i) => i.id !== configItem.id)
+                                  .map((i) => (
+                                    <option key={i.id} value={i.id}>
+                                      [{i.globalItemCode}] {i.description}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Relationship Type</label>
+                              <select
+                                value={newAltRelType}
+                                onChange={(e) => setNewAltRelType(e.target.value as any)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              >
+                                <option value="ALTERNATIVE">Alternative (Form/Fit/Function Compatible)</option>
+                                <option value="SUBSTITUTE">Substitute (Conditional Approval)</option>
+                                <option value="EQUIVALENT">Equivalent (Exact Technical Match)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Justification Reason</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Dual-source alternative supplier"
+                                  value={newAltReason}
+                                  onChange={(e) => setNewAltReason(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddAlternative}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer disabled:opacity-50"
+                                >
+                                  Add
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left bg-white rounded-lg border border-slate-200">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                              <th className="p-2.5">Alt Item Code</th>
-                              <th className="p-2.5">Description</th>
-                              <th className="p-2.5">Relationship</th>
-                              <th className="p-2.5">Reason</th>
-                              <th className="p-2.5 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(configForm.alternativeItems || []).length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="p-4 text-center text-slate-400">
-                                  No alternative items mapped yet.
-                                </td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left bg-white rounded-lg border border-slate-200">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                                <th className="p-2.5">Alt Item Code</th>
+                                <th className="p-2.5">Description</th>
+                                <th className="p-2.5">Relationship</th>
+                                <th className="p-2.5">Reason</th>
+                                <th className="p-2.5 text-right">Action</th>
                               </tr>
-                            ) : (
-                              (configForm.alternativeItems || []).map((alt) => (
-                                <tr key={alt.id} className="hover:bg-slate-50">
-                                  <td className="p-2.5 font-mono font-bold text-indigo-700">{alt.alternativeGlobalItemCode}</td>
-                                  <td className="p-2.5 text-slate-700">{alt.alternativeGlobalItemDescription || '—'}</td>
-                                  <td className="p-2.5">
-                                    <span className="font-bold text-[10px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded">
-                                      {alt.relationshipType}
-                                    </span>
-                                  </td>
-                                  <td className="p-2.5 text-slate-600">{alt.reason}</td>
-                                  <td className="p-2.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveAlternative(alt.id)}
-                                      className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
-                                    >
-                                      Remove
-                                    </button>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {(configForm.alternativeItems || []).length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-slate-400">
+                                    No alternative items mapped yet.
                                   </td>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                              ) : (
+                                (configForm.alternativeItems || []).map((alt) => (
+                                  <tr key={alt.id} className="hover:bg-slate-50">
+                                    <td className="p-2.5 font-mono font-bold text-indigo-700">{alt.alternativeGlobalItemCode}</td>
+                                    <td className="p-2.5 text-slate-700">{alt.alternativeGlobalItemDescription || '—'}</td>
+                                    <td className="p-2.5">
+                                      <span className="font-bold text-[10px] bg-slate-100 text-slate-800 px-2 py-0.5 rounded">
+                                        {alt.relationshipType}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-slate-600">{alt.reason}</td>
+                                    <td className="p-2.5 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveAlternative(alt.id)}
+                                        className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer disabled:opacity-50"
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2867,115 +2966,117 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[12] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[12] && (
-                    <div className="p-4 space-y-3">
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Doc Type</label>
-                            <select
-                              value={newAttType}
-                              onChange={(e) => setNewAttType(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            >
-                              <option value="TECHNICAL_DATASHEET">Technical Datasheet (TDS)</option>
-                              <option value="ENGINEERING_DRAWING">Engineering Drawing (CAD)</option>
-                              <option value="TECHNICAL_SPECIFICATION">Technical Specification</option>
-                              <option value="TEST_CERTIFICATE">Test Certificate</option>
-                              <option value="QUALITY_CERTIFICATE">Quality Certificate</option>
-                              <option value="SAFETY_DATA_SHEET">Safety Data Sheet (MSDS)</option>
-                              <option value="REGULATORY_CERTIFICATE">Regulatory Certificate</option>
-                              <option value="OTHER">Other Compliance Document</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">File Name</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. TDS_PA_Injection_V0.pdf"
-                              value={newAttFileName}
-                              onChange={(e) => setNewAttFileName(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">File Reference / URL</label>
-                            <input
-                              type="text"
-                              placeholder="/assets/docs/tds_spec_2026.pdf"
-                              value={newAttFileRef}
-                              onChange={(e) => setNewAttFileRef(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Version</label>
-                            <div className="flex gap-2">
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-3">
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Doc Type</label>
+                              <select
+                                value={newAttType}
+                                onChange={(e) => setNewAttType(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              >
+                                <option value="TECHNICAL_DATASHEET">Technical Datasheet (TDS)</option>
+                                <option value="ENGINEERING_DRAWING">Engineering Drawing (CAD)</option>
+                                <option value="TECHNICAL_SPECIFICATION">Technical Specification</option>
+                                <option value="TEST_CERTIFICATE">Test Certificate</option>
+                                <option value="QUALITY_CERTIFICATE">Quality Certificate</option>
+                                <option value="SAFETY_DATA_SHEET">Safety Data Sheet (MSDS)</option>
+                                <option value="REGULATORY_CERTIFICATE">Regulatory Certificate</option>
+                                <option value="OTHER">Other Compliance Document</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">File Name</label>
                               <input
                                 type="text"
-                                placeholder="v1.0"
-                                value={newAttVersion}
-                                onChange={(e) => setNewAttVersion(e.target.value)}
+                                placeholder="e.g. TDS_PA_Injection_V0.pdf"
+                                value={newAttFileName}
+                                onChange={(e) => setNewAttFileName(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">File Reference / URL</label>
+                              <input
+                                type="text"
+                                placeholder="/assets/docs/tds_spec_2026.pdf"
+                                value={newAttFileRef}
+                                onChange={(e) => setNewAttFileRef(e.target.value)}
                                 className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
                               />
-                              <button
-                                type="button"
-                                onClick={handleAddAttachment}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer"
-                              >
-                                Attach
-                              </button>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Version</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="v1.0"
+                                  value={newAttVersion}
+                                  onChange={(e) => setNewAttVersion(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddAttachment}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer disabled:opacity-50"
+                                >
+                                  Attach
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left bg-white rounded-lg border border-slate-200">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                              <th className="p-2.5">Document Type</th>
-                              <th className="p-2.5">File Name</th>
-                              <th className="p-2.5">Version</th>
-                              <th className="p-2.5">Uploaded By</th>
-                              <th className="p-2.5">Status</th>
-                              <th className="p-2.5 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(configForm.attachments || []).length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="p-4 text-center text-slate-400">
-                                  No attachments uploaded yet.
-                                </td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left bg-white rounded-lg border border-slate-200">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                                <th className="p-2.5">Document Type</th>
+                                <th className="p-2.5">File Name</th>
+                                <th className="p-2.5">Version</th>
+                                <th className="p-2.5">Uploaded By</th>
+                                <th className="p-2.5">Status</th>
+                                <th className="p-2.5 text-right">Action</th>
                               </tr>
-                            ) : (
-                              (configForm.attachments || []).map((att) => (
-                                <tr key={att.id} className="hover:bg-slate-50">
-                                  <td className="p-2.5 font-bold text-slate-800">{att.documentType}</td>
-                                  <td className="p-2.5 font-mono text-indigo-700">{att.fileName}</td>
-                                  <td className="p-2.5 font-mono text-slate-600">{att.documentVersion}</td>
-                                  <td className="p-2.5 text-slate-600">{att.uploadedBy}</td>
-                                  <td className="p-2.5">
-                                    <span className="font-bold text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                                      {att.approvalStatus}
-                                    </span>
-                                  </td>
-                                  <td className="p-2.5 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveAttachment(att.id)}
-                                      className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
-                                    >
-                                      Remove
-                                    </button>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {(configForm.attachments || []).length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="p-4 text-center text-slate-400">
+                                    No attachments uploaded yet.
                                   </td>
                                 </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                              ) : (
+                                (configForm.attachments || []).map((att) => (
+                                  <tr key={att.id} className="hover:bg-slate-50">
+                                    <td className="p-2.5 font-bold text-slate-800">{att.documentType}</td>
+                                    <td className="p-2.5 font-mono text-indigo-700">{att.fileName}</td>
+                                    <td className="p-2.5 font-mono text-slate-600">{att.documentVersion}</td>
+                                    <td className="p-2.5 text-slate-600">{att.uploadedBy}</td>
+                                    <td className="p-2.5">
+                                      <span className="font-bold text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+                                        {att.approvalStatus}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveAttachment(att.id)}
+                                        className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer disabled:opacity-50"
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -2999,191 +3100,193 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                     {expandedSections[13] ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                   </button>
                   {expandedSections[13] && (
-                    <div className="p-4 space-y-4">
-                      {/* Barcodes */}
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                        <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                          <Barcode className="w-3.5 h-3.5 text-indigo-600" /> Register Barcode / GTIN
-                        </h5>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Barcode Value</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. 8901234567890"
-                              value={newBarcodeVal}
-                              onChange={(e) => setNewBarcodeVal(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Barcode Standard Type</label>
-                            <select
-                              value={newBarcodeType}
-                              onChange={(e) => setNewBarcodeType(e.target.value as any)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
-                            >
-                              <option value="EAN13">EAN-13 (Standard Retail)</option>
-                              <option value="UPC">UPC-A</option>
-                              <option value="CODE128">Code-128 (Logistics/Internal)</option>
-                              <option value="QR">2D QR Code</option>
-                              <option value="GTIN14">GTIN-14 (Carton Shipping)</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">GTIN Number (Optional)</label>
-                            <div className="flex gap-2">
+                    <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                      <div className="p-4 space-y-4">
+                        {/* Barcodes */}
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                          <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                            <Barcode className="w-3.5 h-3.5 text-indigo-600" /> Register Barcode / GTIN
+                          </h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Barcode Value</label>
                               <input
                                 type="text"
-                                placeholder="14-digit GTIN"
-                                value={newBarcodeGtin}
-                                onChange={(e) => setNewBarcodeGtin(e.target.value)}
-                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                                placeholder="e.g. 8901234567890"
+                                value={newBarcodeVal}
+                                onChange={(e) => setNewBarcodeVal(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
                               />
-                              <button
-                                type="button"
-                                onClick={handleAddBarcode}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer"
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Barcode Standard Type</label>
+                              <select
+                                value={newBarcodeType}
+                                onChange={(e) => setNewBarcodeType(e.target.value as any)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
                               >
-                                Register
-                              </button>
+                                <option value="EAN13">EAN-13 (Standard Retail)</option>
+                                <option value="UPC">UPC-A</option>
+                                <option value="CODE128">Code-128 (Logistics/Internal)</option>
+                                <option value="QR">2D QR Code</option>
+                                <option value="GTIN14">GTIN-14 (Carton Shipping)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">GTIN Number (Optional)</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="14-digit GTIN"
+                                  value={newBarcodeGtin}
+                                  onChange={(e) => setNewBarcodeGtin(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddBarcode}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer disabled:opacity-50"
+                                >
+                                  Register
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex flex-wrap items-center gap-4 pt-1">
-                          <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 text-xs">
-                            <input
-                              type="checkbox"
-                              checked={newBarcodeShared}
-                              onChange={(e) => setNewBarcodeShared(e.target.checked)}
-                              className="w-4 h-4 rounded text-indigo-600"
-                            />
-                            <span>Intentionally Shared Barcode</span>
-                          </label>
-                          {newBarcodeShared && (
-                            <input
-                              type="text"
-                              placeholder="Shared justification (required)..."
-                              value={newBarcodeSharedJust}
-                              onChange={(e) => setNewBarcodeSharedJust(e.target.value)}
-                              className="flex-1 px-3 py-1 border border-amber-300 bg-amber-50 rounded text-xs"
-                            />
+                          <div className="flex flex-wrap items-center gap-4 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={newBarcodeShared}
+                                onChange={(e) => setNewBarcodeShared(e.target.checked)}
+                                className="w-4 h-4 rounded text-indigo-600"
+                              />
+                              <span>Intentionally Shared Barcode</span>
+                            </label>
+                            {newBarcodeShared && (
+                              <input
+                                type="text"
+                                placeholder="Shared justification (required)..."
+                                value={newBarcodeSharedJust}
+                                onChange={(e) => setNewBarcodeSharedJust(e.target.value)}
+                                className="flex-1 px-3 py-1 border border-amber-300 bg-amber-50 rounded text-xs"
+                              />
+                            )}
+                          </div>
+
+                          {(configForm.barcodes || []).length > 0 && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left bg-white rounded-lg border border-slate-200">
+                                <thead>
+                                  <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                                    <th className="p-2">Barcode Value</th>
+                                    <th className="p-2">Type</th>
+                                    <th className="p-2">GTIN</th>
+                                    <th className="p-2">Shared Status</th>
+                                    <th className="p-2 text-right">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {(configForm.barcodes || []).map((bc) => (
+                                    <tr key={bc.id}>
+                                      <td className="p-2 font-mono font-bold text-indigo-700">{bc.barcodeValue}</td>
+                                      <td className="p-2 font-mono text-slate-800">{bc.barcodeType}</td>
+                                      <td className="p-2 font-mono text-slate-600">{bc.gtin || '—'}</td>
+                                      <td className="p-2 text-slate-600">
+                                        {bc.isIntentionallyShared ? `Shared: ${bc.sharedJustification}` : 'Unique'}
+                                      </td>
+                                      <td className="p-2 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveBarcode(bc.id)}
+                                          className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer disabled:opacity-50"
+                                        >
+                                          Remove
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           )}
                         </div>
 
-                        {(configForm.barcodes || []).length > 0 && (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left bg-white rounded-lg border border-slate-200">
-                              <thead>
-                                <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                                  <th className="p-2">Barcode Value</th>
-                                  <th className="p-2">Type</th>
-                                  <th className="p-2">GTIN</th>
-                                  <th className="p-2">Shared Status</th>
-                                  <th className="p-2 text-right">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {(configForm.barcodes || []).map((bc) => (
-                                  <tr key={bc.id}>
-                                    <td className="p-2 font-mono font-bold text-indigo-700">{bc.barcodeValue}</td>
-                                    <td className="p-2 font-mono text-slate-800">{bc.barcodeType}</td>
-                                    <td className="p-2 font-mono text-slate-600">{bc.gtin || '—'}</td>
-                                    <td className="p-2 text-slate-600">
-                                      {bc.isIntentionallyShared ? `Shared: ${bc.sharedJustification}` : 'Unique'}
-                                    </td>
-                                    <td className="p-2 text-right">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveBarcode(bc.id)}
-                                        className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
-                                      >
-                                        Remove
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Revisions */}
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-                        <h5 className="font-bold text-slate-800 text-xs">Branch Revision Control & ECN Log</h5>
-                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Revision Number</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. REV-002"
-                              value={newRevNumber}
-                              onChange={(e) => setNewRevNumber(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Technical Change Ref</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. ECN-2026-089"
-                              value={newRevTechRef}
-                              onChange={(e) => setNewRevTechRef(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Revision Description</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Added moisture barrier packaging"
-                              value={newRevDesc}
-                              onChange={(e) => setNewRevDesc(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-slate-700 mb-1">Change Reason</label>
-                            <div className="flex gap-2">
+                        {/* Revisions */}
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                          <h5 className="font-bold text-slate-800 text-xs">Branch Revision Control & ECN Log</h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Revision Number</label>
                               <input
                                 type="text"
-                                placeholder="Quality upgrade"
-                                value={newRevReason}
-                                onChange={(e) => setNewRevReason(e.target.value)}
+                                placeholder="e.g. REV-002"
+                                value={newRevNumber}
+                                onChange={(e) => setNewRevNumber(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Technical Change Ref</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. ECN-2026-089"
+                                value={newRevTechRef}
+                                onChange={(e) => setNewRevTechRef(e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Revision Description</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Added moisture barrier packaging"
+                                value={newRevDesc}
+                                onChange={(e) => setNewRevDesc(e.target.value)}
                                 className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
                               />
-                              <button
-                                type="button"
-                                onClick={handleAddRevision}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer"
-                              >
-                                Add
-                              </button>
+                            </div>
+                            <div>
+                              <label className="block font-bold text-slate-700 mb-1">Change Reason</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Quality upgrade"
+                                  value={newRevReason}
+                                  onChange={(e) => setNewRevReason(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAddRevision}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shrink-0 cursor-pointer disabled:opacity-50"
+                                >
+                                  Add
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="space-y-1.5">
-                          {(configForm.revisionHistory || []).map((rev) => (
-                            <div
-                              key={rev.id}
-                              className="p-2 bg-white rounded border border-slate-200 flex items-center justify-between text-xs"
-                            >
-                              <div>
-                                <span className="font-mono font-bold text-indigo-700 mr-2">[{rev.revisionNumber}]</span>
-                                <span className="font-bold text-slate-800">{rev.revisionDescription}</span>
-                                <span className="text-slate-500 ml-2">({rev.changeReason})</span>
+                          <div className="space-y-1.5">
+                            {(configForm.revisionHistory || []).map((rev) => (
+                              <div
+                                key={rev.id}
+                                className="p-2 bg-white rounded border border-slate-200 flex items-center justify-between text-xs"
+                              >
+                                <div>
+                                  <span className="font-mono font-bold text-indigo-700 mr-2">[{rev.revisionNumber}]</span>
+                                  <span className="font-bold text-slate-800">{rev.revisionDescription}</span>
+                                  <span className="text-slate-500 ml-2">({rev.changeReason})</span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Effective: {rev.effectiveFrom} • Approved by: {rev.approvedBy || 'Plant Checker'}
+                                </span>
                               </div>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                Effective: {rev.effectiveFrom} • Approved by: {rev.approvedBy || 'Plant Checker'}
-                              </span>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </fieldset>
                   )}
                 </div>
               )}
@@ -3225,27 +3328,29 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   {expandedSections[14] && (
                     <div className="p-4 space-y-5">
                       {/* Effective Date & Reason */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Effective From Date *</label>
-                          <input
-                            type="date"
-                            value={configForm.effectiveFrom || ''}
-                            onChange={(e) => setConfigForm({ ...configForm, effectiveFrom: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                          />
+                      <fieldset disabled={isApprovedImmutable} className="m-0 p-0 border-0 min-w-0">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">Effective From Date *</label>
+                            <input
+                              type="date"
+                              value={configForm.effectiveFrom || ''}
+                              onChange={(e) => setConfigForm({ ...configForm, effectiveFrom: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block font-bold text-slate-700 mb-1">Activation / Governance Reason *</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Standard production requirement"
+                              value={configForm.activationReason || ''}
+                              onChange={(e) => setConfigForm({ ...configForm, activationReason: e.target.value })}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs disabled:opacity-60 disabled:bg-slate-100"
+                            />
+                          </div>
                         </div>
-                        <div className="sm:col-span-2">
-                          <label className="block font-bold text-slate-700 mb-1">Activation / Governance Reason *</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Standard production requirement"
-                            value={configForm.activationReason || ''}
-                            onChange={(e) => setConfigForm({ ...configForm, activationReason: e.target.value })}
-                            className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                          />
-                        </div>
-                      </div>
+                      </fieldset>
 
                       {/* 25-Checkpoint Audit Summary Card */}
                       {auditReport && (
@@ -3402,15 +3507,16 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   onClick={() => setIsConfigModalOpen(false)}
                   className="px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-bold text-xs transition cursor-pointer"
                 >
-                  1. Cancel
+                  Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isApprovedImmutable}
                   onClick={handleSaveDraftAction}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>2. Save Draft</span>
+                  <span>Save Draft</span>
                 </button>
                 <button
                   type="button"
@@ -3419,15 +3525,16 @@ export const BranchAvailabilityView: React.FC<BranchAvailabilityViewProps> = ({
                   className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
                 >
                   <ShieldCheck className={`w-3.5 h-3.5 ${isRunningAudit ? 'animate-spin' : ''}`} />
-                  <span>3. Validate Rules</span>
+                  <span>Validate Rules</span>
                 </button>
                 <button
                   type="button"
+                  disabled={isApprovedImmutable}
                   onClick={handleSubmitForCheckerApproval}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>4. Submit for Checker Approval</span>
+                  <span>Submit for Checker Approval</span>
                 </button>
               </div>
             </div>

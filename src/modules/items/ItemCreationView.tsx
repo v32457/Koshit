@@ -1800,7 +1800,7 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
           onClick={onCancel}
           className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer"
         >
-          1. Cancel
+          Cancel
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -1810,7 +1810,7 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
             className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>2. Save Draft</span>
+            <span>Save Draft</span>
           </button>
           <button
             type="button"
@@ -1818,7 +1818,7 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
             className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>3. Validate Rules</span>
+            <span>Validate Rules</span>
           </button>
           <button
             type="button"
@@ -1826,7 +1826,7 @@ export const ItemCreationView: React.FC<ItemCreationViewProps> = ({
             className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition cursor-pointer flex items-center gap-1.5"
           >
             <Send className="w-3.5 h-3.5 text-white" />
-            <span>4. Submit for Checker Approval</span>
+            <span>Submit for Checker Approval</span>
           </button>
         </div>
       </div>

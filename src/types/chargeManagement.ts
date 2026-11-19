@@ -183,6 +183,14 @@ export interface ChargeMasterRecord {
   isActive: boolean;
   isSystemSeeded?: boolean;
   versionNumber?: number;
+  applicablePrTypes?: string[]; // e.g. ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET']
+  sapExpenseCode?: string | number;
+  sapExpenseName?: string;
+  sapGlAccountCode?: string;
+  taxCode?: string;
+  approvalStatus?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
+  approvedAt?: string;
   createdBy: string;
   createdDate: string;
   modifiedBy: string;
@@ -229,6 +237,14 @@ export interface CompanyBranchChargeMapping {
   requiresApproval: boolean;
   isBranchOverride: boolean;
   inheritedFromMappingId?: string;
+  applicablePrTypes?: string[];
+  sapExpenseCode?: string | number;
+  sapExpenseName?: string;
+  sapGlAccountCode?: string;
+  taxCode?: string;
+  approvalStatus?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
+  approvedAt?: string;
   remarks?: string;
   createdBy: string;
   createdAt: string;
@@ -291,6 +307,12 @@ export interface EffectiveMappedChargeOption {
   effectiveFrom: string;
   effectiveTo?: string;
   requiresApproval: boolean;
+  applicablePrTypes?: string[];
+  sapExpenseCode?: string | number;
+  sapExpenseName?: string;
+  sapGlAccountCode?: string;
+  taxCode?: string;
+  approvalStatus?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   remarks?: string;
 }
 
@@ -351,6 +373,7 @@ export interface ChargeRuleRecord {
 }
 
 export interface ChargeRuleEvaluationContext {
+  prType?: string;
   procurementCategory?: string;
   itemCategory?: string;
   procurementType: 'DOMESTIC' | 'IMPORT';

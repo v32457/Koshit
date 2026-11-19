@@ -120,7 +120,8 @@ test('prChargeItemService calculates Applicable, Fixed Charges, and Exempt charg
   assert.equal(summary.applicableChargesCount, 2);
   assert.equal(summary.applicableChargesBaseTotal, 9500); // 1500 + 8000
   assert.equal(summary.applicableChargesTaxTotal, 1710); // 270 + 1440
-  assert.equal(summary.grandTotalWithCharges, 109500);
+  assert.equal(summary.applicableChargesGrandTotal, 11210); // 9500 + 1710
+  assert.equal(summary.grandTotalWithCharges, 111210); // 100000 + 9500 + 1710
 });
 
 test('formatChargeAmount and getCurrencySymbol format multi-currency charges cleanly', () => {
@@ -186,9 +187,10 @@ test('PurchaseRequisitionService createPR and updatePR recalculate and persist c
 
   assert.ok(created.chargeItems && created.chargeItems.length >= 10);
   // Default active base charges for 60,000 items:
-  // LOAD: 1500 + UNLOAD: 1500 + CUSTOMS (10% of 60000 = 6000) + FREIGHT: 4500 + INSURANCE (0.25% of 60000 = 150) + PACKAGING: 2000 = 15650
+  // LOAD: 1500 (270 tax) + UNLOAD: 1500 (270 tax) + CUSTOMS (10% = 6000, 0 tax) + FREIGHT: 4500 (810 tax) + INSURANCE (0.25% = 150, 27 tax) + PACKAGING: 2000 (360 tax)
+  // Base charges = 15650, Tax on charges = 1737 -> Landed PR Value = 60000 + 15650 + 1737 = 77387
   assert.equal(created.chargesTotalValue, 15650);
-  assert.equal(created.grandTotalWithCharges, 75650);
+  assert.equal(created.grandTotalWithCharges, 77387);
 
   // Update PR lines qty from 400 -> 800 (subtotal 120,000) and switch currency to USD
   const updated = PurchaseRequisitionService.updatePR(
@@ -209,9 +211,10 @@ test('PurchaseRequisitionService createPR and updatePR recalculate and persist c
 
   assert.ok(updated);
   // Recalculated for 120,000 items:
-  // LOAD: 1500 + UNLOAD: 1500 + CUSTOMS (10% = 12000) + FREIGHT: 4500 + INSURANCE (0.25% = 300) + PACKAGING: 2000 = 21800
+  // Base: LOAD 1500 + UNLOAD 1500 + CUSTOMS 12000 + FREIGHT 4500 + INSURANCE 300 + PACKAGING 2000 = 21800
+  // Tax: 270 + 270 + 0 + 810 + 54 + 360 = 1764 -> Landed PR Value = 120000 + 21800 + 1764 = 143564
   assert.equal(updated!.chargesTotalValue, 21800);
-  assert.equal(updated!.grandTotalWithCharges, 141800);
+  assert.equal(updated!.grandTotalWithCharges, 143564);
   assert.equal(updated!.chargeItems![0].currency, 'USD');
 });
 
@@ -326,4 +329,171 @@ test('generatePurchaseRequisitionPdf removes diagonal watermark completely and p
   } finally {
     console.warn = origWarn;
   }
+});
+
+test('Line-level charge items with custom amounts aggregate into PR totals and lock snapshots on submit', () => {
+  const maker = INITIAL_USERS.find((u) => u.role === 'ITEM_MAKER') || INITIAL_USERS[0];
+  const mappedOpts = prChargeItemService.getEffectiveMappedChargesForPR('co-kosh-01', 'br-pond-01');
+  const freightOpt = mappedOpts.find((o) => o.chargeCode === 'CHG-FREIGHT')!;
+  const loadingOpt = mappedOpts.find((o) => o.chargeCode === 'CHG-LOAD')!;
+  assert.ok(freightOpt && loadingOpt);
+
+  // Header charge added with explicit custom amount 5200
+  const headerCharges = prChargeItemService.addMappedChargeToPrList([], freightOpt, 30000, 'INR', {
+    rateOverride: 5200,
+    chargeTypeOverride: 'FIXED',
+    applicabilityOverride: 'APPLICABLE',
+  });
+  assert.equal(headerCharges[0].estimatedAmount, 5200);
+
+  // Line-level charge added with explicit custom amount 1850
+  const lineCharges = prChargeItemService.addMappedChargeToPrList([], loadingOpt, 30000, 'INR', {
+    quantity: 200,
+    rateOverride: 1850,
+    chargeTypeOverride: 'FIXED',
+    applicabilityOverride: 'APPLICABLE',
+  });
+  assert.equal(lineCharges[0].estimatedAmount, 1850);
+
+  const fullSummary = prChargeItemService.calculateFullRequisitionSummary(
+    headerCharges,
+    [{ requestedQuantity: 200, approximateUnitPrice: 150, estimatedTotalValue: 30000, lineCharges }],
+    30000
+  );
+  assert.equal(fullSummary.headerChargesBaseTotal, 5200);
+  assert.equal(fullSummary.lineChargesBaseTotal, 1850);
+  assert.equal(fullSummary.applicableChargesCount, 2);
+  assert.equal(fullSummary.applicableChargesBaseTotal, 7050);
+  assert.equal(fullSummary.applicableChargesTaxTotal, 593); // Freight 5% of 5200 (260) + Loading 18% of 1850 (333)
+  assert.equal(fullSummary.applicableChargesGrandTotal, 7643);
+  assert.equal(fullSummary.grandTotalWithCharges, 37643); // 30000 + 7050 + 593
+
+  const draftPr = PurchaseRequisitionService.createPR(
+    {
+      prType: 'MANUAL',
+      companyId: 'co-kosh-01',
+      companyCode: 'KOSH-HQ',
+      branchId: 'br-pond-01',
+      branchCode: '001',
+      branchName: 'Puducherry Main Plant & HQ',
+      department: 'Production',
+      costCentre: 'CC-PROD-101',
+      requesterId: maker.id,
+      requesterName: maker.fullName,
+      creatorId: maker.id,
+      creatorName: maker.fullName,
+      priority: 'NORMAL',
+      status: 'DRAFT',
+      purchasePurpose: 'Line-level charge persistence test',
+      businessJustification: 'Verify header + line charge aggregation',
+      deliveryLocation: 'Puducherry Plant',
+      estimatedTotalValue: 30000,
+      chargeItems: headerCharges,
+      currency: 'INR',
+      budgetValidationStatus: 'SUFFICIENT',
+      erpStockStatus: 'FRESH',
+      lines: [
+        {
+          id: 'line-lc-1',
+          prId: '',
+          itemCode: 'RMPAOPOEXLG0004',
+          description: 'PC-ABS - Injection Grade V0',
+          itemCategory: 'Raw Materials',
+          inventoryUom: 'KG',
+          requestedQuantity: 200,
+          approximateUnitPrice: 150,
+          currency: 'INR',
+          estimatedTotalValue: 30000,
+          deliverySchedules: [
+            { id: 'sch-lc-1', lineId: 'line-lc-1', deliveryDate: '2026-12-01', quantity: 200 },
+          ],
+          lineCharges,
+          status: 'ACTIVE',
+        },
+      ],
+      changeHistory: [],
+      attachments: [],
+    },
+    maker
+  );
+
+  assert.equal(draftPr.chargesTotalValue, 7050);
+  assert.equal(draftPr.grandTotalWithCharges, 37643);
+  assert.equal(draftPr.lines[0].lineChargesTotalValue, 1850);
+  assert.equal(draftPr.lines[0].lineCharges?.[0].estimatedAmount, 1850);
+
+  const submittedRes = PurchaseRequisitionService.submitPR(draftPr.id, maker);
+  assert.equal(submittedRes.success, true);
+  assert.ok(submittedRes.pr?.lines[0].lineCharges?.[0].snapshotLockedAt);
+});
+
+test('Total Landed PR Value includes Items Net Subtotal + Applicable Charges + Est. Tax on Charges and honors GST/charge type overrides', () => {
+  const mappedOpts = prChargeItemService.getEffectiveMappedChargesForPR('co-kosh-01', 'br-pond-01');
+  const freightOpt = mappedOpts.find((o) => o.chargeCode === 'CHG-FREIGHT')!;
+  const unloadOpt = mappedOpts.find((o) => o.chargeCode === 'CHG-UNLOAD')!;
+  assert.ok(freightOpt && unloadOpt);
+
+  // Header Freight 4500 with 0% GST -> base 4500, tax 0, total 4500
+  const rawHeader = prChargeItemService.addMappedChargeToPrList([], freightOpt, 30000, 'INR', {
+    rateOverride: 4500,
+    chargeTypeOverride: 'FIXED',
+    applicabilityOverride: 'AS_PER_FIXED_CHARGES',
+  });
+  const headerCharges = [prChargeItemService.calculateChargeItem({ ...rawHeader[0], gstRatePercent: 0 }, 30000)];
+  assert.equal(headerCharges[0].estimatedAmount, 4500);
+  assert.equal(headerCharges[0].taxAmount, 0);
+
+  // Line #1 Unloading 2500 with 28% GST -> base 2500, tax 700, total 3200
+  const rawLine = prChargeItemService.addMappedChargeToPrList([], unloadOpt, 30000, 'INR', {
+    quantity: 200,
+    rateOverride: 2500,
+    chargeTypeOverride: 'FIXED',
+    applicabilityOverride: 'APPLICABLE',
+  });
+  const lineCharges = [prChargeItemService.calculateChargeItem({ ...rawLine[0], gstRatePercent: 28 }, 30000, { quantity: 200 })];
+  assert.equal(lineCharges[0].estimatedAmount, 2500);
+  assert.equal(lineCharges[0].taxAmount, 700);
+  assert.equal(lineCharges[0].totalWithTax, 3200);
+
+  const fullSummary = prChargeItemService.calculateFullRequisitionSummary(
+    headerCharges,
+    [{ requestedQuantity: 200, approximateUnitPrice: 150, estimatedTotalValue: 30000, lineCharges }],
+    30000
+  );
+  assert.equal(fullSummary.itemsSubtotal, 30000);
+  assert.equal(fullSummary.headerChargesBaseTotal, 4500);
+  assert.equal(fullSummary.lineChargesBaseTotal, 2500);
+  assert.equal(fullSummary.applicableChargesBaseTotal, 7000);
+  assert.equal(fullSummary.applicableChargesTaxTotal, 700);
+  assert.equal(fullSummary.applicableChargesGrandTotal, 7700);
+  assert.equal(fullSummary.grandTotalWithCharges, 37700);
+
+  // Line-only summary matches Line Material + Line Charges + Tax on Charges
+  const lineOnlySummary = prChargeItemService.calculateRequisitionChargesSummary(lineCharges, 30000);
+  assert.equal(lineOnlySummary.grandTotalWithCharges, 33200);
+
+  // Percentage + fractional GST precision + AT_ACTUALS reset behavior
+  const pctCharge = prChargeItemService.calculateChargeItem(
+    { ...lineCharges[0], chargeType: 'PERCENTAGE', rateOrPercentage: 1.5, gstRatePercent: 5 },
+    30000
+  );
+  assert.equal(pctCharge.estimatedAmount, 450); // 1.5% of 30000
+  assert.equal(pctCharge.taxAmount, 22.5); // 5% of 450
+  assert.equal(pctCharge.totalWithTax, 472.5);
+
+  // PER_UNIT charge respects user GST override
+  const perUnitWithGstOverride = prChargeItemService.calculateChargeItem(
+    {
+      ...lineCharges[0],
+      calculationMethod: 'PER_UNIT',
+      rateOrPercentage: 10,
+      gstRatePercent: 5,
+      calculationInputs: { itemsSubtotal: 30000, rateUsed: 10, quantity: 25 },
+    },
+    30000,
+    { quantity: 25 }
+  );
+  assert.equal(perUnitWithGstOverride.estimatedAmount, 250);
+  assert.equal(perUnitWithGstOverride.taxAmount, 12.5);
+  assert.equal(perUnitWithGstOverride.totalWithTax, 262.5);
 });

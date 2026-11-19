@@ -11,6 +11,8 @@ import {
   PRChargeType,
   PRChargeCategory,
   PRChargesSummary,
+  PurchaseRequisitionLine,
+  PRType,
 } from '../types/purchaseRequisition';
 import {
   ChargeMasterCategory,
@@ -19,6 +21,7 @@ import {
 import { chargeMappingService } from './chargeMappingService';
 import { chargeMasterService } from './chargeMasterService';
 import { executeChargeCalculation } from './chargeManagementService';
+import { calculateInventoryPrFinancials } from './prFinancialCalculator';
 
 export interface StandardChargeTemplate {
   chargeCode: string;
@@ -213,20 +216,32 @@ export interface PRMappedChargeContext {
   distanceKm?: number;
   applicabilityOverride?: PRChargeApplicability;
   rateOverride?: number;
+  chargeTypeOverride?: PRChargeType;
   remarks?: string;
   payeeType?: PRChargeItem['payeeType'];
+  prType?: PRType | string;
+  chargeLevel?: 'HEADER' | 'LINE';
+  prLineId?: string;
+  otherLevelCharges?: PRChargeItem[];
+  allowSameChargeAtHeaderAndLine?: boolean;
 }
 
 export const prChargeItemService = {
   /**
-   * Retrieves ONLY active, effective, and applicable mapped charges for PR creation/editing.
+   * Retrieves ONLY active, approved, effective, and applicable mapped charges for PR creation/editing.
    */
   getEffectiveMappedChargesForPR(
     companyId: string,
     branchId: string,
-    asOfDate?: string
+    asOfDateOrOptions?: string | { prType?: PRType | string; asOfDate?: string },
+    prType?: PRType | string
   ): EffectiveMappedChargeOption[] {
-    return chargeMappingService.getEffectivePrChargeOptions(companyId, branchId, asOfDate);
+    return chargeMappingService.getEffectivePrChargeOptions(
+      companyId,
+      branchId,
+      asOfDateOrOptions,
+      prType ? String(prType) : undefined
+    );
   },
 
   /**
@@ -239,9 +254,29 @@ export const prChargeItemService = {
     targetCurrency?: string,
     context?: PRMappedChargeContext
   ): PRChargeItem {
+    if (context?.prType && String(context.prType).trim().toUpperCase() === 'EXPENSE') {
+      throw new Error(
+        'Classification Governance Violation: Charge Items are permitted only on Inventory Purchase Requisitions and cannot be added to an EXPENSE PR.'
+      );
+    }
+    if (option.approvalStatus && option.approvalStatus !== 'APPROVED') {
+      throw new Error(
+        `Charge "${option.chargeCode}" (${option.chargeName}) is not approved (status: ${option.approvalStatus}) and cannot be added to a PR.`
+      );
+    }
     if (!option.isActiveInMaster || !option.isEnabled || !option.isEffectiveNow || option.applicability === 'NOT_APPLICABLE') {
       throw new Error(
         `Charge "${option.chargeCode}" (${option.chargeName}) is inactive or not applicable for this Company/Branch.`
+      );
+    }
+    if (
+      context?.prType &&
+      option.applicablePrTypes &&
+      option.applicablePrTypes.length > 0 &&
+      !option.applicablePrTypes.includes(String(context.prType).trim().toUpperCase() as PRType)
+    ) {
+      throw new Error(
+        `Charge "${option.chargeCode}" (${option.chargeName}) is not mapped to PR Type "${context.prType}".`
       );
     }
 
@@ -250,25 +285,37 @@ export const prChargeItemService = {
     const applicability: PRChargeApplicability =
       context?.applicabilityOverride || 'AS_PER_FIXED_CHARGES';
 
+    const effectiveCalcMethod =
+      context?.chargeTypeOverride === 'FIXED'
+        ? 'FIXED_AMOUNT'
+        : context?.chargeTypeOverride === 'PERCENTAGE'
+        ? 'PERCENTAGE'
+        : context?.chargeTypeOverride === 'AT_ACTUALS'
+        ? 'ACTUAL_COST'
+        : option.calculationMethod;
+
     const prChargeType: PRChargeType =
-      option.calculationMethod === 'PERCENTAGE'
+      context?.chargeTypeOverride ||
+      (option.calculationMethod === 'PERCENTAGE'
         ? 'PERCENTAGE'
         : option.calculationMethod === 'ACTUAL_COST'
         ? 'AT_ACTUALS'
-        : 'FIXED';
+        : 'FIXED');
 
     const taxMapping = chargeMasterService.getTaxMappingById(option.taxMappingId);
     const fxRate = chargeMasterService.getExchangeRate(option.currency, activeCurrency);
     const effectiveRateInTargetCurrency =
-      option.calculationMethod === 'PERCENTAGE'
+      effectiveCalcMethod === 'PERCENTAGE'
         ? rateToUse
+        : context?.rateOverride !== undefined
+        ? Number(rateToUse.toFixed(option.decimalPrecision || 2))
         : Number((rateToUse * fxRate).toFixed(option.decimalPrecision || 2));
 
     const calcInputs = {
-      method: option.calculationMethod,
+      method: effectiveCalcMethod,
       basis: option.calculationBasis,
       rate: applicability === 'NOT_APPLICABLE' ? 0 : effectiveRateInTargetCurrency,
-      formulaExpression: option.formulaExpression,
+      formulaExpression: effectiveCalcMethod === option.calculationMethod ? option.formulaExpression : undefined,
       materialValue: itemsSubtotal,
       totalPoMaterialValue: itemsSubtotal,
       quantity: context?.quantity ?? 1,
@@ -278,8 +325,8 @@ export const prChargeItemService = {
       sourceCurrency: activeCurrency,
       targetCurrency: activeCurrency,
       exchangeRate: 1,
-      minimumCharge: option.minimumCharge,
-      maximumCharge: option.maximumCharge,
+      minimumCharge: context?.chargeTypeOverride === 'FIXED' ? 0 : option.minimumCharge,
+      maximumCharge: context?.chargeTypeOverride === 'FIXED' ? undefined : option.maximumCharge,
       roundingRule: option.roundingRule || 'HALF_UP',
       decimalPrecision: option.decimalPrecision ?? 2,
       taxMapping,
@@ -316,7 +363,7 @@ export const prChargeItemService = {
       mappingId: option.mappingId,
       mappingVersion: option.mappingVersion,
       applicationLevel: option.defaultApplicationLevel,
-      calculationMethod: option.calculationMethod,
+      calculationMethod: effectiveCalcMethod,
       calculationBasis: option.calculationBasis,
       allocationBasis: option.allocationBasis,
       taxMappingId: option.taxMappingId,
@@ -326,6 +373,12 @@ export const prChargeItemService = {
       mandateStatus: option.applicability,
       requiresApproval: option.requiresApproval,
       sourceScope: option.sourceScope,
+      sapExpenseCode: option.sapExpenseCode,
+      sapExpenseName: option.sapExpenseName,
+      sapGlAccountCode: option.sapGlAccountCode,
+      taxCode: option.taxCode || taxMapping.taxCode,
+      chargeLevel: context?.chargeLevel || (option.defaultApplicationLevel === 'PR_LINE' ? 'LINE' : 'HEADER'),
+      prLineId: context?.prLineId,
       calculationInputs: {
         itemsSubtotal,
         rateUsed: effectiveRateInTargetCurrency,
@@ -339,7 +392,7 @@ export const prChargeItemService = {
   },
 
   /**
-   * Adds one mapped charge to a PR's Charge Items list while blocking duplicates and inactive/unmapped charges.
+   * Adds one mapped charge to a PR's Charge Items list while blocking duplicates (same level and cross-level unless allowed by policy) and inactive/unmapped charges.
    */
   addMappedChargeToPrList(
     currentCharges: PRChargeItem[],
@@ -350,16 +403,87 @@ export const prChargeItemService = {
   ): PRChargeItem[] {
     const duplicate = currentCharges.some(
       (c) =>
-        c.chargeCode.toUpperCase() === option.chargeCode.toUpperCase() ||
-        (option.chargeMasterId && c.chargeMasterId === option.chargeMasterId)
+        c.applicability !== 'NOT_APPLICABLE' &&
+        (c.chargeCode.toUpperCase() === option.chargeCode.toUpperCase() ||
+          (option.chargeMasterId && c.chargeMasterId === option.chargeMasterId))
     );
     if (duplicate) {
       throw new Error(
-        `Duplicate charge selection blocked: "${option.chargeCode}" (${option.chargeName}) is already added to this PR.`
+        `Duplicate charge selection blocked: "${option.chargeCode}" (${option.chargeName}) is already added at this level.`
       );
     }
+
+    if (context?.otherLevelCharges && !context.allowSameChargeAtHeaderAndLine) {
+      const crossLevelDuplicate = context.otherLevelCharges.some(
+        (c) =>
+          c.applicability !== 'NOT_APPLICABLE' &&
+          (c.chargeCode.toUpperCase() === option.chargeCode.toUpperCase() ||
+            (option.chargeMasterId && c.chargeMasterId === option.chargeMasterId))
+      );
+      if (crossLevelDuplicate) {
+        const targetLvl = context.chargeLevel === 'LINE' ? 'Line' : 'Header';
+        const otherLvl = context.chargeLevel === 'LINE' ? 'Header' : 'Line';
+        throw new Error(
+          `Cross-level duplicate charge blocked: "${option.chargeCode}" (${option.chargeName}) is already applied at the ${otherLvl} level and policy prohibits applying the same charge at both ${otherLvl} and ${targetLvl} levels.`
+        );
+      }
+    }
+
     const created = this.createPrChargeFromMappedOption(option, itemsSubtotal, targetCurrency, context);
     return [...currentCharges, created];
+  },
+
+  /**
+   * Validates that no charge is duplicated across PR Header and PR Lines unless explicitly permitted by policy.
+   */
+  validateHeaderAndLineChargeDuplicates(
+    headerCharges: PRChargeItem[] | undefined,
+    lines: Array<{ id?: string; itemCode?: string; lineCharges?: PRChargeItem[] }> | undefined,
+    allowSameChargeAtHeaderAndLine = false
+  ): { valid: boolean; conflicts: string[]; errors: string[]; duplicateChargeCodes: string[] } {
+    const conflicts: string[] = [];
+    const duplicateCodes = new Set<string>();
+    const activeHeaderCodes = new Set<string>();
+    const seenHeader = new Set<string>();
+
+    for (const hc of headerCharges || []) {
+      if (hc.applicability === 'NOT_APPLICABLE') continue;
+      const code = hc.chargeCode.trim().toUpperCase();
+      if (seenHeader.has(code)) {
+        duplicateCodes.add(code);
+        conflicts.push(`Duplicate Header Charge "${code}" (${hc.chargeName}) found multiple times on PR Header.`);
+      }
+      seenHeader.add(code);
+      activeHeaderCodes.add(code);
+    }
+
+    (lines || []).forEach((line, idx) => {
+      const seenLine = new Set<string>();
+      for (const lc of line.lineCharges || []) {
+        if (lc.applicability === 'NOT_APPLICABLE') continue;
+        const code = lc.chargeCode.trim().toUpperCase();
+        if (seenLine.has(code)) {
+          duplicateCodes.add(code);
+          conflicts.push(
+            `Duplicate Line Charge "${code}" (${lc.chargeName}) found multiple times on Line #${idx + 1} (${line.itemCode || 'Item'}).`
+          );
+        }
+        seenLine.add(code);
+        if (!allowSameChargeAtHeaderAndLine && activeHeaderCodes.has(code)) {
+          duplicateCodes.add(code);
+          conflicts.push(
+            `Charge "${code}" (${lc.chargeName}) is applied at both PR Header and Line #${idx + 1} (${line.itemCode || 'Item'}), which is prohibited by policy.`
+          );
+        }
+      }
+    });
+
+    return {
+      valid: conflicts.length === 0,
+      conflicts,
+      errors: conflicts,
+      duplicateChargeCodes: Array.from(duplicateCodes),
+    };
   },
 
   /**
@@ -415,12 +539,22 @@ export const prChargeItemService = {
     if (
       updated.calculationMethod &&
       !['FIXED_AMOUNT', 'PERCENTAGE', 'ACTUAL_COST'].includes(updated.calculationMethod) &&
+      updated.chargeType !== 'PERCENTAGE' &&
+      updated.chargeType !== 'AT_ACTUALS' &&
       updated.taxMappingId
     ) {
       const rate = updated.applicability === 'AS_PER_FIXED_CHARGES'
         ? updated.fixedChargeRate ?? updated.rateOrPercentage ?? 0
         : Number(updated.rateOrPercentage) || 0;
-      const taxMapping = chargeMasterService.getTaxMappingById(updated.taxMappingId);
+      const baseTaxMapping = chargeMasterService.getTaxMappingById(updated.taxMappingId);
+      const taxMapping =
+        updated.gstRatePercent !== undefined
+          ? {
+              ...baseTaxMapping,
+              ratePercent: Number(updated.gstRatePercent) || 0,
+              ...(Number(updated.gstRatePercent) === 0 ? { cessPercent: 0 } : {}),
+            }
+          : baseTaxMapping;
       const snap = executeChargeCalculation(
         {
           method: updated.calculationMethod as any,
@@ -458,9 +592,9 @@ export const prChargeItemService = {
     if (updated.applicability === 'AS_PER_FIXED_CHARGES') {
       const fixedRate = updated.fixedChargeRate ?? updated.rateOrPercentage ?? 0;
       if (updated.chargeType === 'PERCENTAGE') {
-        baseAmount = Math.round((itemsSubtotal * fixedRate) / 100);
+        baseAmount = Number(((itemsSubtotal * fixedRate) / 100).toFixed(2));
       } else {
-        baseAmount = fixedRate;
+        baseAmount = Number((Number(fixedRate) || 0).toFixed(2));
       }
       updated.isFixedChargeRule = true;
       updated.rateOrPercentage = fixedRate;
@@ -468,16 +602,16 @@ export const prChargeItemService = {
       // APPLICABLE
       updated.isFixedChargeRule = false;
       if (updated.chargeType === 'PERCENTAGE') {
-        baseAmount = Math.round((itemsSubtotal * (Number(updated.rateOrPercentage) || 0)) / 100);
+        baseAmount = Number(((itemsSubtotal * (Number(updated.rateOrPercentage) || 0)) / 100).toFixed(2));
       } else {
         // FIXED or AT_ACTUALS
-        baseAmount = Number(updated.rateOrPercentage) || 0;
+        baseAmount = Number((Number(updated.rateOrPercentage) || 0).toFixed(2));
       }
     }
 
     const gstPercent = Number(updated.gstRatePercent) || 0;
-    const taxAmount = Math.round((baseAmount * gstPercent) / 100);
-    const totalWithTax = baseAmount + taxAmount;
+    const taxAmount = Number(((baseAmount * gstPercent) / 100).toFixed(2));
+    const totalWithTax = Number((baseAmount + taxAmount).toFixed(2));
 
     updated.estimatedAmount = baseAmount;
     updated.taxAmount = taxAmount;
@@ -520,20 +654,21 @@ export const prChargeItemService = {
   },
 
   /**
-   * Calculates summary metrics for the PR header (charges total, tax, grand total).
+   * Calculates summary metrics for the PR header (charges total, tax, grand total including tax on charges).
    */
   calculateRequisitionChargesSummary(
     charges: PRChargeItem[] | undefined,
     itemsSubtotal: number
   ): PRChargesSummary {
+    const roundedItemsSubtotal = Number((Number(itemsSubtotal) || 0).toFixed(2));
     if (!charges || charges.length === 0) {
       return {
-        itemsSubtotal,
+        itemsSubtotal: roundedItemsSubtotal,
         applicableChargesCount: 0,
         applicableChargesBaseTotal: 0,
         applicableChargesTaxTotal: 0,
         applicableChargesGrandTotal: 0,
-        grandTotalWithCharges: itemsSubtotal,
+        grandTotalWithCharges: roundedItemsSubtotal,
       };
     }
 
@@ -549,16 +684,112 @@ export const prChargeItemService = {
       }
     }
 
-    const grandChargesTotal = baseTotal + taxTotal;
+    const roundedBaseTotal = Number(baseTotal.toFixed(2));
+    const roundedTaxTotal = Number(taxTotal.toFixed(2));
+    const grandChargesTotal = Number((roundedBaseTotal + roundedTaxTotal).toFixed(2));
 
     return {
-      itemsSubtotal,
+      itemsSubtotal: roundedItemsSubtotal,
       applicableChargesCount: count,
-      applicableChargesBaseTotal: baseTotal,
-      applicableChargesTaxTotal: taxTotal,
+      applicableChargesBaseTotal: roundedBaseTotal,
+      applicableChargesTaxTotal: roundedTaxTotal,
       applicableChargesGrandTotal: grandChargesTotal,
-      grandTotalWithCharges: itemsSubtotal + baseTotal, // Base Requisition landing value
+      grandTotalWithCharges: Number((roundedItemsSubtotal + grandChargesTotal).toFixed(2)),
+      headerChargesBaseTotal: roundedBaseTotal,
+      lineChargesBaseTotal: 0,
+      lineChargesCount: 0,
     };
+  },
+
+  /**
+   * Computes summary metrics combining both PR header charges and individual line-level charges.
+   */
+  calculateFullRequisitionSummary(
+    headerCharges: PRChargeItem[] | undefined,
+    lines: Array<{
+      requestedQuantity?: number;
+      approximateUnitPrice?: number;
+      estimatedTotalValue?: number;
+      taxPercent?: number;
+      taxAmount?: number;
+      priceIncludesTax?: boolean;
+      lineCharges?: PRChargeItem[];
+    }> = [],
+    itemsSubtotalOverride?: number
+  ): PRChargesSummary {
+    const calc = calculateInventoryPrFinancials({
+      lines,
+      headerCharges,
+      itemsSubtotalOverride,
+    });
+    return {
+      itemsSubtotal: calc.inventorySubtotal,
+      inventoryTaxTotal: calc.inventoryTaxTotal,
+      applicableChargesCount: calc.applicableChargesCount,
+      applicableChargesBaseTotal: calc.applicableChargesBaseTotal,
+      applicableChargesTaxTotal: calc.applicableChargesTaxTotal,
+      applicableChargesGrandTotal: calc.applicableChargesGrandTotal,
+      grandTotalWithCharges: calc.totalLandedPrValue,
+      headerChargesBaseTotal: calc.headerChargesBaseTotal,
+      headerChargesTaxTotal: calc.headerChargesTaxTotal,
+      lineChargesBaseTotal: calc.lineChargesBaseTotal,
+      lineChargesTaxTotal: calc.lineChargesTaxTotal,
+      lineChargesCount: calc.lineChargesCount,
+    };
+  },
+
+  /**
+   * Recalculates line-level charges against each line's own subtotal cleanly.
+   */
+  recalculateLinesCharges<
+    T extends {
+      requestedQuantity?: number;
+      approximateUnitPrice?: number;
+      estimatedTotalValue?: number;
+      lineCharges?: PRChargeItem[];
+      lineChargesTotalValue?: number;
+    }
+  >(lines: T[], currency?: string): T[] {
+    return lines.map((line) => {
+      if (!line.lineCharges || line.lineCharges.length === 0) {
+        return line.lineChargesTotalValue !== undefined
+          ? { ...line, lineChargesTotalValue: 0 }
+          : line;
+      }
+      const lineSubtotal =
+        line.estimatedTotalValue !== undefined
+          ? Number(line.estimatedTotalValue)
+          : (Number(line.requestedQuantity) || 0) * (Number(line.approximateUnitPrice) || 0);
+      const recalculated = this.recalculateSelectedChargesOnly(
+        line.lineCharges,
+        lineSubtotal,
+        currency,
+        { quantity: Number(line.requestedQuantity) || 1 }
+      );
+      const lineChargesBaseTotal = recalculated.reduce(
+        (sum, c) => (c.applicability !== 'NOT_APPLICABLE' ? sum + (c.estimatedAmount || 0) : sum),
+        0
+      );
+      return {
+        ...line,
+        lineCharges: recalculated,
+        lineChargesTotalValue: lineChargesBaseTotal,
+      };
+    });
+  },
+
+  /**
+   * Locks all line-level charge snapshots cleanly when a PR is submitted/approved.
+   */
+  lockLineChargeSnapshots(
+    lines: PurchaseRequisitionLine[],
+    lockedAtIso = new Date().toISOString()
+  ): PurchaseRequisitionLine[] {
+    return lines.map((line) =>
+      line.lineCharges && line.lineCharges.length > 0
+        ? { ...line, lineCharges: this.lockChargeSnapshots(line.lineCharges, lockedAtIso) }
+        : line
+    );
   },
 
   /**

@@ -244,4 +244,33 @@ describe('Phase 10 — Independent Date-Range Filter & Advanced Filter Engine', 
     deleteFilterPreset('PURCHASE_REQUISITION_LIST', 'usr-01', saved.id);
     assert.equal(listFilterPresets('PURCHASE_REQUISITION_LIST', 'usr-01').length, 0);
   });
+
+  it('evaluates multi-select dropdown values across quick filters and advanced EQUALS/NOT_EQUALS/IS_ANY_OF conditions', () => {
+    const multiEqualsState: AdvancedFilterState = {
+      groupLogicalOperator: 'AND',
+      groups: [
+        {
+          id: 'g-multi',
+          logicalOperator: 'AND',
+          conditions: [
+            {
+              id: 'c-multi',
+              fieldKey: 'status',
+              operator: 'EQUALS',
+              value: 'APPROVED,DRAFT',
+              values: ['APPROVED', 'DRAFT'],
+            },
+          ],
+        },
+      ],
+    };
+
+    const matched = evaluateAdvancedFilters(SAMPLE_PRS, multiEqualsState, PR_FILTER_FIELDS);
+    assert.equal(matched.length, 2);
+    assert.deepEqual(
+      matched.map((r) => r.prNumber),
+      ['PR-2026-0001', 'PR-2026-0003']
+    );
+  });
 });
+

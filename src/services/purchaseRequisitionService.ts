@@ -33,6 +33,12 @@ import { EnterpriseAuditService } from './enterpriseAuditService';
 import { prTypeMasterService } from './prTypeMasterService';
 import { prChargeItemService } from './prChargeItemService';
 import { archiveApprovedPrPdf, isPrStatusApproved } from './prPdfExportService';
+import { prDuplicateGovernanceService } from './prDuplicateGovernanceService';
+import { expenseCategoryService } from './expenseCategoryService';
+import {
+  calculateInventoryPrFinancials,
+  calculateExpensePrFinancials,
+} from './prFinancialCalculator';
 
 const STORAGE_KEY_PRS = 'cip_purchase_requisitions_v1';
 const STORAGE_KEY_APPLICABILITY = 'cip_pr_applicability_v1';
@@ -543,6 +549,7 @@ export const PurchaseRequisitionService = {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY_PRS, JSON.stringify(prs));
     }
+    void prDuplicateGovernanceService.syncPrsWithBackend(prs);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cip-prs-updated'));
     }
@@ -804,6 +811,7 @@ export const PurchaseRequisitionService = {
     }
 
     const eff = prGovernancePolicyService.getEffectivePolicy(header.companyId, header.branchId);
+    const isExpensePr = header.prType === 'EXPENSE';
     const typeActionMap: Record<
       PRType,
       | 'CREATE_MANUAL_PR'
@@ -811,12 +819,14 @@ export const PurchaseRequisitionService = {
       | 'CREATE_REPAIR_PR'
       | 'CREATE_MAINTENANCE_PR'
       | 'CREATE_CAPEX_PR'
+      | 'CREATE_EXPENSE_PR'
     > = {
       MANUAL: 'CREATE_MANUAL_PR',
       MRP: 'CREATE_MRP_PR',
       REPAIR: 'CREATE_REPAIR_PR',
       MAINTENANCE: 'CREATE_MAINTENANCE_PR',
       CAPEX_ASSET: 'CREATE_CAPEX_PR',
+      EXPENSE: 'CREATE_EXPENSE_PR',
     };
     const check = prGovernancePolicyService.evaluatePrAction({
       action: typeActionMap[header.prType] || 'CREATE_PR',
@@ -829,22 +839,81 @@ export const PurchaseRequisitionService = {
       throw new Error(check.reason || `Cannot create ${header.prType} PR under active governance policy.`);
     }
 
+    // 3a. Mandatory Classification Rule & Cross-Level Charge Duplicate Check
+    const conflictCheck = expenseCategoryService.detectClassificationConflict({
+      prType: header.prType,
+      lines: header.lines,
+      expenseLines: header.expenseLines,
+      chargeItems: header.chargeItems,
+    });
+    if (conflictCheck.hasConflict) {
+      throw new Error(conflictCheck.conflicts[0]);
+    }
+
+    if (!isExpensePr) {
+      const chargeDupCheck = prChargeItemService.validateHeaderAndLineChargeDuplicates(
+        header.chargeItems,
+        header.lines,
+        Boolean(eff.activation.allowSameChargeAtHeaderAndLine)
+      );
+      if (!chargeDupCheck.valid) {
+        throw new Error(chargeDupCheck.conflicts[0]);
+      }
+    }
+
     // 3b. Genuine PR Type Master & Centralized Company/Branch/PurchaseOrg/ItemCategory Eligibility Gate
     const purchaseOrgId = header.purchaseOrganizationId || header.purchaseOrgId;
-    const lineCategories = Array.from(
-      new Set(
-        (header.lines || [])
-          .map((l) => l.itemCategory)
-          .filter((cat): cat is string => Boolean(cat && cat.trim()))
-      )
-    );
-    const categoriesToCheck = lineCategories.length > 0 ? lineCategories : ['ALL'];
-    for (const cat of categoriesToCheck) {
+    if (isExpensePr) {
       const eligibility = prTypeMasterService.evaluatePrTypeEligibility({
         companyId: header.companyId,
         branchId: header.branchId,
         purchaseOrgId,
-        itemCategoryCode: cat,
+        itemCategoryCode: 'ALL',
+        prTypeCode: 'EXPENSE',
+        evaluationDate: txDocDate,
+        userRole: actorUser?.role,
+      });
+      if (!eligibility.eligible) {
+        throw new Error(eligibility.reason);
+      }
+
+      const expLinesValidation = expenseCategoryService.validateExpenseLinesForPr({
+        companyId: header.companyId,
+        branchId: header.branchId,
+        department: header.department,
+        userId: actorUser?.id || header.requesterId,
+        expenseLines: header.expenseLines || [],
+        headerCostCentre: header.costCentre,
+        headerExpectedServiceDate: header.expectedServiceDate || header.expectedDeliveryDate || header.requiredBy,
+        headerBusinessJustification: header.businessJustification,
+        asOfDate: txDocDate,
+      });
+      if (!expLinesValidation.valid) {
+        throw new Error(expLinesValidation.errors[0]);
+      }
+    } else if ((header.lines || []).length > 0) {
+      const catValidation = prTypeMasterService.validateLinesCategoriesForPrType({
+        companyId: header.companyId,
+        branchId: header.branchId,
+        purchaseOrgId,
+        prTypeCode: header.prType,
+        lines: header.lines,
+        evaluationDate: txDocDate,
+        userRole: actorUser?.role,
+      });
+      if (!catValidation.valid) {
+        throw new Error(
+          catValidation.prTypeReason ||
+            catValidation.invalidLines[0]?.reason ||
+            'One or more PR lines contain item categories not eligible for the selected PR Type.'
+        );
+      }
+    } else {
+      const eligibility = prTypeMasterService.evaluatePrTypeEligibility({
+        companyId: header.companyId,
+        branchId: header.branchId,
+        purchaseOrgId,
+        itemCategoryCode: 'ALL',
         prTypeCode: header.prType,
         evaluationDate: txDocDate,
         userRole: actorUser?.role,
@@ -854,9 +923,12 @@ export const PurchaseRequisitionService = {
       }
     }
 
-    // 3c. Expected Delivery Date Policy Enforcement (Section 5)
+    // 3c. Expected Delivery / Service Date Policy Enforcement (Section 5)
+    const candidateHeaderDate = isExpensePr
+      ? header.expectedServiceDate || header.expectedDeliveryDate || header.requiredBy
+      : header.expectedDeliveryDate || header.requiredBy;
     const delDateCheck = prGovernancePolicyService.validateExpectedDeliveryDate(
-      header.expectedDeliveryDate || header.requiredBy,
+      candidateHeaderDate,
       eff,
       false
     );
@@ -865,40 +937,112 @@ export const PurchaseRequisitionService = {
     }
     const sanitizedDeliveryDate = delDateCheck.sanitizedDate;
 
-    // 4. Requirement G: Configurable Duplicate PR Prevention
-    if (eff.duplicatePrevention?.enableDuplicateDetection && header.lines?.length > 0) {
-      const dupEval = this.evaluateDuplicatePRRisk({
-        companyId: header.companyId,
-        branchId: header.branchId,
-        requesterId: header.requesterId,
-        purchasePurpose: header.purchasePurpose,
-        expectedDeliveryDate: header.expectedDeliveryDate || header.requiredBy,
-        lines: header.lines.map((l) => ({
-          itemCode: l.itemCode,
-          requestedQuantity: l.requestedQuantity,
-        })),
-      });
+    // 4. Requirement G: Unified Duplicate PR Governance Enforcement
+    const dupDraftKey =
+      header.duplicateGovernanceKey || `draft-create-${header.creatorId || 'usr'}-${Date.now()}`;
+    const existingPrs = this.getPurchaseRequisitions();
+    const dupLinesInput = (header.lines || []).map((l) => ({
+      id: l.id,
+      itemCode: l.itemCode,
+      description: l.description,
+      requestedQuantity: l.requestedQuantity,
+      inventoryUom: l.inventoryUom,
+      purchasePurpose: l.purchasePurpose,
+    }));
+    const dupActor: User = actorUser || {
+      id: header.creatorId || 'usr-requester',
+      fullName: header.creatorName || header.requesterName || 'Requester',
+      email: 'requester@kosh.local',
+      role: 'ITEM_MAKER',
+      orgId: header.companyId || 'co-kosh-01',
+      allowedBranchIds: header.branchId ? [header.branchId] : [],
+      isGlobalScope: false,
+      twoFactorEnabled: false,
+      department: header.department || 'Procurement',
+    };
 
-      if (dupEval.hasDuplicates) {
-        if (dupEval.warningLevel === 'HARD_BLOCK') {
+    let dupSnapshot = prDuplicateGovernanceService.evaluateDuplicateConditions({
+      draftKey: dupDraftKey,
+      companyId: header.companyId,
+      branchId: header.branchId,
+      requesterId: header.requesterId,
+      purchasePurpose: header.purchasePurpose,
+      expectedDeliveryDate: sanitizedDeliveryDate,
+      lines: dupLinesInput,
+      actorUser: dupActor,
+      existingPrs,
+      persistedSnapshot: header.duplicateGovernance,
+    });
+
+    if (dupSnapshot.hasDuplicates) {
+      if (header.status === 'DRAFT') {
+        // Draft creation: enforce HARD_BLOCK prohibition or mandatory acknowledgement/justification without auto-authorising override
+        const prohibitedCond = dupSnapshot.conditions.find((c) => !c.policyAllowsOverride);
+        if (prohibitedCond && prohibitedCond.warningLevel === 'HARD_BLOCK') {
           throw new Error(
-            `Duplicate PR Blocked by Policy: Matching open PR (${dupEval.matches[0]?.prNumber}) exists for item ${dupEval.matches[0]?.itemCode}.`
+            `Duplicate PR Blocked by Policy: Matching open PR (${prohibitedCond.matchingPrs[0]?.prNumber}) exists for item ${prohibitedCond.itemCode}.`
           );
         }
-        if (
-          dupEval.warningLevel === 'WARNING_WITH_JUSTIFICATION' &&
-          dupEval.requiresJustification &&
-          (!header.duplicateOverrideJustification || !header.duplicateOverrideJustification.trim())
-        ) {
-          throw new Error(
-            `Potential Duplicate PR Identified (${dupEval.matches.map((m) => m.prNumber).join(', ')}): A mandatory duplicate override justification is required to proceed.`
-          );
+
+        const inlineJustif = (header.duplicateOverrideJustification || '').trim();
+        for (const cond of dupSnapshot.conditions) {
+          if (!cond.acknowledgement) {
+            if (inlineJustif) {
+              const ackRes = prDuplicateGovernanceService.acknowledgeCondition({
+                draftKey: dupDraftKey,
+                conditionKey: cond.conditionKey,
+                justification: inlineJustif,
+                companyId: header.companyId,
+                branchId: header.branchId,
+                requesterId: header.requesterId,
+                purchasePurpose: header.purchasePurpose,
+                expectedDeliveryDate: sanitizedDeliveryDate,
+                lines: dupLinesInput,
+                actorUser: dupActor,
+                existingPrs,
+              });
+              dupSnapshot = ackRes.snapshot;
+            } else if (
+              eff.duplicatePrevention?.warningLevel === 'WARNING_WITH_JUSTIFICATION' &&
+              eff.duplicatePrevention?.requireJustificationToProceed
+            ) {
+              const prNums = dupSnapshot.conditions
+                .flatMap((c) => c.matchingPrs.map((m) => m.prNumber))
+                .join(', ');
+              throw new Error(
+                `Potential Duplicate PR Identified (${prNums}): A mandatory duplicate override justification is required to proceed.`
+              );
+            }
+          }
+        }
+      } else {
+        // Direct non-draft submission: must pass full State C validation (OVERRIDE_AUTHORISED + not STALE)
+        const subCheck = prDuplicateGovernanceService.validateForSubmission({
+          draftKey: dupDraftKey,
+          companyId: header.companyId,
+          branchId: header.branchId,
+          requesterId: header.requesterId,
+          purchasePurpose: header.purchasePurpose,
+          expectedDeliveryDate: sanitizedDeliveryDate,
+          lines: dupLinesInput,
+          actorUser: dupActor,
+          existingPrs,
+          persistedSnapshot: header.duplicateGovernance,
+        });
+        dupSnapshot = subCheck.snapshot;
+        if (!subCheck.allowed) {
+          throw new Error(subCheck.message);
         }
       }
     }
 
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      header.companyId,
+      header.branchId,
+      txDocDate
+    );
     if (
-      eff.activation.budgetValidationEnabled &&
+      budgetValidationEnabled &&
       eff.budget.mandatoryBudgetCheck &&
       header.status !== 'DRAFT' &&
       header.budgetValidationStatus !== 'SUFFICIENT' &&
@@ -907,7 +1051,7 @@ export const PurchaseRequisitionService = {
       throw new Error('Mandatory budget check failed: PR cannot be submitted without sufficient budget.');
     }
 
-    const prs = this.getPurchaseRequisitions();
+    const prs = existingPrs;
     const nowIso = new Date().toISOString();
     const prNumber = this.generatePRNumber(header.companyId, header.branchId);
 
@@ -928,11 +1072,52 @@ export const PurchaseRequisitionService = {
           ]
         : [];
 
-    // 5. Requirement F: Currency & Exchange Rate Governance
+    // 5. Requirement F: Currency & Exchange Rate Governance + Decimal-Safe Financial Breakdown
     const txCurrency = (header.currency || 'INR').toUpperCase();
     const repCurrency = eff.budget.companyReportingCurrency || 'INR';
     const fxInfo = prGovernancePolicyService.getExchangeRate(txCurrency, repCurrency);
-    const estTotal = Number(header.estimatedTotalValue || 0);
+
+    const expenseCalc = isExpensePr
+      ? calculateExpensePrFinancials(header.expenseLines || [])
+      : undefined;
+
+    const rawNormalizedLines = isExpensePr
+      ? []
+      : prChargeItemService.recalculateLinesCharges(header.lines || [], txCurrency);
+    const normalizedLines =
+      !isExpensePr && header.status !== 'DRAFT'
+        ? prChargeItemService.lockLineChargeSnapshots(rawNormalizedLines, nowIso)
+        : rawNormalizedLines;
+
+    const invItemsSubtotal = isExpensePr
+      ? 0
+      : rawNormalizedLines.length > 0
+      ? calculateInventoryPrFinancials({ lines: rawNormalizedLines }).inventorySubtotal
+      : Number(header.estimatedTotalValue || 0);
+
+    const rawNormalizedCharges =
+      !isExpensePr && header.chargeItems && header.chargeItems.length > 0
+        ? prChargeItemService.recalculateAllCharges(header.chargeItems, invItemsSubtotal, txCurrency)
+        : undefined;
+    const normalizedChargeItems =
+      rawNormalizedCharges && header.status !== 'DRAFT'
+        ? prChargeItemService.lockChargeSnapshots(rawNormalizedCharges, nowIso)
+        : rawNormalizedCharges;
+
+    const invCalc = !isExpensePr
+      ? calculateInventoryPrFinancials({
+          lines: normalizedLines,
+          headerCharges: normalizedChargeItems,
+          itemsSubtotalOverride: normalizedLines.length === 0 ? invItemsSubtotal : undefined,
+        })
+      : undefined;
+
+    const estTotal = isExpensePr
+      ? expenseCalc!.expenseSubtotal
+      : invCalc!.inventorySubtotal;
+    const authoritativeGrandTotal = isExpensePr
+      ? expenseCalc!.totalExpensePrValue
+      : invCalc!.totalLandedPrValue;
 
     // 6. Requirement B: Immutable Policy Snapshot on Transaction
     const policySnapshot =
@@ -941,72 +1126,112 @@ export const PurchaseRequisitionService = {
 
     const newPrId = `pr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
 
-    // 7. Part K: Inventory Availability Validation Snapshot on Creation
-    const invSnapshot =
-      header.inventoryValidationSnapshot ||
-      inventoryValidationService.validateTransactionInventory({
-        prId: newPrId,
-        prNumber,
+    // 7. Part K: Inventory Availability Validation Snapshot on Creation (Skipped for EXPENSE PRs)
+    const invSnapshot = isExpensePr
+      ? undefined
+      : header.inventoryValidationSnapshot ||
+        inventoryValidationService.validateTransactionInventory({
+          prId: newPrId,
+          prNumber,
+          companyId: header.companyId,
+          branchId: header.branchId,
+          stage: header.status === 'DRAFT' ? 'ON_PR_CREATION' : 'ON_PR_SUBMISSION',
+          validatedBy: header.creatorName,
+          lines: normalizedLines.map((l) => ({
+            id: l.id,
+            itemCode: l.itemCode,
+            description: l.description,
+            itemCategory: l.itemCategory,
+            inventoryUom: l.inventoryUom,
+            requestedQuantity: l.requestedQuantity,
+            originalRequestedQuantity: l.requestedQuantity,
+            defaultWarehouse: l.defaultWarehouse,
+          })),
+        });
+
+    // 8. Part L: Conditional Budget Control Validation Snapshot on Creation/Submission
+    const valuation = prGovernancePolicyService.resolvePrValuationAmount(
+      {
+        estimatedTotalValue: estTotal,
+        grandTotalWithCharges: authoritativeGrandTotal,
+        currency: txCurrency,
         companyId: header.companyId,
         branchId: header.branchId,
-        stage: header.status === 'DRAFT' ? 'ON_PR_CREATION' : 'ON_PR_SUBMISSION',
-        validatedBy: header.creatorName,
-        lines: (header.lines || []).map((l) => ({
-          id: l.id,
-          itemCode: l.itemCode,
-          description: l.description,
-          itemCategory: l.itemCategory,
-          inventoryUom: l.inventoryUom,
-          requestedQuantity: l.requestedQuantity,
-          originalRequestedQuantity: l.requestedQuantity,
-          defaultWarehouse: l.defaultWarehouse,
-        })),
-      });
+        budgetGovernance: header.budgetGovernance,
+      },
+      eff
+    );
+    const bgtSnapshot = budgetValidationEnabled
+      ? header.budgetValidationSnapshot ||
+        budgetControlService.validateBudgetAtStage({
+          transactionId: newPrId,
+          transactionNumber: prNumber,
+          sourceChainId: prNumber,
+          stage: 'PR_SUBMISSION',
+          companyId: header.companyId,
+          branchId: header.branchId,
+          department: header.department,
+          costCenter: header.costCentre,
+          projectCode: header.projectCode,
+          financialYear: header.financialPeriod,
+          proposedAmount: valuation.reportingAmount,
+          validatedBy: header.creatorName,
+        })
+      : undefined;
 
-    // 8. Part L: Budget Control Validation Snapshot on Creation/Submission
-    const bgtSnapshot =
-      header.budgetValidationSnapshot ||
-      budgetControlService.validateBudgetAtStage({
-        transactionId: newPrId,
-        transactionNumber: prNumber,
-        sourceChainId: prNumber,
-        stage: 'PR_SUBMISSION',
-        companyId: header.companyId,
-        branchId: header.branchId,
-        department: header.department,
-        costCenter: header.costCentre,
-        projectCode: header.projectCode,
-        financialYear: header.financialPeriod,
-        proposedAmount: Number((estTotal * fxInfo.rate).toFixed(2)),
-        validatedBy: header.creatorName,
-      });
-
-    // Compute authoritative charge items & landed totals if chargeItems are provided
-    const rawNormalizedCharges =
-      header.chargeItems && header.chargeItems.length > 0
-        ? prChargeItemService.recalculateAllCharges(header.chargeItems, estTotal, txCurrency)
-        : undefined;
-    const normalizedChargeItems =
-      rawNormalizedCharges && header.status !== 'DRAFT'
-        ? prChargeItemService.lockChargeSnapshots(rawNormalizedCharges, nowIso)
-        : rawNormalizedCharges;
-    const computedChargesSummary = normalizedChargeItems
-      ? prChargeItemService.calculateRequisitionChargesSummary(normalizedChargeItems, estTotal)
+    const normalizedExpenseLines = isExpensePr
+      ? expenseCategoryService
+          .validateExpenseLinesForPr({
+            companyId: header.companyId,
+            branchId: header.branchId,
+            department: header.department,
+            userId: actorUser?.id || header.requesterId,
+            expenseLines: header.expenseLines || [],
+            headerCostCentre: header.costCentre,
+            headerExpectedServiceDate: sanitizedDeliveryDate,
+            headerBusinessJustification: header.businessJustification,
+            asOfDate: txDocDate,
+          })
+          .normalizedLines.map((el) => ({ ...el, prId: newPrId }))
       : undefined;
 
     const newPr: PurchaseRequisitionHeader = {
       ...header,
       id: newPrId,
       prNumber,
-      chargeItems: normalizedChargeItems,
-      chargesTotalValue: computedChargesSummary
-        ? computedChargesSummary.applicableChargesBaseTotal
-        : header.chargesTotalValue,
-      grandTotalWithCharges: computedChargesSummary
-        ? computedChargesSummary.grandTotalWithCharges
-        : header.grandTotalWithCharges,
+      procurementMechanism: isExpensePr ? 'EXPENSE' : 'INVENTORY',
+      costCentre: isExpensePr
+        ? normalizedExpenseLines?.[0]?.costCentre || header.costCentre
+        : header.costCentre,
+      lines: normalizedLines,
+      expenseLines: normalizedExpenseLines,
+      chargeItems: isExpensePr ? undefined : normalizedChargeItems,
+      inventorySubtotal: isExpensePr ? 0 : invCalc!.inventorySubtotal,
+      inventoryTaxTotal: isExpensePr ? 0 : invCalc!.inventoryTaxTotal,
+      headerChargesBaseTotal: isExpensePr ? 0 : invCalc!.headerChargesBaseTotal,
+      lineChargesBaseTotal: isExpensePr ? 0 : invCalc!.lineChargesBaseTotal,
+      applicableChargesTaxTotal: isExpensePr ? 0 : invCalc!.applicableChargesTaxTotal,
+      expenseSubtotal: isExpensePr ? expenseCalc!.expenseSubtotal : undefined,
+      expenseTaxTotal: isExpensePr ? expenseCalc!.expenseTaxTotal : undefined,
+      estimatedTotalValue: estTotal,
+      chargesTotalValue: isExpensePr ? 0 : invCalc!.applicableChargesBaseTotal,
+      grandTotalWithCharges: authoritativeGrandTotal,
       expectedDeliveryDate: sanitizedDeliveryDate,
+      expectedServiceDate: isExpensePr
+        ? normalizedExpenseLines?.[0]?.serviceToDate ||
+          normalizedExpenseLines?.[0]?.serviceFromDate ||
+          header.expectedServiceDate ||
+          sanitizedDeliveryDate
+        : header.expectedServiceDate,
       requiredBy: sanitizedDeliveryDate,
+      sapIntegration: header.sapIntegration || {
+        status: 'NOT_STARTED',
+        sapObjectType: 'PurchaseRequests',
+        sapDocType: isExpensePr ? 'dDocument_Service' : 'dDocument_Items',
+        retryCount: 0,
+        reconciliationRequired: false,
+        history: [],
+      },
       financialPeriod: header.financialPeriod || fyValidation.snapshot.financialYearCode.replace(/^FY\s*/i, ''),
       financialYearId: header.financialYearId || fyValidation.snapshot.financialYearId,
       financialYearCode: header.financialYearCode || fyValidation.snapshot.financialYearCode,
@@ -1018,32 +1243,70 @@ export const PurchaseRequisitionService = {
       policyEffectiveFrom: header.policyEffectiveFrom || eff.effectiveFrom,
       policySnapshot,
       inventoryValidationSnapshot: invSnapshot,
-      inventoryValidationHistory: header.inventoryValidationHistory || [invSnapshot],
+      inventoryValidationHistory: isExpensePr
+        ? []
+        : header.inventoryValidationHistory || (invSnapshot ? [invSnapshot] : []),
+      budgetValidationStatus: budgetValidationEnabled
+        ? header.budgetValidationStatus
+        : 'NOT_VALIDATED',
+      budgetSourceRef: budgetValidationEnabled ? header.budgetSourceRef : undefined,
       budgetValidationSnapshot: bgtSnapshot,
-      budgetValidationHistory: header.budgetValidationHistory || [bgtSnapshot],
+      budgetValidationHistory: budgetValidationEnabled
+        ? header.budgetValidationHistory || (bgtSnapshot ? [bgtSnapshot] : [])
+        : [],
       approvalCycleCount: header.status !== 'DRAFT' ? 1 : 0,
       approvalHistory: header.approvalHistory || initialHistory,
       amendmentHistory: header.amendmentHistory || [],
+      duplicateGovernanceKey: newPrId,
+      duplicateGovernance: dupSnapshot,
+      duplicateOverrideJustification:
+        header.duplicateOverrideJustification ||
+        dupSnapshot.conditions.find((c) => c.acknowledgement)?.acknowledgement?.justification,
       optimisticVersion: 1,
-      budgetGovernance: header.budgetGovernance || {
-        originalReservationAmount: estTotal,
-        outstandingCommittedAmount: 0,
-        previouslyReleasedAmount: 0,
-        transactionCurrency: txCurrency,
-        companyReportingCurrency: repCurrency,
-        exchangeRateUsed: fxInfo.rate,
-        exchangeRateRef: fxInfo.ref,
-        exchangeRateDate: fxInfo.effectiveDate,
-        originalReservationReportingCurrency: Number((estTotal * fxInfo.rate).toFixed(2)),
-        outstandingCommittedReportingCurrency: 0,
-        previouslyReleasedReportingCurrency: 0,
-        reservationIdempotencyKey: `res-${prNumber}-init`,
-        releaseIdempotencyKeys: [],
-        releaseHistory: [],
-      },
+      budgetGovernance: budgetValidationEnabled
+        ? header.budgetGovernance || {
+            originalReservationAmount: valuation.transactionAmount || estTotal,
+            outstandingCommittedAmount: 0,
+            previouslyReleasedAmount: 0,
+            transactionCurrency: txCurrency,
+            companyReportingCurrency: repCurrency,
+            exchangeRateUsed: fxInfo.rate,
+            exchangeRateRef: fxInfo.ref,
+            exchangeRateDate: fxInfo.effectiveDate,
+            originalReservationReportingCurrency: valuation.reportingAmount,
+            outstandingCommittedReportingCurrency: 0,
+            previouslyReleasedReportingCurrency: 0,
+            reservationIdempotencyKey: `res-${prNumber}-init`,
+            releaseIdempotencyKeys: [],
+            releaseHistory: [],
+          }
+        : undefined,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
+
+    prDuplicateGovernanceService.bindDraftSessionToPr(dupDraftKey, newPrId, prNumber);
+    newPr.duplicateGovernance = prDuplicateGovernanceService.evaluateDuplicateConditions({
+      draftKey: newPrId,
+      prId: newPrId,
+      prNumber,
+      companyId: newPr.companyId,
+      branchId: newPr.branchId,
+      requesterId: newPr.requesterId,
+      purchasePurpose: newPr.purchasePurpose,
+      expectedDeliveryDate: newPr.expectedDeliveryDate || newPr.requiredBy,
+      lines: (newPr.lines || []).map((l) => ({
+        id: l.id,
+        itemCode: l.itemCode,
+        description: l.description,
+        requestedQuantity: l.requestedQuantity,
+        inventoryUom: l.inventoryUom,
+        purchasePurpose: l.purchasePurpose,
+      })),
+      actorUser: dupActor,
+      existingPrs: prs,
+      persistedSnapshot: dupSnapshot,
+    });
 
     prs.unshift(newPr);
     this.savePurchaseRequisitions(prs);
@@ -1169,8 +1432,11 @@ export const PurchaseRequisitionService = {
       sanitizedDeliveryDate = delCheck.sanitizedDate;
     }
 
+    const nextPrType = updates.prType || existing.prType;
+    const isNextExpensePr = nextPrType === 'EXPENSE';
     const nextCurrency = (updates.currency || existing.currency || 'INR').toUpperCase();
     const nextLines = updates.lines ?? existing.lines;
+    const nextExpenseLines = updates.expenseLines ?? existing.expenseLines;
     const nextItemsSubtotal =
       updates.estimatedTotalValue !== undefined
         ? Number(updates.estimatedTotalValue)
@@ -1193,22 +1459,51 @@ export const PurchaseRequisitionService = {
       : candidateCharges && candidateCharges.length > 0
       ? prChargeItemService.recalculateAllCharges(candidateCharges, nextItemsSubtotal, nextCurrency)
       : candidateCharges;
+    const normalizedUpdatedLines = isHistoricalLockedPr
+      ? nextLines
+      : prChargeItemService.recalculateLinesCharges(nextLines, nextCurrency);
+    const hasUpdatedLineCharges = normalizedUpdatedLines.some(
+      (l) => l.lineCharges && l.lineCharges.length > 0
+    );
     const updatedChargesSummary =
-      normalizedUpdatedCharges && normalizedUpdatedCharges.length > 0
-        ? prChargeItemService.calculateRequisitionChargesSummary(
+      !isNextExpensePr &&
+      ((normalizedUpdatedCharges && normalizedUpdatedCharges.length > 0) || hasUpdatedLineCharges)
+        ? prChargeItemService.calculateFullRequisitionSummary(
             normalizedUpdatedCharges,
+            normalizedUpdatedLines,
             nextItemsSubtotal
           )
+        : undefined;
+
+    const updatedExpenseSummary =
+      isNextExpensePr && nextExpenseLines && nextExpenseLines.length > 0
+        ? calculateExpensePrFinancials(nextExpenseLines)
         : undefined;
 
     const updated: PurchaseRequisitionHeader = {
       ...existing,
       ...updates,
+      procurementMechanism: isNextExpensePr ? 'EXPENSE' : 'INVENTORY',
+      lines: normalizedUpdatedLines,
+      expenseLines: nextExpenseLines,
       chargeItems: normalizedUpdatedCharges,
+      expenseSubtotal: updatedExpenseSummary
+        ? updatedExpenseSummary.expenseSubtotal
+        : updates.expenseSubtotal ?? existing.expenseSubtotal,
+      expenseTaxTotal: updatedExpenseSummary
+        ? updatedExpenseSummary.expenseTaxTotal
+        : updates.expenseTaxTotal ?? existing.expenseTaxTotal,
+      estimatedTotalValue: updatedExpenseSummary
+        ? updatedExpenseSummary.expenseSubtotal
+        : updates.estimatedTotalValue !== undefined
+        ? Number(updates.estimatedTotalValue)
+        : nextItemsSubtotal,
       chargesTotalValue: updatedChargesSummary
         ? updatedChargesSummary.applicableChargesBaseTotal
         : updates.chargesTotalValue ?? existing.chargesTotalValue,
-      grandTotalWithCharges: updatedChargesSummary
+      grandTotalWithCharges: updatedExpenseSummary
+        ? updatedExpenseSummary.totalExpensePrValue
+        : updatedChargesSummary
         ? updatedChargesSummary.grandTotalWithCharges
         : updates.grandTotalWithCharges ?? existing.grandTotalWithCharges,
       expectedDeliveryDate: sanitizedDeliveryDate,
@@ -1216,6 +1511,82 @@ export const PurchaseRequisitionService = {
       policyVersion: existing.policyVersion || eff.policyVersion,
       updatedAt: new Date().toISOString(),
     };
+
+    if (!isHistoricalLockedPr) {
+      if (isNextExpensePr) {
+        if (updates.expenseLines !== undefined && (updated.expenseLines || []).length > 0) {
+          const expVal = expenseCategoryService.validateExpenseLinesForPr({
+            companyId: updated.companyId,
+            branchId: updated.branchId,
+            department: updated.department,
+            userId: user?.id || updated.requesterId,
+            expenseLines: updated.expenseLines || [],
+            headerCostCentre: updated.costCentre,
+            headerExpectedServiceDate:
+              updated.expectedServiceDate || updated.expectedDeliveryDate || updated.requiredBy,
+            headerBusinessJustification: updated.businessJustification,
+            asOfDate: updated.createdAt?.slice(0, 10),
+          });
+          if (!expVal.valid) {
+            throw new Error(expVal.errors[0]);
+          }
+          updated.expenseLines = expVal.normalizedLines;
+          if (updated.expenseLines[0]?.costCentre) {
+            updated.costCentre = updated.expenseLines[0].costCentre;
+          }
+        }
+      } else if (
+        (updates.prType !== undefined || updates.lines !== undefined) &&
+        (updated.lines || []).length > 0
+      ) {
+        const catVal = prTypeMasterService.validateLinesCategoriesForPrType({
+          companyId: updated.companyId,
+          branchId: updated.branchId,
+          purchaseOrgId: updated.purchaseOrganizationId || updated.purchaseOrgId,
+          prTypeCode: updated.prType,
+          lines: updated.lines,
+          evaluationDate: updated.createdAt?.slice(0, 10),
+          userRole: user?.role,
+        });
+        if (!catVal.valid) {
+          throw new Error(
+            catVal.prTypeReason ||
+              catVal.invalidLines[0]?.reason ||
+              'Updated PR lines contain categories not mapped to the selected PR Type.'
+          );
+        }
+      }
+      if (!prGovernancePolicyService.isBudgetValidationEnabled(updated.companyId, updated.branchId)) {
+        updated.budgetValidationStatus = 'NOT_VALIDATED';
+        updated.budgetSourceRef = undefined;
+        updated.budgetValidationSnapshot = undefined;
+        updated.budgetValidationHistory = [];
+        updated.budgetGovernance = undefined;
+      }
+      updated.duplicateGovernanceKey = updated.duplicateGovernanceKey || updated.id;
+      updated.duplicateGovernance = prDuplicateGovernanceService.evaluateDuplicateConditions({
+        draftKey: updated.duplicateGovernanceKey,
+        prId: updated.id,
+        prNumber: updated.prNumber,
+        companyId: updated.companyId,
+        branchId: updated.branchId,
+        requesterId: updated.requesterId,
+        purchasePurpose: updated.purchasePurpose,
+        expectedDeliveryDate: updated.expectedDeliveryDate || updated.requiredBy,
+        lines: (updated.lines || []).map((l) => ({
+          id: l.id,
+          itemCode: l.itemCode,
+          description: l.description,
+          requestedQuantity: l.requestedQuantity,
+          inventoryUom: l.inventoryUom,
+          purchasePurpose: l.purchasePurpose,
+        })),
+        actorUser: user,
+        existingPrs: prs,
+        persistedSnapshot: existing.duplicateGovernance,
+      });
+    }
+
     prs[idx] = updated;
     this.savePurchaseRequisitions(prs);
 
@@ -1273,6 +1644,74 @@ export const PurchaseRequisitionService = {
       return { success: false, message: check.reason || 'PR Submission is disabled by policy.' };
     }
 
+    // Mandatory PR Type, Classification Rule & Line-Level Category Mapping Check
+    const txDocDate = (pr.createdAt || new Date().toISOString()).slice(0, 10);
+    const conflictCheck = expenseCategoryService.detectClassificationConflict({
+      prType: pr.prType,
+      lines: pr.lines,
+      expenseLines: pr.expenseLines,
+      chargeItems: pr.chargeItems,
+    });
+    if (conflictCheck.hasConflict) {
+      return { success: false, message: conflictCheck.conflicts[0], pr };
+    }
+
+    if (pr.prType === 'EXPENSE') {
+      const expCheck = expenseCategoryService.validateExpenseLinesForPr({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        userId: user?.id || pr.requesterId,
+        expenseLines: pr.expenseLines || [],
+        headerCostCentre: pr.costCentre,
+        headerExpectedServiceDate: pr.expectedServiceDate || pr.expectedDeliveryDate || pr.requiredBy,
+        headerBusinessJustification: pr.businessJustification,
+        asOfDate: txDocDate,
+      });
+      if (!expCheck.valid) {
+        return { success: false, message: expCheck.errors[0], pr };
+      }
+      pr.expenseLines = expCheck.normalizedLines;
+      if (pr.expenseLines[0]?.costCentre) {
+        pr.costCentre = pr.expenseLines[0].costCentre;
+      }
+      const expFin = calculateExpensePrFinancials(pr.expenseLines);
+      pr.expenseSubtotal = expFin.expenseSubtotal;
+      pr.expenseTaxTotal = expFin.expenseTaxTotal;
+      pr.estimatedTotalValue = expFin.expenseSubtotal;
+      pr.grandTotalWithCharges = expFin.totalExpensePrValue;
+    } else {
+      const chargeDup = prChargeItemService.validateHeaderAndLineChargeDuplicates(
+        pr.chargeItems,
+        pr.lines,
+        Boolean(eff.activation.allowSameChargeAtHeaderAndLine)
+      );
+      if (!chargeDup.valid) {
+        return { success: false, message: chargeDup.conflicts[0], pr };
+      }
+      if ((pr.lines || []).length > 0) {
+        const catValidation = prTypeMasterService.validateLinesCategoriesForPrType({
+          companyId: pr.companyId,
+          branchId: pr.branchId,
+          purchaseOrgId: pr.purchaseOrganizationId || pr.purchaseOrgId,
+          prTypeCode: pr.prType,
+          lines: pr.lines,
+          evaluationDate: txDocDate,
+          userRole: user?.role,
+        });
+        if (!catValidation.valid) {
+          return {
+            success: false,
+            message:
+              catValidation.prTypeReason ||
+              catValidation.invalidLines[0]?.reason ||
+              'One or more PR lines contain item categories not eligible for the selected PR Type.',
+            pr,
+          };
+        }
+      }
+    }
+
     // Expected Delivery Date policy check on submission
     const delDateCheck = prGovernancePolicyService.validateExpectedDeliveryDate(
       pr.expectedDeliveryDate || pr.requiredBy,
@@ -1283,13 +1722,88 @@ export const PurchaseRequisitionService = {
       return { success: false, message: delDateCheck.reason || 'Invalid Expected Delivery Date for submission.' };
     }
 
-    if (
-      eff.activation.budgetValidationEnabled &&
-      eff.budget.mandatoryBudgetCheck &&
-      pr.budgetValidationStatus !== 'SUFFICIENT' &&
-      pr.budgetValidationStatus !== 'EXCEPTION_APPROVED'
-    ) {
-      return { success: false, message: 'Mandatory budget validation failed or is insufficient. Cannot submit.' };
+    // Conditional Budget Validation (ON vs OFF)
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      pr.companyId,
+      pr.branchId,
+      txDocDate
+    );
+    if (budgetValidationEnabled) {
+      const valuation = prGovernancePolicyService.resolvePrValuationAmount(pr, eff);
+      const bgtSubmitSnap = budgetControlService.validateBudgetAtStage({
+        transactionId: pr.id,
+        transactionNumber: pr.prNumber,
+        sourceChainId: pr.prNumber,
+        stage: 'PR_SUBMISSION',
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        costCenter: pr.costCentre || 'CC-PROD-101',
+        projectCode: pr.projectCode,
+        financialYear: pr.financialPeriod,
+        proposedAmount: valuation.reportingAmount,
+        validatedBy: user?.fullName || pr.requesterName,
+      });
+      pr.budgetValidationSnapshot = bgtSubmitSnap;
+      pr.budgetValidationHistory = [...(pr.budgetValidationHistory || []), bgtSubmitSnap];
+      if (bgtSubmitSnap.overallOutcome === 'SUFFICIENT') {
+        if (pr.budgetValidationStatus === 'NOT_VALIDATED') {
+          pr.budgetValidationStatus = 'SUFFICIENT';
+        }
+      } else if (bgtSubmitSnap.overallOutcome === 'EXCEPTION_APPROVED') {
+        pr.budgetValidationStatus = 'EXCEPTION_APPROVED';
+      }
+
+      if (
+        eff.budget.mandatoryBudgetCheck &&
+        ((pr.budgetValidationStatus !== 'SUFFICIENT' &&
+          pr.budgetValidationStatus !== 'EXCEPTION_APPROVED') ||
+          (!bgtSubmitSnap.canProceed && pr.budgetValidationStatus !== 'EXCEPTION_APPROVED'))
+      ) {
+        return {
+          success: false,
+          message:
+            bgtSubmitSnap.budgetShortfall > 0
+              ? `Mandatory budget validation failed: Shortfall of ₹${bgtSubmitSnap.budgetShortfall.toLocaleString('en-IN')} exceeds available budget.`
+              : 'Mandatory budget validation failed or is insufficient. Cannot submit.',
+          pr,
+        };
+      }
+    } else {
+      pr.budgetValidationStatus = 'NOT_VALIDATED';
+      pr.budgetSourceRef = undefined;
+      pr.budgetValidationSnapshot = undefined;
+      pr.budgetValidationHistory = [];
+      pr.budgetGovernance = undefined;
+    }
+
+    // Unified Duplicate PR Governance submission revalidation (acknowledgement + override/checker + status drift check)
+    const dupSubmitValidation = prDuplicateGovernanceService.validateForSubmission({
+      draftKey: pr.duplicateGovernanceKey || pr.id,
+      prId: pr.id,
+      prNumber: pr.prNumber,
+      companyId: pr.companyId,
+      branchId: pr.branchId,
+      requesterId: pr.requesterId,
+      purchasePurpose: pr.purchasePurpose,
+      expectedDeliveryDate: pr.expectedDeliveryDate || pr.requiredBy,
+      lines: (pr.lines || []).map((l) => ({
+        id: l.id,
+        itemCode: l.itemCode,
+        description: l.description,
+        requestedQuantity: l.requestedQuantity,
+        inventoryUom: l.inventoryUom,
+        purchasePurpose: l.purchasePurpose,
+      })),
+      actorUser: user,
+      existingPrs: prs,
+      persistedSnapshot: pr.duplicateGovernance,
+    });
+    pr.duplicateGovernanceKey = pr.id;
+    pr.duplicateGovernance = dupSubmitValidation.snapshot;
+    if (!dupSubmitValidation.allowed) {
+      this.savePurchaseRequisitions(prs);
+      return { success: false, message: dupSubmitValidation.message, pr };
     }
 
     const prevStatus = pr.status;
@@ -1301,14 +1815,19 @@ export const PurchaseRequisitionService = {
     if (pr.chargeItems && pr.chargeItems.length > 0) {
       pr.chargeItems = prChargeItemService.lockChargeSnapshots(pr.chargeItems, pr.submittedAt);
     }
+    if (pr.lines && pr.lines.length > 0) {
+      pr.lines = prChargeItemService.lockLineChargeSnapshots(pr.lines, pr.submittedAt);
+    }
 
-    // Part K: Stage-gated Inventory Revalidation at PR Submission
-    inventoryValidationService.revalidatePrAndAttachSnapshot(
-      pr,
-      'ON_PR_SUBMISSION',
-      user?.fullName || pr.requesterName,
-      user
-    );
+    // Part K: Stage-gated Inventory Revalidation at PR Submission (Inventory PRs only)
+    if (pr.prType !== 'EXPENSE') {
+      inventoryValidationService.revalidatePrAndAttachSnapshot(
+        pr,
+        'ON_PR_SUBMISSION',
+        user?.fullName || pr.requesterName,
+        user
+      );
+    }
 
     pr.approvalHistory = [
       ...(pr.approvalHistory || []),
@@ -1370,6 +1889,7 @@ export const PurchaseRequisitionService = {
       return { success: false, message: fyMutGuard.reason || 'Closed financial year/period prohibits PR resubmission.' };
     }
 
+    const eff = prGovernancePolicyService.getEffectivePolicy(pr.companyId, pr.branchId);
     const check = prGovernancePolicyService.evaluatePrAction({
       action: 'RESUBMIT_PR',
       companyId: pr.companyId,
@@ -1379,6 +1899,128 @@ export const PurchaseRequisitionService = {
     });
     if (!check.allowed) {
       return { success: false, message: check.reason || 'PR Resubmission is not permitted.' };
+    }
+
+    const txDocDate = (pr.createdAt || new Date().toISOString()).slice(0, 10);
+    const conflictCheck = expenseCategoryService.detectClassificationConflict({
+      prType: pr.prType,
+      lines: pr.lines,
+      expenseLines: pr.expenseLines,
+      chargeItems: pr.chargeItems,
+    });
+    if (conflictCheck.hasConflict) {
+      return { success: false, message: conflictCheck.conflicts[0], pr };
+    }
+    if (pr.prType === 'EXPENSE') {
+      const expCheck = expenseCategoryService.validateExpenseLinesForPr({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        userId: user?.id || pr.requesterId,
+        expenseLines: pr.expenseLines || [],
+        headerCostCentre: pr.costCentre,
+        headerExpectedServiceDate: pr.expectedServiceDate || pr.expectedDeliveryDate || pr.requiredBy,
+        headerBusinessJustification: pr.businessJustification,
+        asOfDate: txDocDate,
+      });
+      if (!expCheck.valid) {
+        return { success: false, message: expCheck.errors[0], pr };
+      }
+      pr.expenseLines = expCheck.normalizedLines;
+      if (pr.expenseLines[0]?.costCentre) {
+        pr.costCentre = pr.expenseLines[0].costCentre;
+      }
+    } else if ((pr.lines || []).length > 0) {
+      const catValidation = prTypeMasterService.validateLinesCategoriesForPrType({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        purchaseOrgId: pr.purchaseOrganizationId || pr.purchaseOrgId,
+        prTypeCode: pr.prType,
+        lines: pr.lines,
+        evaluationDate: txDocDate,
+        userRole: user?.role,
+      });
+      if (!catValidation.valid) {
+        return {
+          success: false,
+          message:
+            catValidation.prTypeReason ||
+            catValidation.invalidLines[0]?.reason ||
+            'One or more PR lines contain item categories not eligible for the selected PR Type.',
+          pr,
+        };
+      }
+    }
+
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      pr.companyId,
+      pr.branchId,
+      txDocDate
+    );
+    if (budgetValidationEnabled) {
+      const valuation = prGovernancePolicyService.resolvePrValuationAmount(pr, eff);
+      const bgtResubSnap = budgetControlService.validateBudgetAtStage({
+        transactionId: pr.id,
+        transactionNumber: pr.prNumber,
+        sourceChainId: pr.prNumber,
+        stage: 'PR_SUBMISSION',
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        costCenter: pr.costCentre || 'CC-PROD-101',
+        projectCode: pr.projectCode,
+        financialYear: pr.financialPeriod,
+        proposedAmount: valuation.reportingAmount,
+        validatedBy: actorName,
+      });
+      pr.budgetValidationSnapshot = bgtResubSnap;
+      pr.budgetValidationHistory = [...(pr.budgetValidationHistory || []), bgtResubSnap];
+      if (
+        eff.budget.mandatoryBudgetCheck &&
+        !bgtResubSnap.canProceed &&
+        pr.budgetValidationStatus !== 'EXCEPTION_APPROVED'
+      ) {
+        return {
+          success: false,
+          message: 'Mandatory budget validation failed or is insufficient. Cannot resubmit.',
+          pr,
+        };
+      }
+    } else {
+      pr.budgetValidationStatus = 'NOT_VALIDATED';
+      pr.budgetSourceRef = undefined;
+      pr.budgetValidationSnapshot = undefined;
+      pr.budgetValidationHistory = [];
+      pr.budgetGovernance = undefined;
+    }
+
+    // Revalidate Duplicate PR Governance on resubmission
+    const dupResubmitValidation = prDuplicateGovernanceService.validateForSubmission({
+      draftKey: pr.duplicateGovernanceKey || pr.id,
+      prId: pr.id,
+      prNumber: pr.prNumber,
+      companyId: pr.companyId,
+      branchId: pr.branchId,
+      requesterId: pr.requesterId,
+      purchasePurpose: pr.purchasePurpose,
+      expectedDeliveryDate: pr.expectedDeliveryDate || pr.requiredBy,
+      lines: (pr.lines || []).map((l) => ({
+        id: l.id,
+        itemCode: l.itemCode,
+        description: l.description,
+        requestedQuantity: l.requestedQuantity,
+        inventoryUom: l.inventoryUom,
+        purchasePurpose: l.purchasePurpose,
+      })),
+      actorUser: user,
+      existingPrs: prs,
+      persistedSnapshot: pr.duplicateGovernance,
+    });
+    pr.duplicateGovernanceKey = pr.id;
+    pr.duplicateGovernance = dupResubmitValidation.snapshot;
+    if (!dupResubmitValidation.allowed) {
+      this.savePurchaseRequisitions(prs);
+      return { success: false, message: dupResubmitValidation.message, pr };
     }
 
     const nowIso = new Date().toISOString();
@@ -1558,51 +2200,137 @@ export const PurchaseRequisitionService = {
     }
 
     const eff = prGovernancePolicyService.getEffectivePolicy(pr.companyId, pr.branchId);
-    if (!eff.activation.prApprovalEnabled || !eff.approval.enableApprovalWorkflow) {
+    const workflowPlan = prGovernancePolicyService.resolveApprovalWorkflowPlan(pr, eff);
+    if (!workflowPlan.enabled) {
       throw new Error('PR Approval workflow is disabled for this company/branch.');
     }
 
-    // Part K: Revalidate Inventory Availability at Approval Stage while preserving original PR requested quantities
-    const invReval = inventoryValidationService.revalidatePrAndAttachSnapshot(
-      pr,
-      'ON_PR_APPROVAL',
-      approverName,
-      options?.actorUser
-    );
-    if (!invReval.snapshot.canProceedApproval) {
-      throw new Error(
-        `PR Approval Blocked by Inventory Validation Policy (${invReval.snapshot.enforcementMode}): ${
-          invReval.snapshot.lineResults.find((r) => r.isShortage)?.message ||
-          'Required stock condition not met or pending authorized inventory exception approval.'
-        }`
-      );
+    if (workflowPlan.mandatoryApprovalRemarks && (!remarks || !remarks.trim())) {
+      throw new Error('Approval remarks are mandatory under active governance policy.');
     }
 
-    // Part L: Revalidate Budget Control at Approval Stage
-    const bgtReval = budgetControlService.validateBudgetAtStage({
-      transactionId: pr.id,
-      transactionNumber: pr.prNumber,
-      sourceChainId: pr.prNumber,
-      stage: 'PR_APPROVAL',
-      companyId: pr.companyId,
-      branchId: pr.branchId,
-      department: pr.department,
-      costCenter: pr.costCentre,
-      projectCode: pr.projectCode,
-      financialYear: pr.financialPeriod,
-      proposedAmount:
-        pr.budgetGovernance?.originalReservationReportingCurrency ??
-        Number(pr.estimatedTotalValue || 0),
-      validatedBy: approverName,
-    });
-    pr.budgetValidationSnapshot = bgtReval;
-    pr.budgetValidationHistory = [...(pr.budgetValidationHistory || []), bgtReval];
+    const actorRole = options?.actorUser?.role || role;
+    if (!options?.isDelegatedApproval && actorRole && actorRole !== 'ADMIN') {
+      if (!workflowPlan.authorizedRoles.includes(actorRole)) {
+        throw new Error(
+          `Role '${actorRole}' is not authorized for ${
+            workflowPlan.currentTier?.levelName || `Level ${workflowPlan.currentStepIndex}`
+          }. Authorized roles: ${workflowPlan.authorizedRoles.join(', ')}.`
+        );
+      }
+    }
+
+    if (workflowPlan.makerCheckerRequired) {
+      const actorId = options?.actorUser?.id || approverName;
+      if (actorId === pr.creatorId || approverName === pr.creatorName) {
+        throw new Error(
+          `Maker-Checker Control: Creator (${pr.creatorName}) cannot approve their own Purchase Requisition ${pr.prNumber}.`
+        );
+      }
+    }
+
+    // Ensure PR lines / expense lines remain eligible for PR Type before approving
+    if (pr.prType === 'EXPENSE') {
+      const expVal = expenseCategoryService.validateExpenseLinesForPr({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        userId: pr.requesterId,
+        expenseLines: pr.expenseLines || [],
+        headerCostCentre: pr.costCentre,
+        headerExpectedServiceDate: pr.expectedServiceDate || pr.expectedDeliveryDate || pr.requiredBy,
+        headerBusinessJustification: pr.businessJustification,
+        asOfDate: (pr.createdAt || new Date().toISOString()).slice(0, 10),
+      });
+      if (!expVal.valid) {
+        throw new Error(`PR Approval blocked: ${expVal.errors[0]}`);
+      }
+    } else if ((pr.lines || []).length > 0) {
+      const catVal = prTypeMasterService.validateLinesCategoriesForPrType({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        purchaseOrgId: pr.purchaseOrganizationId || pr.purchaseOrgId,
+        prTypeCode: pr.prType,
+        lines: pr.lines,
+        evaluationDate: (pr.createdAt || new Date().toISOString()).slice(0, 10),
+        userRole: actorRole,
+      });
+      if (!catVal.valid) {
+        throw new Error(
+          catVal.prTypeReason ||
+            catVal.invalidLines[0]?.reason ||
+            'PR Approval blocked: line item category is not mapped to PR Type.'
+        );
+      }
+    }
+
+    // Part K: Revalidate Inventory Availability at Approval Stage (Inventory PRs only)
+    if (pr.prType !== 'EXPENSE') {
+      const invReval = inventoryValidationService.revalidatePrAndAttachSnapshot(
+        pr,
+        'ON_PR_APPROVAL',
+        approverName,
+        options?.actorUser
+      );
+      if (!invReval.snapshot.canProceedApproval) {
+        throw new Error(
+          `PR Approval Blocked by Inventory Validation Policy (${invReval.snapshot.enforcementMode}): ${
+            invReval.snapshot.lineResults.find((r) => r.isShortage)?.message ||
+            'Required stock condition not met or pending authorized inventory exception approval.'
+          }`
+        );
+      }
+    }
+
+    const txDocDate = (pr.createdAt || new Date().toISOString()).slice(0, 10);
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      pr.companyId,
+      pr.branchId,
+      txDocDate
+    );
+    const valuation = prGovernancePolicyService.resolvePrValuationAmount(pr, eff);
+
+    // Part L: Conditional Budget Control Revalidation at Approval Stage
+    if (budgetValidationEnabled) {
+      const bgtReval = budgetControlService.validateBudgetAtStage({
+        transactionId: pr.id,
+        transactionNumber: pr.prNumber,
+        sourceChainId: pr.prNumber,
+        stage: 'PR_APPROVAL',
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        costCenter: pr.costCentre,
+        projectCode: pr.projectCode,
+        financialYear: pr.financialPeriod,
+        proposedAmount:
+          pr.budgetGovernance?.originalReservationReportingCurrency ?? valuation.reportingAmount,
+        validatedBy: approverName,
+      });
+      pr.budgetValidationSnapshot = bgtReval;
+      pr.budgetValidationHistory = [...(pr.budgetValidationHistory || []), bgtReval];
+      if (
+        eff.budget.mandatoryBudgetCheck &&
+        !bgtReval.canProceed &&
+        pr.budgetValidationStatus !== 'EXCEPTION_APPROVED'
+      ) {
+        throw new Error(
+          `PR Approval Blocked by Budget Control: Shortfall of ₹${bgtReval.budgetShortfall.toLocaleString('en-IN')}.`
+        );
+      }
+    } else {
+      pr.budgetValidationStatus = 'NOT_VALIDATED';
+      pr.budgetSourceRef = undefined;
+      pr.budgetValidationSnapshot = undefined;
+      pr.budgetValidationHistory = [];
+      pr.budgetGovernance = undefined;
+    }
 
     const prevStatus = pr.status;
     const nowIso = new Date().toISOString();
 
     if (pr.status === 'PENDING_MANAGER_APPROVAL' || pr.status === 'RESUBMITTED') {
-      if (eff.approval.approvalLevels <= 1) {
+      if (workflowPlan.requiredLevels <= 1 || workflowPlan.currentStepIndex >= workflowPlan.requiredLevels) {
         pr.status = 'APPROVED_PENDING_BUYER';
         pr.approvedAt = nowIso;
         pr.lines.forEach(l => {
@@ -1616,23 +2344,34 @@ export const PurchaseRequisitionService = {
         pr.status = 'PENDING_SUBSEQUENT_APPROVAL';
       }
     } else if (pr.status === 'PENDING_SUBSEQUENT_APPROVAL' || pr.status === 'PENDING_REAPPROVAL') {
-      pr.status = 'APPROVED_PENDING_BUYER';
-      pr.approvedAt = nowIso;
-      pr.lines.forEach(l => {
-        l.buyerStatus = 'PENDING_BUYER_ACTION';
-        l.approvedQuantity = l.requestedQuantity;
-        l.originalApprovedQuantity = l.originalApprovedQuantity ?? l.requestedQuantity;
-        l.originalApprovedUnitPrice = l.originalApprovedUnitPrice ?? l.approximateUnitPrice;
-        l.originalApprovedItemCode = l.originalApprovedItemCode ?? l.itemCode;
-      });
+      if (
+        pr.status === 'PENDING_SUBSEQUENT_APPROVAL' &&
+        workflowPlan.requiredLevels > 2 &&
+        workflowPlan.currentStepIndex < workflowPlan.requiredLevels
+      ) {
+        pr.status = 'PENDING_SUBSEQUENT_APPROVAL';
+      } else {
+        pr.status = 'APPROVED_PENDING_BUYER';
+        pr.approvedAt = nowIso;
+        pr.lines.forEach(l => {
+          l.buyerStatus = 'PENDING_BUYER_ACTION';
+          l.approvedQuantity = l.requestedQuantity;
+          l.originalApprovedQuantity = l.originalApprovedQuantity ?? l.requestedQuantity;
+          l.originalApprovedUnitPrice = l.originalApprovedUnitPrice ?? l.approximateUnitPrice;
+          l.originalApprovedItemCode = l.originalApprovedItemCode ?? l.itemCode;
+        });
+      }
     }
 
     if (pr.status === 'APPROVED_PENDING_BUYER') {
       if (pr.chargeItems && pr.chargeItems.length > 0) {
         pr.chargeItems = prChargeItemService.lockChargeSnapshots(pr.chargeItems, nowIso);
       }
-      // Requirement F.8: Reserve budget on PR approval & prevent duplicate reservation
-      if (eff.budget.budgetReservationOnApproval) {
+      if (pr.lines && pr.lines.length > 0) {
+        pr.lines = prChargeItemService.lockLineChargeSnapshots(pr.lines, nowIso);
+      }
+      // Requirement F.8: Reserve budget on PR approval ONLY when Budget Validation is enabled
+      if (budgetValidationEnabled && eff.budget.budgetReservationOnApproval) {
         if (
           options?.reservationIdempotencyKey &&
           pr.budgetGovernance?.reservationIdempotencyKey === options.reservationIdempotencyKey
@@ -1645,7 +2384,7 @@ export const PurchaseRequisitionService = {
         const repCurr = eff.budget.companyReportingCurrency || 'INR';
         const fxInfo = prGovernancePolicyService.getExchangeRate(txCurr, repCurr);
         const origRes =
-          pr.budgetGovernance?.originalReservationAmount ?? Number(pr.estimatedTotalValue || 0);
+          pr.budgetGovernance?.originalReservationAmount ?? valuation.transactionAmount;
         const rateUsed = pr.budgetGovernance?.exchangeRateUsed ?? fxInfo.rate;
 
         pr.budgetGovernance = {
@@ -1666,6 +2405,8 @@ export const PurchaseRequisitionService = {
           releaseIdempotencyKeys: pr.budgetGovernance?.releaseIdempotencyKeys || [],
           releaseHistory: pr.budgetGovernance?.releaseHistory ?? [],
         };
+      } else if (!budgetValidationEnabled) {
+        pr.budgetGovernance = undefined;
       }
 
       // Automatically trigger web-based market price discovery engine for all approved lines
@@ -2088,63 +2829,78 @@ export const PurchaseRequisitionService = {
       pr.shortClosedAt = nowIso;
     }
 
-    // Budget Reconciliation & Automatic Uncommitted Budget Release (Section 9 & Requirement F)
-    const recon = prGovernancePolicyService.calculateBudgetReconciliation(
-      pr,
-      params.convertedQtyByLineId
+    // Budget Reconciliation & Automatic Uncommitted Budget Release ONLY when Budget Validation is ON
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      pr.companyId,
+      pr.branchId
     );
-    const releasedAmount =
-      eff.budget.autoUncommittedBudgetRelease && eff.budget.budgetReleaseOnShortClose
-        ? Math.min(recon.eligibleReleaseAmount, newlyShortClosedValue || recon.eligibleReleaseAmount)
-        : 0;
-    const releasedAmountReportingCurrency = Number(
-      (releasedAmount * recon.exchangeRateUsed).toFixed(2)
-    );
-
-    const releaseEntry: PRBudgetReleaseEntry = {
-      id: `rel-${Date.now()}`,
-      idempotencyKey: params.idempotencyKey,
-      actionType: 'SHORT_CLOSE',
-      originalReservation: recon.originalReservation,
-      validCommitments: recon.validOutstandingCommitments,
-      previouslyReleased: recon.previouslyReleasedAmount,
-      releasedAmount,
-      currency: recon.transactionCurrency,
-      exchangeRateUsed: recon.exchangeRateUsed,
-      exchangeRateRef: recon.exchangeRateRef,
-      exchangeRateDate: recon.exchangeRateDate,
-      reportingCurrency: recon.companyReportingCurrency,
-      releasedAmountReportingCurrency,
-      reason: params.reason.trim(),
-      remarks: params.remarks.trim(),
-      releasedBy: params.user.fullName,
-      timestamp: nowIso,
+    let releasedAmount = 0;
+    let releasedAmountReportingCurrency = 0;
+    let reconSummary = {
+      previouslyReleasedAmount: 0,
+      exchangeRateUsed: 1,
+      validOutstandingCommitments: 0,
     };
 
-    const existingKeys = pr.budgetGovernance?.releaseIdempotencyKeys || [];
-    if (params.idempotencyKey) {
-      existingKeys.push(params.idempotencyKey);
-      prGovernancePolicyService.markIdempotencyKeyProcessed(params.idempotencyKey);
+    if (budgetValidationEnabled) {
+      const recon = prGovernancePolicyService.calculateBudgetReconciliation(
+        pr,
+        params.convertedQtyByLineId
+      );
+      reconSummary = recon;
+      releasedAmount =
+        eff.budget.autoUncommittedBudgetRelease && eff.budget.budgetReleaseOnShortClose
+          ? Math.min(recon.eligibleReleaseAmount, newlyShortClosedValue || recon.eligibleReleaseAmount)
+          : 0;
+      releasedAmountReportingCurrency = Number(
+        (releasedAmount * recon.exchangeRateUsed).toFixed(2)
+      );
+
+      const releaseEntry: PRBudgetReleaseEntry = {
+        id: `rel-${Date.now()}`,
+        idempotencyKey: params.idempotencyKey,
+        actionType: 'SHORT_CLOSE',
+        originalReservation: recon.originalReservation,
+        validCommitments: recon.validOutstandingCommitments,
+        previouslyReleased: recon.previouslyReleasedAmount,
+        releasedAmount,
+        currency: recon.transactionCurrency,
+        exchangeRateUsed: recon.exchangeRateUsed,
+        exchangeRateRef: recon.exchangeRateRef,
+        exchangeRateDate: recon.exchangeRateDate,
+        reportingCurrency: recon.companyReportingCurrency,
+        releasedAmountReportingCurrency,
+        reason: params.reason.trim(),
+        remarks: params.remarks.trim(),
+        releasedBy: params.user.fullName,
+        timestamp: nowIso,
+      };
+
+      const existingKeys = pr.budgetGovernance?.releaseIdempotencyKeys || [];
+      if (params.idempotencyKey) {
+        existingKeys.push(params.idempotencyKey);
+        prGovernancePolicyService.markIdempotencyKeyProcessed(params.idempotencyKey);
+      }
+
+      pr.budgetGovernance = {
+        ...pr.budgetGovernance,
+        originalReservationAmount: recon.originalReservation,
+        outstandingCommittedAmount: recon.validOutstandingCommitments,
+        previouslyReleasedAmount: recon.previouslyReleasedAmount + releasedAmount,
+        transactionCurrency: recon.transactionCurrency,
+        companyReportingCurrency: recon.companyReportingCurrency,
+        exchangeRateUsed: recon.exchangeRateUsed,
+        exchangeRateRef: recon.exchangeRateRef,
+        exchangeRateDate: recon.exchangeRateDate,
+        originalReservationReportingCurrency: recon.originalReservationReportingCurrency,
+        outstandingCommittedReportingCurrency: recon.validCommitmentsReportingCurrency,
+        previouslyReleasedReportingCurrency: Number(
+          ((recon.previouslyReleasedAmount + releasedAmount) * recon.exchangeRateUsed).toFixed(2)
+        ),
+        releaseIdempotencyKeys: existingKeys,
+        releaseHistory: [releaseEntry, ...(pr.budgetGovernance?.releaseHistory || [])],
+      };
     }
-
-    pr.budgetGovernance = {
-      ...pr.budgetGovernance,
-      originalReservationAmount: recon.originalReservation,
-      outstandingCommittedAmount: recon.validOutstandingCommitments,
-      previouslyReleasedAmount: recon.previouslyReleasedAmount + releasedAmount,
-      transactionCurrency: recon.transactionCurrency,
-      companyReportingCurrency: recon.companyReportingCurrency,
-      exchangeRateUsed: recon.exchangeRateUsed,
-      exchangeRateRef: recon.exchangeRateRef,
-      exchangeRateDate: recon.exchangeRateDate,
-      originalReservationReportingCurrency: recon.originalReservationReportingCurrency,
-      outstandingCommittedReportingCurrency: recon.validCommitmentsReportingCurrency,
-      previouslyReleasedReportingCurrency: Number(
-        ((recon.previouslyReleasedAmount + releasedAmount) * recon.exchangeRateUsed).toFixed(2)
-      ),
-      releaseIdempotencyKeys: existingKeys,
-      releaseHistory: [releaseEntry, ...(pr.budgetGovernance?.releaseHistory || [])],
-    };
 
     pr.modifiedBy = params.user.fullName;
     pr.updatedAt = nowIso;
@@ -2156,18 +2912,20 @@ export const PurchaseRequisitionService = {
       entityType: 'PURCHASE_REQUISITION',
       entityId: pr.id,
       eventType: 'PR_SHORT_CLOSED',
-      eventDescription: `Short closed ${closedLineCount} line(s) on PR ${pr.prNumber}. Uncommitted budget released: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}`,
+      eventDescription: budgetValidationEnabled
+        ? `Short closed ${closedLineCount} line(s) on PR ${pr.prNumber}. Uncommitted budget released: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}`
+        : `Short closed ${closedLineCount} line(s) on PR ${pr.prNumber}.`,
       previousValue: {
         status: prevStatus,
-        previouslyReleasedAmount: recon.previouslyReleasedAmount,
+        previouslyReleasedAmount: reconSummary.previouslyReleasedAmount,
       },
       newValue: {
         status: pr.status,
         closedLineCount,
         releasedBudgetAmount: releasedAmount,
         releasedBudgetReportingCurrency: releasedAmountReportingCurrency,
-        exchangeRateUsed: recon.exchangeRateUsed,
-        validCommitmentsPreserved: recon.validOutstandingCommitments,
+        exchangeRateUsed: reconSummary.exchangeRateUsed,
+        validCommitmentsPreserved: reconSummary.validOutstandingCommitments,
         reason: params.reason.trim(),
       },
       changedByUserId: params.user.id,
@@ -2178,7 +2936,9 @@ export const PurchaseRequisitionService = {
 
     return {
       success: true,
-      message: `Short closed ${closedLineCount} line(s) on ${pr.prNumber}. Released uncommitted budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}.`,
+      message: budgetValidationEnabled
+        ? `Short closed ${closedLineCount} line(s) on ${pr.prNumber}. Released uncommitted budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}.`
+        : `Short closed ${closedLineCount} line(s) on ${pr.prNumber}.`,
       releasedBudgetAmount: releasedAmount,
       releasedBudgetReportingCurrency: releasedAmountReportingCurrency,
       pr,
@@ -2310,36 +3070,44 @@ export const PurchaseRequisitionService = {
       pr.cancelledAt = nowIso;
     }
 
-    // Budget Reconciliation & Release
-    const recon = prGovernancePolicyService.calculateBudgetReconciliation(
-      pr,
-      params.convertedQtyByLineId
+    // Conditional Budget Reconciliation & Release ONLY when Budget Validation is ON
+    const budgetValidationEnabled = prGovernancePolicyService.isBudgetValidationEnabled(
+      pr.companyId,
+      pr.branchId
     );
-    const releasedAmount =
-      eff.budget.autoUncommittedBudgetRelease && eff.budget.budgetReleaseOnCancellation
-        ? Math.min(recon.eligibleReleaseAmount, newlyCancelledValue || recon.eligibleReleaseAmount)
-        : 0;
+    let releasedAmount = 0;
 
-    const releaseEntry: PRBudgetReleaseEntry = {
-      id: `rel-${Date.now()}`,
-      actionType: 'CANCELLATION',
-      originalReservation: recon.originalReservation,
-      validCommitments: recon.validOutstandingCommitments,
-      previouslyReleased: recon.previouslyReleasedAmount,
-      releasedAmount,
-      currency: pr.currency || 'INR',
-      reason: params.reason.trim(),
-      remarks: params.remarks.trim(),
-      releasedBy: params.user.fullName,
-      timestamp: nowIso,
-    };
+    if (budgetValidationEnabled) {
+      const recon = prGovernancePolicyService.calculateBudgetReconciliation(
+        pr,
+        params.convertedQtyByLineId
+      );
+      releasedAmount =
+        eff.budget.autoUncommittedBudgetRelease && eff.budget.budgetReleaseOnCancellation
+          ? Math.min(recon.eligibleReleaseAmount, newlyCancelledValue || recon.eligibleReleaseAmount)
+          : 0;
 
-    pr.budgetGovernance = {
-      originalReservationAmount: recon.originalReservation,
-      outstandingCommittedAmount: recon.validOutstandingCommitments,
-      previouslyReleasedAmount: recon.previouslyReleasedAmount + releasedAmount,
-      releaseHistory: [releaseEntry, ...(pr.budgetGovernance?.releaseHistory || [])],
-    };
+      const releaseEntry: PRBudgetReleaseEntry = {
+        id: `rel-${Date.now()}`,
+        actionType: 'CANCELLATION',
+        originalReservation: recon.originalReservation,
+        validCommitments: recon.validOutstandingCommitments,
+        previouslyReleased: recon.previouslyReleasedAmount,
+        releasedAmount,
+        currency: pr.currency || 'INR',
+        reason: params.reason.trim(),
+        remarks: params.remarks.trim(),
+        releasedBy: params.user.fullName,
+        timestamp: nowIso,
+      };
+
+      pr.budgetGovernance = {
+        originalReservationAmount: recon.originalReservation,
+        outstandingCommittedAmount: recon.validOutstandingCommitments,
+        previouslyReleasedAmount: recon.previouslyReleasedAmount + releasedAmount,
+        releaseHistory: [releaseEntry, ...(pr.budgetGovernance?.releaseHistory || [])],
+      };
+    }
 
     pr.modifiedBy = params.user.fullName;
     pr.updatedAt = nowIso;
@@ -2351,7 +3119,9 @@ export const PurchaseRequisitionService = {
       entityType: 'PURCHASE_REQUISITION',
       entityId: pr.id,
       eventType: 'PR_CANCELLED',
-      eventDescription: `Cancelled ${cancelledLineCount} unconverted line(s) on PR ${pr.prNumber}. Released budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}`,
+      eventDescription: budgetValidationEnabled
+        ? `Cancelled ${cancelledLineCount} unconverted line(s) on PR ${pr.prNumber}. Released budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}`
+        : `Cancelled ${cancelledLineCount} unconverted line(s) on PR ${pr.prNumber}.`,
       previousValue: { status: prevStatus },
       newValue: {
         status: pr.status,
@@ -2367,7 +3137,9 @@ export const PurchaseRequisitionService = {
 
     return {
       success: true,
-      message: `Cancelled ${cancelledLineCount} unconverted line(s) on ${pr.prNumber}. Released uncommitted budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}.`,
+      message: budgetValidationEnabled
+        ? `Cancelled ${cancelledLineCount} unconverted line(s) on ${pr.prNumber}. Released uncommitted budget: ${pr.currency} ${releasedAmount.toLocaleString('en-IN')}.`
+        : `Cancelled ${cancelledLineCount} unconverted line(s) on ${pr.prNumber}.`,
       releasedBudgetAmount: releasedAmount,
       pr,
     };
@@ -2399,25 +3171,22 @@ export const PurchaseRequisitionService = {
 
   checkForDuplicates(itemCode: string, companyId: string, branchId: string): Array<{ prNumber: string; requesterName: string; requestedQuantity: number; status: string; date: string }> {
     const prs = this.getPurchaseRequisitions();
-    const duplicates: Array<{ prNumber: string; requesterName: string; requestedQuantity: number; status: string; date: string }> = [];
-
-    prs.forEach(p => {
-      if (p.companyId === companyId && p.branchId === branchId && p.status !== 'CANCELLED' && p.status !== 'SHORT_CLOSED' && p.status !== 'WITHDRAWN' && p.status !== 'REJECTED' && p.status !== 'ARCHIVED') {
-        p.lines.forEach(l => {
-          if (l.itemCode === itemCode) {
-            duplicates.push({
-              prNumber: p.prNumber,
-              requesterName: p.requesterName,
-              requestedQuantity: l.requestedQuantity,
-              status: p.status,
-              date: p.createdAt.split('T')[0]
-            });
-          }
-        });
-      }
+    const snap = prDuplicateGovernanceService.evaluateDuplicateConditions({
+      draftKey: `check-${normalizeCompanyId(companyId)}-${normalizeBranchId(branchId)}-${itemCode}`,
+      companyId,
+      branchId,
+      lines: [{ itemCode, requestedQuantity: 0 }],
+      existingPrs: prs,
     });
 
-    return duplicates;
+    const matches = snap.conditions.flatMap((c) => c.matchingPrs);
+    return matches.map((m) => ({
+      prNumber: m.prNumber,
+      requesterName: m.requesterName || 'Requester',
+      requestedQuantity: m.existingQty,
+      status: m.status,
+      date: m.createdAt,
+    }));
   },
 
   // Draft Management
@@ -2542,82 +3311,38 @@ export const PurchaseRequisitionService = {
       };
     }
 
-    const normComp = normalizeCompanyId(params.companyId);
-    const normBr = normalizeBranchId(params.branchId);
     const prs = this.getPurchaseRequisitions();
-    const matches: Array<{
-      prId: string;
-      prNumber: string;
-      itemCode: string;
-      requesterName: string;
-      existingQty: number;
-      proposedQty: number;
-      status: string;
-      createdAt: string;
-    }> = [];
+    const snap = prDuplicateGovernanceService.evaluateDuplicateConditions({
+      draftKey: `risk-eval-${params.excludePrId || 'new'}`,
+      prId: params.excludePrId,
+      companyId: params.companyId,
+      branchId: params.branchId,
+      requesterId: params.requesterId,
+      purchasePurpose: params.purchasePurpose,
+      expectedDeliveryDate: params.expectedDeliveryDate,
+      lines: params.lines.map((l, idx) => ({
+        id: `eval-line-${idx}`,
+        itemCode: l.itemCode,
+        requestedQuantity: l.requestedQuantity,
+      })),
+      existingPrs: prs,
+    });
 
-    for (const pr of prs) {
-      if (params.excludePrId && pr.id === params.excludePrId) continue;
-      if (
-        ['CANCELLED', 'SHORT_CLOSED', 'WITHDRAWN', 'REJECTED', 'ARCHIVED'].includes(pr.status)
-      ) {
-        continue;
-      }
-
-      if (normalizeCompanyId(pr.companyId) !== normComp) continue;
-      if (dupCfg.checkSameBranch && normalizeBranchId(pr.branchId) !== normBr) continue;
-      if (
-        dupCfg.checkSameRequester &&
-        params.requesterId &&
-        pr.requesterId !== params.requesterId
-      ) {
-        continue;
-      }
-      if (
-        dupCfg.checkSamePurpose &&
-        params.purchasePurpose &&
-        pr.purchasePurpose.trim().toLowerCase() !== params.purchasePurpose.trim().toLowerCase()
-      ) {
-        continue;
-      }
-      if (
-        dupCfg.checkSameRequirementDate &&
-        params.expectedDeliveryDate &&
-        (pr.expectedDeliveryDate || pr.requiredBy) !== params.expectedDeliveryDate
-      ) {
-        continue;
-      }
-
-      for (const propLine of params.lines) {
-        for (const existLine of pr.lines) {
-          if (dupCfg.checkSameItem && existLine.itemCode !== propLine.itemCode) {
-            continue;
-          }
-          if (dupCfg.checkSimilarQuantity) {
-            const tol = (dupCfg.quantityVarianceTolerancePercent ?? 20) / 100;
-            const existQty = Number(existLine.requestedQuantity) || 0;
-            const propQty = Number(propLine.requestedQuantity) || 0;
-            if (existQty > 0) {
-              const variance = Math.abs(propQty - existQty) / existQty;
-              if (variance > tol) continue;
-            }
-          }
-          matches.push({
-            prId: pr.id,
-            prNumber: pr.prNumber,
-            itemCode: existLine.itemCode,
-            requesterName: pr.requesterName,
-            existingQty: existLine.requestedQuantity,
-            proposedQty: propLine.requestedQuantity,
-            status: pr.status,
-            createdAt: pr.createdAt.split('T')[0],
-          });
-        }
-      }
-    }
+    const matches = snap.conditions.flatMap((c) =>
+      c.matchingPrs.map((m) => ({
+        prId: m.prId,
+        prNumber: m.prNumber,
+        itemCode: m.itemCode,
+        requesterName: m.requesterName || 'Requester',
+        existingQty: m.existingQty,
+        proposedQty: m.proposedQty,
+        status: m.status,
+        createdAt: m.createdAt,
+      }))
+    );
 
     return {
-      hasDuplicates: matches.length > 0,
+      hasDuplicates: snap.hasDuplicates,
       warningLevel: dupCfg.warningLevel,
       requiresJustification: dupCfg.requireJustificationToProceed,
       matches,
@@ -3451,7 +4176,131 @@ export const PurchaseRequisitionService = {
       records: prs,
     };
   },
+
+  /**
+   * SAP B1 HANA / Downstream Transaction Creation Gate:
+   * Blocks SAP PR/RFQ/PO transaction creation unless all mandatory governance,
+   * PR Type category mappings, configured multi-level approvals, duplicate overrides,
+   * and (when ON) budget checks are satisfied.
+   */
+  validateSapB1TransactionReadiness(prOrId: string | PurchaseRequisitionHeader): {
+    ready: boolean;
+    blockingReasons: string[];
+    pr?: PurchaseRequisitionHeader;
+  } {
+    const pr =
+      typeof prOrId === 'string'
+        ? this.getPurchaseRequisitions().find((p) => p.id === prOrId || p.prNumber === prOrId)
+        : prOrId;
+
+    if (!pr) {
+      return { ready: false, blockingReasons: ['Purchase Requisition not found.'] };
+    }
+
+    const blockingReasons: string[] = [];
+    const eff = prGovernancePolicyService.getEffectivePolicy(pr.companyId, pr.branchId);
+    const workflowPlan = prGovernancePolicyService.resolveApprovalWorkflowPlan(pr, eff);
+    const txDocDate = (pr.createdAt || new Date().toISOString()).slice(0, 10);
+
+    if (!isPrStatusApproved(pr.status)) {
+      blockingReasons.push(
+        `PR ${pr.prNumber} is in status '${pr.status}' and has not completed mandatory approval workflow.`
+      );
+    }
+
+    if (workflowPlan.enabled) {
+      const currentCycle = pr.approvalCycleCount || 1;
+      const approvalCount = (pr.approvalHistory || []).filter(
+        (h) =>
+          (h.cycleNumber || 1) === currentCycle &&
+          (h.decision === 'APPROVED' || h.decision === 'DELEGATED_APPROVAL')
+      ).length;
+      if (approvalCount < workflowPlan.requiredLevels && !isPrStatusApproved(pr.status)) {
+        blockingReasons.push(
+          `Approval matrix requires ${workflowPlan.requiredLevels} level(s) for reporting value ${workflowPlan.reportingCurrency} ${workflowPlan.valuationReportingAmount}; only ${approvalCount} completed.`
+        );
+      }
+    }
+
+    const conflictCheck = expenseCategoryService.detectClassificationConflict({
+      prType: pr.prType,
+      lines: pr.lines,
+      expenseLines: pr.expenseLines,
+      chargeItems: pr.chargeItems,
+    });
+    if (conflictCheck.hasConflict) {
+      blockingReasons.push(...conflictCheck.conflicts);
+    }
+
+    if (pr.prType === 'EXPENSE') {
+      const expVal = expenseCategoryService.validateExpenseLinesForPr({
+        companyId: pr.companyId,
+        branchId: pr.branchId,
+        department: pr.department,
+        userId: pr.requesterId,
+        expenseLines: pr.expenseLines || [],
+        headerCostCentre: pr.costCentre,
+        headerExpectedServiceDate: pr.expectedServiceDate || pr.expectedDeliveryDate || pr.requiredBy,
+        headerBusinessJustification: pr.businessJustification,
+        asOfDate: txDocDate,
+      });
+      if (!expVal.valid) {
+        blockingReasons.push(...expVal.errors);
+      }
+    } else {
+      const chargeDup = prChargeItemService.validateHeaderAndLineChargeDuplicates(
+        pr.chargeItems,
+        pr.lines,
+        Boolean(eff.activation.allowSameChargeAtHeaderAndLine)
+      );
+      if (!chargeDup.valid) {
+        blockingReasons.push(...chargeDup.conflicts);
+      }
+      if ((pr.lines || []).length > 0) {
+        const catVal = prTypeMasterService.validateLinesCategoriesForPrType({
+          companyId: pr.companyId,
+          branchId: pr.branchId,
+          purchaseOrgId: pr.purchaseOrganizationId || pr.purchaseOrgId,
+          prTypeCode: pr.prType,
+          lines: pr.lines,
+          evaluationDate: txDocDate,
+        });
+        if (!catVal.valid) {
+          blockingReasons.push(
+            catVal.prTypeReason ||
+              catVal.invalidLines[0]?.reason ||
+              'PR contains line categories incompatible with selected PR Type.'
+          );
+        }
+      }
+    }
+
+    if (prGovernancePolicyService.isBudgetValidationEnabled(pr.companyId, pr.branchId, txDocDate)) {
+      if (
+        eff.budget.mandatoryBudgetCheck &&
+        pr.budgetValidationStatus !== 'SUFFICIENT' &&
+        pr.budgetValidationStatus !== 'EXCEPTION_APPROVED'
+      ) {
+        blockingReasons.push(
+          `Budget validation is enabled and mandatory, but status is '${pr.budgetValidationStatus}'.`
+        );
+      }
+    }
+
+    if (pr.duplicateGovernance && !pr.duplicateGovernance.submissionEligible) {
+      blockingReasons.push(
+        'Duplicate PR governance override authorization is still pending or blocked.'
+      );
+    }
+
+    return {
+      ready: blockingReasons.length === 0,
+      blockingReasons,
+      pr,
+    };
+  },
 };
+
 
 
 

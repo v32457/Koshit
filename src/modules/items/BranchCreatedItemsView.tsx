@@ -49,12 +49,17 @@ import {
   matchesDateRange,
   buildAdvancedFilterChips,
   countActiveAdvancedConditions,
+  parseMultiSelectFilter,
+  matchesMultiSelectFilter,
+  formatMultiSelectFilterLabel,
+  isConditionActive,
 } from '../../services/advancedFilterEngine';
 import {
   AdvancedFilterPanel,
   DateRangeFilterControl,
   ActiveFilterChipsBar,
   AdvancedFilterToggleButton,
+  MultiSelectFilterDropdown,
 } from '../../components/AdvancedFilterPanel';
 
 interface BranchCreatedItemsViewProps {
@@ -159,10 +164,20 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
     return INITIAL_BRANCH_ITEM_CLASSIFICATIONS;
   }, []);
 
+  const selectedBranchIds = useMemo(() => {
+    const parsed = parseMultiSelectFilter(selectedBranchId);
+    return parsed.length > 0 ? parsed : [allBranches[0]?.id || 'br-pond-01'];
+  }, [selectedBranchId, allBranches]);
+
+  const selectedBranches = useMemo(() => {
+    const matched = allBranches.filter((b) => selectedBranchIds.includes(b.id));
+    return matched.length > 0 ? matched : allBranches.slice(0, 1);
+  }, [allBranches, selectedBranchIds]);
+
   const selectedBranch =
-    allBranches.find((b) => b.id === selectedBranchId) ||
+    selectedBranches[0] ||
     allBranches[0] || {
-      id: selectedBranchId || 'br-pond-01',
+      id: selectedBranchIds[0] || 'br-pond-01',
       orgId: 'org-kosh-01',
       portalBranchCode: '001',
       code: 'PDY',
@@ -177,9 +192,9 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
   const getBranchCategoryCode = (item: GlobalItem): string => {
     const bic = branchClassifications.find(
       (bc) =>
-        (bc.branchId === selectedBranch.id ||
-          bc.branchCode === selectedBranch.portalBranchCode) &&
-        bc.globalItemId === item.id
+        selectedBranches.some(
+          (sb) => bc.branchId === sb.id || bc.branchCode === sb.portalBranchCode
+        ) && bc.globalItemId === item.id
     );
     return (
       bic?.categoryCode ||
@@ -192,7 +207,9 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
   };
 
   const getAvailabilityStatus = (item: GlobalItem): 'ACTIVE' | 'INACTIVE' => {
-    return isItemAvailableInBranch(item, selectedBranch) ? 'ACTIVE' : 'INACTIVE';
+    return selectedBranches.some((sb) => isItemAvailableInBranch(item, sb))
+      ? 'ACTIVE'
+      : 'INACTIVE';
   };
 
   // Distinct dropdown options
@@ -222,7 +239,12 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         label: 'Branch',
         type: 'DROPDOWN',
         options: allBranches.map((b) => ({ value: b.name, label: b.name })),
-        accessor: () => selectedBranch.name,
+        accessor: (item) => {
+          const activeBranchNames = allBranches
+            .filter((b) => isItemAvailableInBranch(item, b))
+            .map((b) => b.name);
+          return activeBranchNames.length > 0 ? activeBranchNames : [selectedBranch.name];
+        },
       },
       {
         key: 'globalItemCode',
@@ -354,8 +376,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-cat',
         category: 'QUICK',
         fieldLabel: 'Branch Category',
-        operatorLabel: 'Equals',
-        valueLabel: categoryFilter,
+        operatorLabel: parseMultiSelectFilter(categoryFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(categoryFilter),
         onRemove: () => setCategoryFilter('ALL'),
       });
     }
@@ -364,8 +386,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-gitem',
         category: 'QUICK',
         fieldLabel: 'Global Item',
-        operatorLabel: 'Equals',
-        valueLabel: globalItemFilter,
+        operatorLabel: parseMultiSelectFilter(globalItemFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(globalItemFilter),
         onRemove: () => setGlobalItemFilter('ALL'),
       });
     }
@@ -374,8 +396,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-itype',
         category: 'QUICK',
         fieldLabel: 'Item Type',
-        operatorLabel: 'Equals',
-        valueLabel: itemTypeFilter,
+        operatorLabel: parseMultiSelectFilter(itemTypeFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(itemTypeFilter),
         onRemove: () => setItemTypeFilter('ALL'),
       });
     }
@@ -384,8 +406,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-mat',
         category: 'QUICK',
         fieldLabel: 'Material',
-        operatorLabel: 'Equals',
-        valueLabel: materialFilter,
+        operatorLabel: parseMultiSelectFilter(materialFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(materialFilter),
         onRemove: () => setMaterialFilter('ALL'),
       });
     }
@@ -394,8 +416,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-mform',
         category: 'QUICK',
         fieldLabel: 'Material Form',
-        operatorLabel: 'Equals',
-        valueLabel: materialFormFilter,
+        operatorLabel: parseMultiSelectFilter(materialFormFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(materialFormFilter),
         onRemove: () => setMaterialFormFilter('ALL'),
       });
     }
@@ -404,8 +426,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-avail',
         category: 'QUICK',
         fieldLabel: 'Availability Status',
-        operatorLabel: 'Equals',
-        valueLabel: availabilityStatusFilter,
+        operatorLabel: parseMultiSelectFilter(availabilityStatusFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(availabilityStatusFilter),
         onRemove: () => setAvailabilityStatusFilter('ALL'),
       });
     }
@@ -414,8 +436,8 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         id: 'bc-appr',
         category: 'QUICK',
         fieldLabel: 'Approval Status',
-        operatorLabel: 'Equals',
-        valueLabel: approvalStatusFilter,
+        operatorLabel: parseMultiSelectFilter(approvalStatusFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(approvalStatusFilter),
         onRemove: () => setApprovalStatusFilter('ALL'),
       });
     }
@@ -475,12 +497,20 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
   // Filter Branch Items
   const branchItems = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
+    const branchFieldDef = branchCatalogFilterFields.find((f) => f.key === 'branch');
+    const hasAdvancedBranchCondition = advancedFilterState.groups.some((g) =>
+      g.conditions.some((c) => c.fieldKey === 'branch' && isConditionActive(c, branchFieldDef))
+    );
 
     const quickFiltered = items.filter((item) => {
-      const availStatus = getAvailabilityStatus(item);
+      const availStatus = hasAdvancedBranchCondition
+        ? allBranches.some((b) => isItemAvailableInBranch(item, b))
+          ? 'ACTIVE'
+          : 'INACTIVE'
+        : getAvailabilityStatus(item);
       if (availabilityStatusFilter === 'ALL') {
         if (availStatus !== 'ACTIVE') return false;
-      } else if (availStatus !== availabilityStatusFilter) {
+      } else if (!matchesMultiSelectFilter(availabilityStatusFilter, availStatus)) {
         return false;
       }
 
@@ -493,12 +523,12 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
         ? item.updatedAt.slice(0, 10)
         : createdStr;
 
-      if (categoryFilter !== 'ALL' && catCode !== categoryFilter) return false;
-      if (globalItemFilter !== 'ALL' && item.globalItemCode !== globalItemFilter) return false;
-      if (itemTypeFilter !== 'ALL' && iType !== itemTypeFilter) return false;
-      if (materialFilter !== 'ALL' && mat !== materialFilter) return false;
-      if (materialFormFilter !== 'ALL' && form !== materialFormFilter) return false;
-      if (approvalStatusFilter !== 'ALL' && item.status !== approvalStatusFilter) return false;
+      if (!matchesMultiSelectFilter(categoryFilter, catCode)) return false;
+      if (!matchesMultiSelectFilter(globalItemFilter, item.globalItemCode)) return false;
+      if (!matchesMultiSelectFilter(itemTypeFilter, iType)) return false;
+      if (!matchesMultiSelectFilter(materialFilter, mat)) return false;
+      if (!matchesMultiSelectFilter(materialFormFilter, form)) return false;
+      if (!matchesMultiSelectFilter(approvalStatusFilter, item.status)) return false;
       if (!matchesDateRange(createdStr, createdDateRange)) return false;
       if (!matchesDateRange(modifiedStr, modifiedDateRange)) return false;
 
@@ -519,7 +549,9 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
     return evaluateAdvancedFilters(quickFiltered, advancedFilterState, branchCatalogFilterFields);
   }, [
     items,
+    allBranches,
     selectedBranch,
+    selectedBranches,
     branchClassifications,
     categoryFilter,
     globalItemFilter,
@@ -951,113 +983,109 @@ export const BranchCreatedItemsView: React.FC<BranchCreatedItemsViewProps> = ({
 
         {/* Quick Filters Row */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-          <select
-            aria-label="Filter by Branch"
+          <MultiSelectFilterDropdown
+            label="Branch"
+            allLabel={`[${selectedBranch.portalBranchCode}] ${selectedBranch.name}`}
+            ariaLabel="Filter by Branch"
             value={selectedBranchId}
-            onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
-          >
-            {allBranches.map((b) => (
-              <option key={b.id} value={b.id}>
-                [{b.portalBranchCode}] {b.name}
-              </option>
-            ))}
-          </select>
+            onChange={(val) =>
+              setSelectedBranchId(val === 'ALL' ? allBranches[0]?.id || 'br-pond-01' : val)
+            }
+            options={allBranches.map((b) => ({
+              value: b.id,
+              label: `[${b.portalBranchCode}] ${b.name}`,
+            }))}
+          />
 
-          <select
-            aria-label="Filter by Global Item"
+          <MultiSelectFilterDropdown
+            label="Global Item"
+            allLabel="All Global Items"
+            ariaLabel="Filter by Global Item"
             value={globalItemFilter}
-            onChange={(e) => setGlobalItemFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Global Items</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.globalItemCode}>
-                {i.globalItemCode}
-              </option>
-            ))}
-          </select>
+            onChange={setGlobalItemFilter}
+            options={items.map((i) => ({
+              value: i.globalItemCode,
+              label: `${i.globalItemCode} — ${i.description}`,
+            }))}
+          />
 
-          <select
-            aria-label="Filter by Branch Category"
+          <MultiSelectFilterDropdown
+            label="Branch Category"
+            allLabel="All Branch Categories"
+            ariaLabel="Filter by Branch Category"
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Branch Categories</option>
-            <option value="FG">FG — Finished Goods</option>
-            <option value="RM">RM — Raw Materials</option>
-            <option value="SF">SF — Semi-Finished</option>
-            <option value="PK">PK — Packaging</option>
-            <option value="CO">CO — Consumables</option>
-            <option value="MA">MA — Spares</option>
-          </select>
+            onChange={setCategoryFilter}
+            options={[
+              { value: 'FG', label: 'FG — Finished Goods' },
+              { value: 'RM', label: 'RM — Raw Materials' },
+              { value: 'SF', label: 'SF — Semi-Finished' },
+              { value: 'PK', label: 'PK — Packaging' },
+              { value: 'CO', label: 'CO — Consumables' },
+              { value: 'MA', label: 'MA — Spares' },
+            ]}
+          />
 
-          <select
-            aria-label="Filter by Item Type"
+          <MultiSelectFilterDropdown
+            label="Item Type"
+            allLabel="All Item Types"
+            ariaLabel="Filter by Item Type"
             value={itemTypeFilter}
-            onChange={(e) => setItemTypeFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Item Types</option>
-            {distinctOptions.itemTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            onChange={setItemTypeFilter}
+            options={distinctOptions.itemTypes.map((t) => ({
+              value: t,
+              label: t,
+            }))}
+          />
 
-          <select
-            aria-label="Filter by Material"
+          <MultiSelectFilterDropdown
+            label="Material"
+            allLabel="All Materials"
+            ariaLabel="Filter by Material"
             value={materialFilter}
-            onChange={(e) => setMaterialFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Materials</option>
-            {distinctOptions.materials.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+            onChange={setMaterialFilter}
+            options={distinctOptions.materials.map((m) => ({
+              value: m,
+              label: m,
+            }))}
+          />
 
-          <select
-            aria-label="Filter by Material Form"
+          <MultiSelectFilterDropdown
+            label="Material Form"
+            allLabel="All Material Forms"
+            ariaLabel="Filter by Material Form"
             value={materialFormFilter}
-            onChange={(e) => setMaterialFormFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Material Forms</option>
-            {distinctOptions.materialForms.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+            onChange={setMaterialFormFilter}
+            options={distinctOptions.materialForms.map((f) => ({
+              value: f,
+              label: f,
+            }))}
+          />
 
-          <select
-            aria-label="Filter by Availability Status"
+          <MultiSelectFilterDropdown
+            label="Availability Status"
+            allLabel="Active in Branch"
+            ariaLabel="Filter by Availability Status"
             value={availabilityStatusFilter}
-            onChange={(e) => setAvailabilityStatusFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">Active in Branch</option>
-            <option value="ACTIVE">Active Only</option>
-            <option value="INACTIVE">Inactive Only</option>
-          </select>
+            onChange={setAvailabilityStatusFilter}
+            options={[
+              { value: 'ACTIVE', label: 'Active Only' },
+              { value: 'INACTIVE', label: 'Inactive Only' },
+            ]}
+          />
 
-          <select
-            aria-label="Filter by Approval Status"
+          <MultiSelectFilterDropdown
+            label="Approval Status"
+            allLabel="All Approval Statuses"
+            ariaLabel="Filter by Approval Status"
             value={approvalStatusFilter}
-            onChange={(e) => setApprovalStatusFilter(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700"
-          >
-            <option value="ALL">All Approval Statuses</option>
-            <option value="APPROVED">Approved</option>
-            <option value="SUBMITTED">Submitted</option>
-            <option value="DRAFT">Draft</option>
-            <option value="REJECTED">Rejected</option>
-          </select>
+            onChange={setApprovalStatusFilter}
+            options={[
+              { value: 'APPROVED', label: 'Approved' },
+              { value: 'SUBMITTED', label: 'Submitted' },
+              { value: 'DRAFT', label: 'Draft' },
+              { value: 'REJECTED', label: 'Rejected' },
+            ]}
+          />
         </div>
 
         {/* Date Ranges Row: Created Date Range & Modified Date Range */}

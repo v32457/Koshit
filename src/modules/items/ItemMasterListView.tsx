@@ -75,12 +75,16 @@ import {
   matchesDateRange,
   buildAdvancedFilterChips,
   countActiveAdvancedConditions,
+  parseMultiSelectFilter,
+  matchesMultiSelectFilter,
+  formatMultiSelectFilterLabel,
 } from '../../services/advancedFilterEngine';
 import {
   AdvancedFilterPanel,
   DateRangeFilterControl,
   ActiveFilterChipsBar,
   AdvancedFilterToggleButton,
+  MultiSelectFilterDropdown,
 } from '../../components/AdvancedFilterPanel';
 
 interface ItemMasterListViewProps {
@@ -441,8 +445,8 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         id: 'q-itemType',
         category: 'QUICK',
         fieldLabel: 'Item Type',
-        operatorLabel: 'Equals',
-        valueLabel: itemTypeFilter,
+        operatorLabel: parseMultiSelectFilter(itemTypeFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(itemTypeFilter),
         onRemove: () => setItemTypeFilter('ALL'),
       });
     }
@@ -451,8 +455,8 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         id: 'q-material',
         category: 'QUICK',
         fieldLabel: 'Material',
-        operatorLabel: 'Equals',
-        valueLabel: materialFilter,
+        operatorLabel: parseMultiSelectFilter(materialFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(materialFilter),
         onRemove: () => setMaterialFilter('ALL'),
       });
     }
@@ -461,8 +465,8 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         id: 'q-materialForm',
         category: 'QUICK',
         fieldLabel: 'Material Form',
-        operatorLabel: 'Equals',
-        valueLabel: materialFormFilter,
+        operatorLabel: parseMultiSelectFilter(materialFormFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(materialFormFilter),
         onRemove: () => setMaterialFormFilter('ALL'),
       });
     }
@@ -471,8 +475,8 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         id: 'q-globalStatus',
         category: 'QUICK',
         fieldLabel: 'Global Status',
-        operatorLabel: 'Equals',
-        valueLabel: globalStatusFilter,
+        operatorLabel: parseMultiSelectFilter(globalStatusFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(globalStatusFilter),
         onRemove: () => setGlobalStatusFilter('ALL'),
       });
     }
@@ -481,8 +485,8 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         id: 'q-approvalStatus',
         category: 'QUICK',
         fieldLabel: 'Approval Status',
-        operatorLabel: 'Equals',
-        valueLabel: approvalStatusFilter,
+        operatorLabel: parseMultiSelectFilter(approvalStatusFilter).length > 1 ? 'Is Any Of' : 'Equals',
+        valueLabel: formatMultiSelectFilterLabel(approvalStatusFilter),
         onRemove: () => setApprovalStatusFilter('ALL'),
       });
     }
@@ -563,11 +567,11 @@ export const ItemMasterListView: React.FC<ItemMasterListViewProps> = ({
         }
       }
 
-      if (itemTypeFilter !== 'ALL' && iType !== itemTypeFilter) return false;
-      if (materialFilter !== 'ALL' && mat !== materialFilter) return false;
-      if (materialFormFilter !== 'ALL' && form !== materialFormFilter) return false;
-      if (globalStatusFilter !== 'ALL' && gStatus !== globalStatusFilter) return false;
-      if (approvalStatusFilter !== 'ALL' && item.status !== approvalStatusFilter) return false;
+      if (!matchesMultiSelectFilter(itemTypeFilter, iType)) return false;
+      if (!matchesMultiSelectFilter(materialFilter, mat)) return false;
+      if (!matchesMultiSelectFilter(materialFormFilter, form)) return false;
+      if (!matchesMultiSelectFilter(globalStatusFilter, gStatus)) return false;
+      if (!matchesMultiSelectFilter(approvalStatusFilter, item.status)) return false;
       if (!matchesDateRange(createdDateStr, createdDateRange)) return false;
 
       return true;
@@ -1155,73 +1159,69 @@ COP,RAW,WIR,DRW,GLD,Electrolytic ETP Copper Winding Wire,SWG-18,KG,KG`;
         {/* Inline Quick Filter Bar (Item Type, Material, Material Form, Global Status, Approval Status, Created Date Range) */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              aria-label="Filter by Item Type"
+            <MultiSelectFilterDropdown
+              label="Item Type"
+              allLabel="All Item Types"
+              ariaLabel="Filter by Item Type"
               value={itemTypeFilter}
-              onChange={(e) => setItemTypeFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Item Types</option>
-              {distinctOptions.itemTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+              onChange={setItemTypeFilter}
+              options={distinctOptions.itemTypes.map((t) => ({
+                value: t,
+                label: t,
+              }))}
+            />
 
-            <select
-              aria-label="Filter by Material"
+            <MultiSelectFilterDropdown
+              label="Material"
+              allLabel="All Materials"
+              ariaLabel="Filter by Material"
               value={materialFilter}
-              onChange={(e) => setMaterialFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Materials</option>
-              {distinctOptions.materials.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              onChange={setMaterialFilter}
+              options={distinctOptions.materials.map((m) => ({
+                value: m,
+                label: m,
+              }))}
+            />
 
-            <select
-              aria-label="Filter by Material Form"
+            <MultiSelectFilterDropdown
+              label="Material Form"
+              allLabel="All Material Forms"
+              ariaLabel="Filter by Material Form"
               value={materialFormFilter}
-              onChange={(e) => setMaterialFormFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Material Forms</option>
-              {distinctOptions.materialForms.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
+              onChange={setMaterialFormFilter}
+              options={distinctOptions.materialForms.map((f) => ({
+                value: f,
+                label: f,
+              }))}
+            />
 
-            <select
-              aria-label="Filter by Global Status"
+            <MultiSelectFilterDropdown
+              label="Global Status"
+              allLabel="All Global Statuses"
+              ariaLabel="Filter by Global Status"
               value={globalStatusFilter}
-              onChange={(e) => setGlobalStatusFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Global Statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="PROVISIONAL">Provisional</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
+              onChange={setGlobalStatusFilter}
+              options={[
+                { value: 'ACTIVE', label: 'Active' },
+                { value: 'PROVISIONAL', label: 'Provisional' },
+                { value: 'INACTIVE', label: 'Inactive' },
+              ]}
+            />
 
-            <select
-              aria-label="Filter by Approval Status"
+            <MultiSelectFilterDropdown
+              label="Approval Status"
+              allLabel="All Approval Statuses"
+              ariaLabel="Filter by Approval Status"
               value={approvalStatusFilter}
-              onChange={(e) => setApprovalStatusFilter(e.target.value)}
-              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">All Approval Statuses</option>
-              <option value="APPROVED">Approved</option>
-              <option value="SUBMITTED">Submitted (Pending Checker)</option>
-              <option value="DRAFT">Draft</option>
-              <option value="RETURNED_FOR_CORRECTION">Returned for Correction</option>
-              <option value="REJECTED">Rejected</option>
-            </select>
+              onChange={setApprovalStatusFilter}
+              options={[
+                { value: 'APPROVED', label: 'Approved' },
+                { value: 'SUBMITTED', label: 'Submitted (Pending Checker)' },
+                { value: 'DRAFT', label: 'Draft' },
+                { value: 'RETURNED_FOR_CORRECTION', label: 'Returned for Correction' },
+                { value: 'REJECTED', label: 'Rejected' },
+              ]}
+            />
 
             <DateRangeFilterControl
               label="Created Date"

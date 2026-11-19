@@ -196,6 +196,14 @@ function createInitialMappings(): CompanyBranchChargeMapping[] {
         centrallyControlledFields: def.centrallyControlledFields,
         requiresApproval: def.requiresApproval,
         isBranchOverride: false,
+        applicablePrTypes: master.applicablePrTypes || ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+        sapExpenseCode: master.sapExpenseCode,
+        sapExpenseName: master.sapExpenseName,
+        sapGlAccountCode: master.sapGlAccountCode,
+        taxCode: master.taxCode || tax?.taxCode,
+        approvalStatus: 'APPROVED',
+        approvedBy: 'Vikramaditya Rao (Org Admin)',
+        approvedAt: '2026-04-01T00:05:00Z',
         remarks: `Company-level authoritative charge mapping for ${co.code}`,
         createdBy: 'System Governance',
         createdAt: '2026-04-01T00:00:00Z',
@@ -306,6 +314,12 @@ export interface SaveChargeMappingPayload {
   allowBranchOverride?: boolean;
   centrallyControlledFields?: CentrallyControlledChargeField[];
   requiresApproval?: boolean;
+  applicablePrTypes?: Array<'MANUAL' | 'MRP' | 'REPAIR' | 'MAINTENANCE' | 'CAPEX_ASSET' | 'EXPENSE'>;
+  sapExpenseCode?: string;
+  sapExpenseName?: string;
+  sapGlAccountCode?: string;
+  taxCode?: string;
+  approvalStatus?: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
   remarks?: string;
 }
 
@@ -513,6 +527,16 @@ export const chargeMappingService = {
         payload.centrallyControlledFields ?? prev?.centrallyControlledFields ?? [],
       requiresApproval: payload.requiresApproval ?? prev?.requiresApproval ?? false,
       isBranchOverride: false,
+      applicablePrTypes:
+        payload.applicablePrTypes ??
+        prev?.applicablePrTypes ??
+        master.applicablePrTypes ??
+        ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+      sapExpenseCode: payload.sapExpenseCode ?? prev?.sapExpenseCode ?? master.sapExpenseCode,
+      sapExpenseName: payload.sapExpenseName ?? prev?.sapExpenseName ?? master.sapExpenseName,
+      sapGlAccountCode: payload.sapGlAccountCode ?? prev?.sapGlAccountCode ?? master.sapGlAccountCode,
+      taxCode: payload.taxCode ?? prev?.taxCode ?? master.taxCode ?? taxMapping.taxCode,
+      approvalStatus: payload.approvalStatus ?? prev?.approvalStatus ?? 'APPROVED',
       remarks: payload.remarks ?? prev?.remarks,
       createdBy: prev?.createdBy || actor.name,
       createdAt: prev?.createdAt || now,
@@ -675,6 +699,20 @@ export const chargeMappingService = {
       requiresApproval: payload.requiresApproval ?? prev?.requiresApproval ?? companyMapping.requiresApproval,
       isBranchOverride: true,
       inheritedFromMappingId: companyMapping.id,
+      applicablePrTypes:
+        payload.applicablePrTypes ??
+        prev?.applicablePrTypes ??
+        companyMapping.applicablePrTypes ??
+        master.applicablePrTypes ??
+        ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+      sapExpenseCode:
+        payload.sapExpenseCode ?? prev?.sapExpenseCode ?? companyMapping.sapExpenseCode ?? master.sapExpenseCode,
+      sapExpenseName:
+        payload.sapExpenseName ?? prev?.sapExpenseName ?? companyMapping.sapExpenseName ?? master.sapExpenseName,
+      sapGlAccountCode:
+        payload.sapGlAccountCode ?? prev?.sapGlAccountCode ?? companyMapping.sapGlAccountCode ?? master.sapGlAccountCode,
+      taxCode: payload.taxCode ?? prev?.taxCode ?? companyMapping.taxCode ?? master.taxCode ?? taxMapping.taxCode,
+      approvalStatus: payload.approvalStatus ?? prev?.approvalStatus ?? 'APPROVED',
       remarks: payload.remarks ?? prev?.remarks,
       createdBy: prev?.createdBy || actor.name,
       createdAt: prev?.createdAt || now,
@@ -853,6 +891,15 @@ export const chargeMappingService = {
           ? Boolean(pickCentral('isEnabled', 'isEnabled', master.isActive))
           : master.isActive;
 
+        const isMasterApproved = !master.approvalStatus || master.approvalStatus === 'APPROVED';
+        const isMappingApproved = !winning?.approvalStatus || winning.approvalStatus === 'APPROVED';
+        const effectiveApprovalStatus =
+          !isMasterApproved
+            ? master.approvalStatus
+            : !isMappingApproved
+            ? winning?.approvalStatus
+            : 'APPROVED';
+
         return {
           chargeMasterId: master.id,
           chargeMasterVersion: master.versionNumber || 1,
@@ -869,7 +916,13 @@ export const chargeMappingService = {
           sourceScope,
           isEnabled,
           isActiveInMaster: master.isActive,
-          isEffectiveNow: master.isActive && isEnabled && isMasterEffective && isMappingEffective,
+          isEffectiveNow:
+            master.isActive &&
+            isMasterApproved &&
+            isMappingApproved &&
+            isEnabled &&
+            isMasterEffective &&
+            isMappingEffective,
           isBranchOverride: useBranch,
           allowBranchOverride: companyMapping?.allowBranchOverride ?? true,
           centrallyControlledFields: lockedFields,
@@ -895,6 +948,20 @@ export const chargeMappingService = {
           effectiveFrom,
           effectiveTo,
           requiresApproval: Boolean(pickCentral('requiresApproval', 'requiresApproval', false)),
+          applicablePrTypes:
+            winning?.applicablePrTypes ||
+            companyMapping?.applicablePrTypes ||
+            master.applicablePrTypes ||
+            ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+          sapExpenseCode:
+            winning?.sapExpenseCode || companyMapping?.sapExpenseCode || master.sapExpenseCode,
+          sapExpenseName:
+            winning?.sapExpenseName || companyMapping?.sapExpenseName || master.sapExpenseName,
+          sapGlAccountCode:
+            winning?.sapGlAccountCode || companyMapping?.sapGlAccountCode || master.sapGlAccountCode,
+          taxCode:
+            winning?.taxCode || companyMapping?.taxCode || master.taxCode || taxObj?.taxCode,
+          approvalStatus: effectiveApprovalStatus,
           remarks: winning?.remarks,
         };
       })
@@ -902,21 +969,51 @@ export const chargeMappingService = {
   },
 
   /**
-   * Returns ONLY active, enabled, effective, and applicable charges mapped for PR selection.
+   * Returns ONLY active, approved, enabled, effective, and applicable charges mapped for PR selection.
+   * Inventory Charge Items are never returned for EXPENSE PRs.
    */
   getEffectivePrChargeOptions(
     companyId: string,
     branchId: string = 'ALL',
-    asOfDate?: string
+    asOfDateOrOptions?: string | { prType?: string; asOfDate?: string },
+    prTypeArg?: string
   ): EffectiveMappedChargeOption[] {
+    let asOfDate: string | undefined;
+    let prType: string | undefined = prTypeArg;
+
+    if (typeof asOfDateOrOptions === 'object' && asOfDateOrOptions !== null) {
+      prType = asOfDateOrOptions.prType || prType;
+      asOfDate = asOfDateOrOptions.asOfDate;
+    } else if (typeof asOfDateOrOptions === 'string') {
+      const trimmed = asOfDateOrOptions.trim().toUpperCase();
+      if (['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET', 'EXPENSE'].includes(trimmed)) {
+        prType = prType || trimmed;
+      } else {
+        asOfDate = asOfDateOrOptions;
+      }
+    }
+
+    if (prType && prType.trim().toUpperCase() === 'EXPENSE') {
+      return [];
+    }
+    const upperPrType = prType ? prType.trim().toUpperCase() : undefined;
     return this.resolveEffectiveMappingsForScope(companyId, branchId, asOfDate).filter(
       (opt) =>
         opt.isActiveInMaster &&
+        (!opt.approvalStatus || opt.approvalStatus === 'APPROVED') &&
         opt.isEnabled &&
         opt.isEffectiveNow &&
         opt.applicability !== 'NOT_APPLICABLE' &&
+        (!upperPrType ||
+          !opt.applicablePrTypes ||
+          opt.applicablePrTypes.length === 0 ||
+          opt.applicablePrTypes.includes(upperPrType as any)) &&
         (opt.permittedApplicationLevels.includes('PR_HEADER') ||
           opt.permittedApplicationLevels.includes('PR_LINE'))
     );
+  },
+
+  resetToDefaults(): void {
+    this.resetForTesting();
   },
 };

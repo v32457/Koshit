@@ -58,6 +58,21 @@ export function createChargesRouter(store: ChargeEngineBackendStore = defaultCha
     })
   );
 
+  router.post(
+    '/master/:id/approve',
+    asyncRoute((req, res) => {
+      const id = String(req.params.id);
+      const { decision, actorName, actorRole } = req.body || {};
+      const updated = store.approveChargeMaster(
+        id,
+        decision === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+        actorName,
+        actorRole
+      );
+      res.json({ data: updated });
+    })
+  );
+
   router.get(
     '/mappings',
     asyncRoute((req, res) => {
@@ -73,15 +88,22 @@ export function createChargesRouter(store: ChargeEngineBackendStore = defaultCha
       const companyId = String(req.query.companyId || 'co-kosh-01');
       const branchId = String(req.query.branchId || 'ALL');
       const asOfDate = req.query.asOfDate ? String(req.query.asOfDate) : undefined;
+      const prType = req.query.prType ? String(req.query.prType).toUpperCase() : undefined;
       const onlyPrApplicable = req.query.prApplicable === 'true';
-      let items = store.resolveEffectiveMappings(companyId, branchId, asOfDate);
+      if (prType === 'EXPENSE' && onlyPrApplicable) {
+        res.json({ data: [] });
+        return;
+      }
+      let items = store.resolveEffectiveMappings(companyId, branchId, asOfDate, prType);
       if (onlyPrApplicable) {
         items = items.filter(
           (i) =>
             i.isActiveInMaster &&
             i.isEnabled &&
             i.isEffectiveNow &&
+            i.approvalStatus === 'APPROVED' &&
             i.applicability !== 'NOT_APPLICABLE' &&
+            (!prType || i.applicablePrTypes.includes(prType)) &&
             (i.permittedApplicationLevels.includes('PR_HEADER') ||
               i.permittedApplicationLevels.includes('PR_LINE'))
         );

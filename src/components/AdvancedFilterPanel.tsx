@@ -9,7 +9,7 @@
  *  - <AdvancedFilterPanel />: Expandable multi-group, multi-condition builder + User-scoped Saved Filter Presets
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Filter,
   Plus,
@@ -25,6 +25,7 @@ import {
   Check,
   Edit3,
   Layers,
+  Search,
 } from 'lucide-react';
 import {
   AdvancedFilterState,
@@ -48,7 +49,256 @@ import {
   renameFilterPreset,
   deleteFilterPreset,
   countActiveAdvancedConditions,
+  parseMultiSelectFilter,
+  getConditionSelectedDropdownValues,
 } from '../services/advancedFilterEngine';
+
+// ============================================================================
+// 0. SEARCHABLE MULTI-SELECT FILTER DROPDOWN BOX
+// ============================================================================
+
+export interface MultiSelectOption {
+  value: string;
+  label: string;
+}
+
+export interface MultiSelectFilterDropdownProps {
+  label?: string;
+  allLabel?: string;
+  options: MultiSelectOption[];
+  /** Comma-separated string or 'ALL' / '' for quick-filter compatibility */
+  value?: string;
+  onChange?: (nextValue: string) => void;
+  /** Optional explicit string[] API for AdvancedFilterPanel conditions */
+  selectedValues?: string[];
+  onChangeValues?: (nextValues: string[]) => void;
+  emptyReturnValue?: string;
+  ariaLabel?: string;
+  className?: string;
+}
+
+export const MultiSelectFilterDropdown: React.FC<MultiSelectFilterDropdownProps> = ({
+  label,
+  allLabel = 'Select value...',
+  options,
+  value = 'ALL',
+  onChange,
+  selectedValues,
+  onChangeValues,
+  emptyReturnValue = 'ALL',
+  ariaLabel,
+  className = '',
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedList = useMemo(() => {
+    if (Array.isArray(selectedValues)) {
+      return selectedValues.filter(Boolean);
+    }
+    return parseMultiSelectFilter(value);
+  }, [selectedValues, value]);
+
+  const selectedSet = useMemo(() => new Set(selectedList), [selectedList]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const filteredOptions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (opt) =>
+        opt.label.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q)
+    );
+  }, [options, searchQuery]);
+
+  const commitValues = (nextVals: string[]) => {
+    const uniqueVals = Array.from(new Set(nextVals.filter(Boolean)));
+    if (onChangeValues) {
+      onChangeValues(uniqueVals);
+    }
+    if (onChange) {
+      onChange(uniqueVals.length === 0 ? emptyReturnValue : uniqueVals.join(','));
+    }
+  };
+
+  const handleToggleOption = (optValue: string) => {
+    if (selectedSet.has(optValue)) {
+      commitValues(selectedList.filter((v) => v !== optValue));
+    } else {
+      commitValues([...selectedList, optValue]);
+    }
+  };
+
+  const handleSelectAllFiltered = () => {
+    const merged = new Set(selectedList);
+    for (const opt of filteredOptions) {
+      merged.add(opt.value);
+    }
+    commitValues(Array.from(merged));
+  };
+
+  const handleClearAll = () => {
+    commitValues([]);
+  };
+
+  const summaryText = useMemo(() => {
+    if (selectedList.length === 0) {
+      return allLabel;
+    }
+    const labels = selectedList.map(
+      (v) => options.find((o) => o.value === v)?.label || v
+    );
+    if (labels.length === 1) {
+      return labels[0];
+    }
+    return `${labels[0]} (+${labels.length - 1})`;
+  }, [selectedList, options, allLabel]);
+
+  const hasSelection = selectedList.length > 0;
+
+  return (
+    <div ref={containerRef} className={`relative inline-block ${className}`}>
+      <button
+        type="button"
+        aria-label={ariaLabel || label || allLabel}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((prev) => !prev)}
+        className={`w-full px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 border transition cursor-pointer ${
+          hasSelection
+            ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-bold shadow-2xs'
+            : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200 text-slate-700 font-semibold'
+        }`}
+      >
+        <span className="truncate text-left max-w-[200px]" title={summaryText}>
+          {summaryText}
+        </span>
+        <span className="flex items-center gap-1 shrink-0">
+          {selectedList.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+              {selectedList.length}
+            </span>
+          )}
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform ${
+              hasSelection ? 'text-indigo-700' : 'text-slate-400'
+            } ${isOpen ? 'rotate-180' : ''}`}
+          />
+        </span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 z-50 w-68 sm:w-76 bg-white rounded-xl border border-slate-200 shadow-xl p-2 space-y-1.5 text-xs">
+          {/* Search Input inside Dropdown */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`Search ${label || allLabel}...`}
+              aria-label={`Search ${label || allLabel}`}
+              className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                aria-label="Clear option search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {/* Select All / Clear Action Header */}
+          <div className="flex items-center justify-between px-1 py-0.5 border-b border-slate-100 text-[11px]">
+            <span className="text-slate-500 font-semibold">
+              {selectedList.length} of {options.length} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer"
+              >
+                Select All
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          {/* Checkbox Options List */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-50 pr-0.5">
+            {filteredOptions.length === 0 ? (
+              <div className="py-4 text-center text-slate-400 text-[11px]">
+                No matching options found
+              </div>
+            ) : (
+              filteredOptions.map((opt) => {
+                const isChecked = selectedSet.has(opt.value);
+                return (
+                  <label
+                    key={opt.value}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleToggleOption(opt.value);
+                    }}
+                    className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer select-none transition ${
+                      isChecked
+                        ? 'bg-indigo-50/90 text-indigo-950 font-bold'
+                        : 'hover:bg-slate-50 text-slate-700 font-medium'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none shrink-0"
+                    />
+                    <span className="truncate flex-1" title={opt.label}>
+                      {opt.label}
+                    </span>
+                    {isChecked && (
+                      <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================================================
 // 1. INDEPENDENT DATE RANGE FILTER CONTROL
@@ -831,53 +1081,22 @@ export const AdvancedFilterPanel = <T,>({
                         {/* Value Input(s) */}
                         {!needsNoInput && (
                           <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-[200px]">
-                            {fieldType === 'DROPDOWN' && fieldDef?.options && !isMultiDropdown ? (
-                              <select
-                                aria-label={`Condition ${cIdx + 1} Value`}
-                                value={cond.value}
-                                onChange={(e) =>
+                            {fieldType === 'DROPDOWN' && fieldDef?.options ? (
+                              <MultiSelectFilterDropdown
+                                label={fieldDef.label}
+                                allLabel={`Select ${fieldDef.label}...`}
+                                ariaLabel={`Condition ${cIdx + 1} Value`}
+                                options={fieldDef.options}
+                                selectedValues={getConditionSelectedDropdownValues(cond)}
+                                onChangeValues={(nextVals) =>
                                   handleUpdateCondition(group.id, cond.id, {
-                                    value: e.target.value,
+                                    values: nextVals,
+                                    value: nextVals.join(','),
                                   })
                                 }
-                                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-w-[180px]"
-                              >
-                                <option value="">Select value...</option>
-                                {fieldDef.options.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : isMultiDropdown && fieldDef?.options ? (
-                              <div className="flex flex-wrap items-center gap-1 bg-slate-50 p-1.5 rounded-lg border border-slate-200">
-                                {fieldDef.options.map((opt) => {
-                                  const selectedList = cond.values || [];
-                                  const isChecked = selectedList.includes(opt.value);
-                                  return (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      onClick={() => {
-                                        const nextVals = isChecked
-                                          ? selectedList.filter((v) => v !== opt.value)
-                                          : [...selectedList, opt.value];
-                                        handleUpdateCondition(group.id, cond.id, {
-                                          values: nextVals,
-                                          value: nextVals.join(','),
-                                        });
-                                      }}
-                                      className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition cursor-pointer ${
-                                        isChecked
-                                          ? 'bg-indigo-600 text-white border-indigo-600'
-                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                                      }`}
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                emptyReturnValue=""
+                                className="min-w-[230px]"
+                              />
                             ) : fieldType === 'DATE' ? (
                               <>
                                 <input

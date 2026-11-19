@@ -604,6 +604,119 @@ export const INITIAL_CHARGE_MASTER: ChargeMasterRecord[] = [
 // Normalize defaultAllocationBasis on cm-inspection so TypeScript strict union matches EQUAL_DISTRIBUTION
 INITIAL_CHARGE_MASTER.find((c) => c.id === 'cm-inspection')!.defaultAllocationBasis = 'EQUAL_DISTRIBUTION';
 
+const DEFAULT_SAP_CHARGE_META: Record<
+  string,
+  { sapExpenseCode: string; sapExpenseName: string; sapGlAccountCode: string; taxCode: string }
+> = {
+  'CHG-LOAD': {
+    sapExpenseCode: 'SAP-EXP-LOAD-01',
+    sapExpenseName: 'Loading & Material Handling Expense',
+    sapGlAccountCode: '520110',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-UNLOAD': {
+    sapExpenseCode: 'SAP-EXP-UNLOAD-02',
+    sapExpenseName: 'Unloading & Receiving Bay Expense',
+    sapGlAccountCode: '520120',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-FREIGHT': {
+    sapExpenseCode: 'SAP-EXP-FREIGHT-03',
+    sapExpenseName: 'Inward Freight & Carriage Expense',
+    sapGlAccountCode: '520100',
+    taxCode: 'DOM-GTA-RCM-5',
+  },
+  'CHG-TRIP': {
+    sapExpenseCode: 'SAP-EXP-TRIP-04',
+    sapExpenseName: 'Dedicated Trip Transport Expense',
+    sapGlAccountCode: '520130',
+    taxCode: 'DOM-GTA-RCM-5',
+  },
+  'CHG-HANDLING': {
+    sapExpenseCode: 'SAP-EXP-HANDL-05',
+    sapExpenseName: 'Warehouse & Terminal Handling Expense',
+    sapGlAccountCode: '520140',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-PACKAGING': {
+    sapExpenseCode: 'SAP-EXP-PACK-06',
+    sapExpenseName: 'Packing & Crating Expense',
+    sapGlAccountCode: '520150',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-CUSTOMS': {
+    sapExpenseCode: 'SAP-EXP-CUST-07',
+    sapExpenseName: 'Import Basic Customs Duty & SWS',
+    sapGlAccountCode: '520200',
+    taxCode: 'IMP-BCD-10-SWS-10',
+  },
+  'CHG-CHA': {
+    sapExpenseCode: 'SAP-EXP-CHA-08',
+    sapExpenseName: 'Customs Clearance & CHA Agency Expense',
+    sapGlAccountCode: '520210',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-PORT-THC': {
+    sapExpenseCode: 'SAP-EXP-THC-09',
+    sapExpenseName: 'Port & Terminal Handling Expense',
+    sapGlAccountCode: '520220',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-IMP-IGST': {
+    sapExpenseCode: 'SAP-EXP-IGST-10',
+    sapExpenseName: 'Import IGST Clearing Account',
+    sapGlAccountCode: '520230',
+    taxCode: 'IMP-IGST-18',
+  },
+  'CHG-DEMURRAGE': {
+    sapExpenseCode: 'SAP-EXP-DEMUR-11',
+    sapExpenseName: 'Port Detention & Demurrage Expense',
+    sapGlAccountCode: '520240',
+    taxCode: 'DOM-GST-NR-18',
+  },
+  'CHG-INSURANCE': {
+    sapExpenseCode: 'SAP-EXP-INS-12',
+    sapExpenseName: 'Transit & Marine Cargo Insurance',
+    sapGlAccountCode: '520300',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-INSPECTION': {
+    sapExpenseCode: 'SAP-EXP-INSP-13',
+    sapExpenseName: 'Pre-Dispatch Quality Inspection Expense',
+    sapGlAccountCode: '520400',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-INSTALLATION': {
+    sapExpenseCode: 'SAP-EXP-INST-14',
+    sapExpenseName: 'Equipment Installation & Commissioning Expense',
+    sapGlAccountCode: '520500',
+    taxCode: 'DOM-GST-18',
+  },
+  'CHG-HEAVY-HAUL': {
+    sapExpenseCode: 'SAP-EXP-HAUL-15',
+    sapExpenseName: 'Heavy Haulage Surcharge Expense',
+    sapGlAccountCode: '520160',
+    taxCode: 'DOM-GTA-RCM-5',
+  },
+};
+
+for (const item of INITIAL_CHARGE_MASTER) {
+  const sapMeta = DEFAULT_SAP_CHARGE_META[item.chargeCode] || {
+    sapExpenseCode: `SAP-EXP-${item.chargeCode.replace(/[^A-Z0-9]/g, '')}`,
+    sapExpenseName: item.chargeName,
+    sapGlAccountCode: '520900',
+    taxCode: 'DOM-GST-18',
+  };
+  item.applicablePrTypes = item.applicablePrTypes || ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'];
+  item.sapExpenseCode = item.sapExpenseCode || sapMeta.sapExpenseCode;
+  item.sapExpenseName = item.sapExpenseName || sapMeta.sapExpenseName;
+  item.sapGlAccountCode = item.sapGlAccountCode || sapMeta.sapGlAccountCode;
+  item.taxCode = item.taxCode || sapMeta.taxCode;
+  item.approvalStatus = item.approvalStatus || 'APPROVED';
+  item.approvedBy = item.approvedBy || 'Vikramaditya Rao (Org Admin)';
+  item.approvedAt = item.approvedAt || '2026-04-01T00:05:00Z';
+}
+
 export const INITIAL_CHARGE_RULES: ChargeRuleRecord[] = [
   {
     id: 'crule-import-customs-mand',
@@ -781,8 +894,27 @@ export const chargeMasterService = {
       if (!memMaster) memMaster = JSON.parse(JSON.stringify(INITIAL_CHARGE_MASTER));
       list = memMaster!;
     }
-    const normalized = list.map((c) => ({ ...c, versionNumber: c.versionNumber || 1 }));
-    return includeInactive ? normalized : normalized.filter((c) => c.isActive);
+    const normalized = list.map((c) => {
+      const sapMeta = DEFAULT_SAP_CHARGE_META[c.chargeCode] || {
+        sapExpenseCode: `SAP-EXP-${c.chargeCode.replace(/[^A-Z0-9]/g, '')}`,
+        sapExpenseName: c.chargeName,
+        sapGlAccountCode: '520900',
+        taxCode: 'DOM-GST-18',
+      };
+      return {
+        ...c,
+        versionNumber: c.versionNumber || 1,
+        applicablePrTypes: c.applicablePrTypes || ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+        sapExpenseCode: c.sapExpenseCode || sapMeta.sapExpenseCode,
+        sapExpenseName: c.sapExpenseName || sapMeta.sapExpenseName,
+        sapGlAccountCode: c.sapGlAccountCode || sapMeta.sapGlAccountCode,
+        taxCode: c.taxCode || sapMeta.taxCode,
+        approvalStatus: c.approvalStatus || 'APPROVED',
+      };
+    });
+    return includeInactive
+      ? normalized
+      : normalized.filter((c) => c.isActive && (!c.approvalStatus || c.approvalStatus === 'APPROVED'));
   },
 
   saveCharges(charges: ChargeMasterRecord[]): void {
@@ -837,11 +969,23 @@ export const chargeMasterService = {
     }
 
     const now = new Date().toISOString();
+    const sapMeta = DEFAULT_SAP_CHARGE_META[code] || {
+      sapExpenseCode: `SAP-EXP-${code.replace(/[^A-Z0-9]/g, '')}`,
+      sapExpenseName: payload.chargeName.trim(),
+      sapGlAccountCode: '520900',
+      taxCode: 'DOM-GST-18',
+    };
     const record: ChargeMasterRecord = {
       ...payload,
       id: `cm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       chargeCode: code,
       versionNumber: 1,
+      applicablePrTypes: payload.applicablePrTypes || ['MANUAL', 'MRP', 'REPAIR', 'MAINTENANCE', 'CAPEX_ASSET'],
+      sapExpenseCode: payload.sapExpenseCode || sapMeta.sapExpenseCode,
+      sapExpenseName: payload.sapExpenseName || sapMeta.sapExpenseName,
+      sapGlAccountCode: payload.sapGlAccountCode || sapMeta.sapGlAccountCode,
+      taxCode: payload.taxCode || sapMeta.taxCode,
+      approvalStatus: payload.approvalStatus || 'APPROVED',
       createdBy: actor.name,
       createdDate: now,
       modifiedBy: actor.name,
@@ -936,7 +1080,36 @@ export const chargeMasterService = {
     isActive: boolean,
     actor: { id: string; name: string; user?: User }
   ): ChargeMasterRecord {
+    const existing = this.getCharges(true).find((c) => c.id === id);
+    if (isActive && existing && existing.approvalStatus && existing.approvalStatus !== 'APPROVED') {
+      throw new Error(
+        `Charge Master "${existing.chargeCode}" cannot be activated while approval status is ${existing.approvalStatus}.`
+      );
+    }
     return this.updateCharge(id, { isActive }, actor);
+  },
+
+  approveChargeMaster(
+    id: string,
+    checker: { id: string; name: string; user?: User },
+    activateImmediately = true
+  ): ChargeMasterRecord {
+    const existing = this.getCharges(true).find((c) => c.id === id);
+    if (!existing) throw new Error(`Charge Master "${id}" not found.`);
+    if (existing.modifiedBy && existing.modifiedBy === checker.name && existing.approvalStatus === 'PENDING_APPROVAL') {
+      throw new Error('Maker-Checker Violation: The user who submitted this Charge Master cannot approve it.');
+    }
+    const now = new Date().toISOString();
+    return this.updateCharge(
+      id,
+      {
+        approvalStatus: 'APPROVED',
+        approvedBy: checker.name,
+        approvedAt: now,
+        isActive: activateImmediately ? true : existing.isActive,
+      },
+      checker
+    );
   },
 
   getTaxMappings(): StatutoryTaxMapping[] {
@@ -1071,7 +1244,18 @@ export const chargeMasterService = {
   } {
     const txDate = ctx.transactionDate || new Date().toISOString().split('T')[0];
 
-    if (!chargeMaster.isActive) {
+    if (!chargeMaster.isActive || (chargeMaster.approvalStatus && chargeMaster.approvalStatus !== 'APPROVED')) {
+      return { applicability: 'NOT_APPLICABLE', requiresConfirmation: false };
+    }
+    if (ctx.prType && ctx.prType.toUpperCase() === 'EXPENSE') {
+      return { applicability: 'NOT_APPLICABLE', requiresConfirmation: false };
+    }
+    if (
+      ctx.prType &&
+      chargeMaster.applicablePrTypes &&
+      chargeMaster.applicablePrTypes.length > 0 &&
+      !chargeMaster.applicablePrTypes.includes(ctx.prType as any)
+    ) {
       return { applicability: 'NOT_APPLICABLE', requiresConfirmation: false };
     }
     if (chargeMaster.effectiveFrom && txDate < chargeMaster.effectiveFrom) {

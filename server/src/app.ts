@@ -13,12 +13,18 @@ import { createUomsRouter } from './routes/uoms.js';
 import { createItemGovernanceRouter } from './routes/itemGovernance.js';
 import { createBranchItemsRouter } from './routes/branchItems.js';
 import { createChangeHistoryRouter } from './routes/changeHistory.js';
+import { createPrDuplicateGovernanceRouter } from './routes/prDuplicateGovernance.js';
+import type { PrDuplicateGovernanceBackendStore } from './services/prDuplicateGovernanceBackend.js';
+import { createPrGovernanceRouter } from './routes/prGovernance.js';
+import type { PrGovernanceBackendStore } from './services/prGovernanceBackend.js';
 
 export function createApp(
   databaseCheck: () => Promise<void> = checkDatabase,
   gstDependencies: Partial<GstRouterDependencies> = {},
   chargeStore?: ChargeEngineBackendStore,
   securityStore?: ZeroTrustSecurityBackendStore,
+  prDuplicateStore?: PrDuplicateGovernanceBackendStore,
+  prGovernanceStore?: PrGovernanceBackendStore,
 ): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -32,6 +38,8 @@ export function createApp(
   app.use('/api/gst', createGstRouter(gstDependencies));
   app.use('/api/charges', createChargesRouter(chargeStore));
   app.use('/api/security', createSecurityRouter(securityStore));
+  app.use('/api/pr-duplicate-governance', createPrDuplicateGovernanceRouter(prDuplicateStore));
+  app.use('/api/pr-governance', createPrGovernanceRouter(prGovernanceStore));
   app.use('/api/uoms', createUomsRouter());
 
   app.use((_req, res) => {

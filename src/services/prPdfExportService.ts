@@ -326,7 +326,20 @@ export function generatePurchaseRequisitionPdf(
   ];
 
   const rawLines =
-    pr.lines && pr.lines.length > 0
+    pr.prType === 'EXPENSE' && pr.expenseLines && pr.expenseLines.length > 0
+      ? pr.expenseLines.map((el) => ({
+          itemCode: `${el.expenseCategoryCode} (GL ${el.sapGlAccountCode})`,
+          description: `${el.expenseDescription} — ${el.businessJustification}`,
+          inventoryUom: 'SERVICE',
+          requestedQuantity: 1,
+          approximateUnitPrice: el.baseAmount ?? el.amount ?? 0,
+          estimatedTotalValue: el.totalAmountWithTax ?? el.amount ?? 0,
+          expectedDeliveryDate: el.expectedServiceDate,
+          deliverySchedules: el.expectedServiceDate
+            ? [{ id: `exp-sch-${el.id}`, lineId: el.id, deliveryDate: el.expectedServiceDate, quantity: 1 }]
+            : [],
+        }))
+      : pr.lines && pr.lines.length > 0
       ? pr.lines
       : ((pr as any).items || []).map((it: any) => ({
           itemCode: it.itemCode,
@@ -424,12 +437,22 @@ export function generatePurchaseRequisitionPdf(
           0
         );
 
-  const activeCharges = (pr.chargeItems || []).filter(
-    (c) => c && c.applicability !== 'NOT_APPLICABLE'
+  const activeHeaderCharges = (pr.chargeItems || [])
+    .filter((c) => c && c.applicability !== 'NOT_APPLICABLE')
+    .map((c) => ({ ...c, _scopeLabel: 'Header' }));
+  const activeLineCharges = rawLines.flatMap((l: any, lineIdx: number) =>
+    ((l.lineCharges || []) as any[])
+      .filter((c) => c && c.applicability !== 'NOT_APPLICABLE')
+      .map((c) => ({ ...c, _scopeLabel: `Line #${lineIdx + 1} (${l.itemCode})` }))
   );
+  const activeCharges = [...activeHeaderCharges, ...activeLineCharges];
   const chargesSummary =
     activeCharges.length > 0
-      ? prChargeItemService.calculateRequisitionChargesSummary(activeCharges, computedItemsTotal)
+      ? prChargeItemService.calculateFullRequisitionSummary(
+          pr.chargeItems,
+          rawLines,
+          computedItemsTotal
+        )
       : null;
 
   // Render Applicable Charge Items Table (if any Applicable or Fixed-Tariff charges exist)
@@ -465,7 +488,7 @@ export function generatePurchaseRequisitionPdf(
       `Total (${currency})`,
     ];
 
-    const chargeRows = activeCharges.map((ci, idx) => {
+    const chargeRows = activeCharges.map((ci: any, idx) => {
       const appLabel =
         ci.applicability === 'AS_PER_FIXED_CHARGES'
           ? 'As Per Fixed Charges'
@@ -481,14 +504,16 @@ export function generatePurchaseRequisitionPdf(
           ? 'At Actuals'
           : 'Fixed Rate';
 
+      const isActuals = ci.applicability === 'APPLICABLE' && ci.chargeType === 'AT_ACTUALS';
+      const scopeSuffix = ci._scopeLabel && ci._scopeLabel !== 'Header' ? ` [${ci._scopeLabel}]` : '';
       return [
         idx + 1,
-        sanitizeTextForExport(`${ci.chargeName} (${ci.chargeCode})`),
+        sanitizeTextForExport(`${ci.chargeName} (${ci.chargeCode})${scopeSuffix}`),
         appLabel,
         sanitizeTextForExport(basisLabel),
-        formatEstimatedValue(ci.estimatedAmount || 0, currency),
-        formatEstimatedValue(ci.taxAmount || 0, currency),
-        formatEstimatedValue(ci.totalWithTax || ci.estimatedAmount || 0, currency),
+        isActuals ? '—' : formatEstimatedValue(ci.estimatedAmount || 0, currency),
+        isActuals ? '—' : formatEstimatedValue(ci.taxAmount || 0, currency),
+        isActuals ? '—' : formatEstimatedValue(ci.totalWithTax || ci.estimatedAmount || 0, currency),
       ];
     });
 

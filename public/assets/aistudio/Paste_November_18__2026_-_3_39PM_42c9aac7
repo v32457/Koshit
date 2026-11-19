@@ -1,0 +1,1117 @@
+# MASTER IMPLEMENTATION PROMPT
+# KOSHIT – PURCHASE REQUISITION, CHARGE ITEM & EXPENSE PROCUREMENT GOVERNANCE
+## Company / Branch Policy | PR Type Master | Charge Item Master | Expense PR | Approval Workflow | Budget Controls | SAP Business One 10.0 HANA
+
+---
+
+# 0. ROLE AND IMPLEMENTATION OBJECTIVE
+
+You are acting as the Principal Enterprise Solution Architect, Procurement Functional Architect, SAP Business One Integration Architect and Senior Full-Stack Engineer for Kosh Innovations.
+
+Your responsibility is to extend the existing Koshit Procurement and Purchase Requisition platform.
+
+The objective is to establish a unified, policy-driven procurement architecture supporting:
+
+1. Inventory Purchase Requisitions.
+2. Inventory-linked Charge Items.
+3. Independent Expense Purchase Requisitions.
+4. Company-level and Branch-level procurement policies.
+5. PR Type-based category eligibility.
+6. Configurable approval workflows.
+7. Conditional budget validation.
+8. Financial and tax calculations.
+9. SAP Business One 10.0 HANA integration.
+10. Complete procurement audit and transaction traceability.
+
+This is an extension of the existing Koshit application.
+
+Do not create a new procurement application or duplicate existing functionality.
+
+## IMPLEMENTATION PRIORITY
+
+First inspect the existing application, components, repositories, database models, APIs, governance configuration, PR Type Master, Charge Item Master, approval workflow and SAP integration.
+
+Identify existing functionality and reuse it.
+
+Do not introduce new data structures where existing entities can be extended safely.
+
+Implement only the changes required by this specification.
+
+Do not modify unrelated modules.
+
+---
+
+# 1. CORE PROCUREMENT ARCHITECTURE
+
+Establish two clearly differentiated procurement mechanisms.
+
+## A. INVENTORY PURCHASE REQUISITION
+
+Used when the primary procurement requirement is inventory or material.
+
+Supports:
+- Inventory item lines.
+- Item quantities and UOM.
+- Unit price.
+- Warehouse selection.
+- Delivery schedules.
+- Inventory-linked Charge Items.
+- Header-level Charge Items.
+- Line-level Charge Items.
+- Landed cost calculation.
+
+Examples:
+
+Raw Material Purchase:
+- Material: ₹30,000
+- Freight: ₹3,000
+- Loading: ₹1,000
+- Insurance: ₹500
+
+These additional expenses belong to the inventory procurement transaction.
+
+They must be recorded as Charge Items, not as independent Expense PR lines.
+
+## B. EXPENSE PURCHASE REQUISITION
+
+Introduce a new PR Type:
+
+EXPENSE – Expense Purchase Requisition.
+
+Used when the requirement is an independent expense or service and is not an additional cost associated with an inventory purchase.
+
+Examples:
+- Consultancy.
+- Professional Fees.
+- Legal Fees.
+- Audit Fees.
+- Office Rent.
+- Software Subscription.
+- Training.
+- Independent Maintenance Services.
+- Facility Management.
+- Administrative Services.
+- Other approved operational expenses.
+
+An Expense PR must not require inventory item lines.
+
+It must support multiple independent expense/service lines.
+
+## C. CLASSIFICATION RULE – MANDATORY
+
+Apply the following business rule:
+
+If an expense is directly associated with inventory procurement, classify it as a Charge Item.
+
+If an expense is independent of inventory procurement, classify it under EXPENSE PR.
+
+Examples:
+
+| Expense | Classification |
+|---|---|
+| Freight for purchased raw material | Charge Item |
+| Loading purchased material | Charge Item |
+| Insurance for purchased shipment | Charge Item |
+| Packing for purchased material | Charge Item |
+| Independent transportation contract | EXPENSE PR |
+| Annual consultancy fees | EXPENSE PR |
+| Software subscription | EXPENSE PR |
+| Office rent | EXPENSE PR |
+| Independent maintenance service | EXPENSE PR |
+
+Do not classify expenses using their names alone.
+
+Use the business purpose and relationship to the inventory procurement transaction.
+
+Prevent duplicate recording of the same expense as both a Charge Item and an independent Expense PR.
+
+---
+
+# 2. PR TYPE MASTER
+
+Extend the existing PR Type Master & Eligibility Mapping.
+
+Retain the existing PR Types:
+
+| Code | PR Type | Purpose |
+|---|---|---|
+| MANUAL | Manual Requisition | Manual inventory procurement |
+| MRP | MRP Generated | MRP-driven inventory procurement |
+| REPAIR | Repair Requisition | Repair and breakdown procurement |
+| MAINTENANCE | Maintenance Requisition | Preventive maintenance procurement |
+| EXPENSE | Expense Requisition | Independent expenses and services |
+
+EXPENSE must be introduced through the existing configurable PR Type Master.
+
+Required configuration:
+
+- PR Type Code.
+- PR Type Name.
+- Description.
+- Company Eligibility.
+- Branch Eligibility.
+- Eligible Category Mapping.
+- Effective From Date.
+- Effective Until Date.
+- Active/Inactive Status.
+- Approval Status.
+- Version Number.
+- Created By.
+- Modified By.
+- Maker-Checker Approval.
+- Audit History.
+
+Do not activate EXPENSE automatically if its mandatory category mapping, accounting mapping or approval configuration is incomplete.
+
+Preserve all existing PR Types and their functionality.
+
+---
+
+# 3. CHARGE ITEM MASTER
+
+Preserve and extend the existing Kosh Charge Item Master.
+
+Do not create a second Charge Item Master.
+
+The existing master must remain the authoritative source for inventory-linked additional expenses.
+
+Required master attributes:
+
+- Charge Item Code.
+- Charge Item Name.
+- Description.
+- Charge Category.
+- Charge Type.
+- Fixed Amount / Percentage.
+- Rate / Tariff Basis.
+- Default Rate.
+- Minimum Amount.
+- Maximum Amount.
+- Tax Code.
+- GST Percentage.
+- Applicable Company.
+- Applicable Branch.
+- Applicable PR Type.
+- Effective From.
+- Effective Until.
+- Mandatory / Optional.
+- Active / Inactive.
+- Approval Status.
+- SAP Expense Code Mapping.
+- Accounting Mapping.
+- Created By.
+- Modified By.
+
+Support existing charge categories such as:
+
+- Freight.
+- Logistics.
+- Transportation.
+- Loading.
+- Unloading.
+- Packing.
+- Insurance.
+- Handling.
+- Other inventory-linked charges.
+
+Do not expose inactive or unapproved Charge Items.
+
+## 3.1 Charge Item Applicability
+
+A Charge Item must be eligible only when the effective configuration permits it for the selected:
+
+- Company.
+- Branch.
+- PR Type.
+- Inventory category, where applicable.
+- Effective policy period.
+
+Reuse existing Company/Branch Charge Item Mapping.
+
+Respect mandatory company-level charges and approved branch overrides.
+
+---
+
+# 4. HEADER-LEVEL CHARGE ITEMS
+
+Extend the existing Charge Items section in the Purchase Requisition creation screen.
+
+Allow multiple Charge Items applicable to the entire inventory PR.
+
+Examples:
+
+- Overall Freight.
+- Transportation.
+- Insurance.
+- Packing.
+- Shared Handling.
+
+Each header-level Charge Item must support:
+
+- Charge Item Code.
+- Charge Item Name.
+- Description.
+- Calculation Basis.
+- Fixed / Percentage Rate.
+- Base Amount.
+- Tax Code.
+- Tax Percentage.
+- Tax Amount.
+- Total Including Tax.
+- Payee / Entity.
+- Currency.
+- Exchange Rate.
+- Remarks.
+
+Header-level charges belong to the PR header.
+
+They must be calculated exactly once.
+
+They must not be duplicated across inventory lines.
+
+If the existing Charge Item Master defines a mandatory header-level charge, enforce it according to the effective policy.
+
+---
+
+# 5. LINE-LEVEL CHARGE ITEMS
+
+Extend the existing PR Item Lines section.
+
+Each inventory item line must have an expandable Charge Items panel.
+
+Allow multiple eligible Charge Items against each inventory line.
+
+Examples:
+
+Item A:
+- Freight.
+- Handling.
+- Insurance.
+
+Item B:
+- Packing.
+- Transportation.
+
+Each line-level Charge Item must maintain:
+
+- PR Line ID.
+- Charge Item ID.
+- Charge Description.
+- Calculation Basis.
+- Rate.
+- Base Amount.
+- Tax Code.
+- Tax Percentage.
+- Tax Amount.
+- Total Including Tax.
+- Payee.
+- Currency.
+- Remarks.
+
+Maintain the relationship:
+
+PR Header → Inventory Line → Charge Item Records.
+
+Do not allocate line-level charges to unrelated inventory lines.
+
+Ensure that the same Charge Item is not duplicated at both header and line level unless the applicable policy explicitly permits separate allocations.
+
+---
+
+# 6. EXPENSE PR FUNCTIONALITY
+
+Introduce an independent Expense PR creation workflow using the existing Purchase Requisition screen and design standards.
+
+When the user selects EXPENSE:
+
+- Do not require inventory item lines.
+- Do not show inventory warehouse selection as a mandatory field.
+- Do not display inventory-linked Charge Items.
+- Display the Expense PR line-entry interface.
+- Display only approved Expense Categories.
+- Apply the effective Company/Branch policy.
+- Apply the existing approval workflow.
+
+## 6.1 Expense PR Line Details
+
+Each expense line must support:
+
+- Expense Category.
+- Expense Code.
+- Description.
+- Quantity, where applicable.
+- UOM, where applicable.
+- Unit Rate.
+- Base Amount.
+- Currency.
+- Exchange Rate.
+- Tax Code.
+- GST Percentage.
+- Tax Amount.
+- Total Amount.
+- Vendor / Payee.
+- Department.
+- Cost Centre.
+- Required Date.
+- Remarks.
+- Supporting Documents.
+
+Allow multiple expense lines in one Expense PR.
+
+## 6.2 Expense Category Examples
+
+Configure eligible categories through the Expense Category Master:
+
+- Professional Services.
+- Consultancy.
+- Legal.
+- Audit.
+- Rent.
+- Software Subscription.
+- Training.
+- Facility Management.
+- Independent Maintenance.
+- Administrative Expenses.
+- Other approved services.
+
+Do not hardcode this list in the frontend.
+
+The effective Company/Branch/PR Type mapping must determine availability.
+
+## 6.3 Expense PR Header
+
+The header must contain:
+
+- Company.
+- Branch.
+- PR Type = EXPENSE.
+- Priority.
+- Department.
+- Currency.
+- Expected Service Date.
+- Purchase Purpose.
+- Requester.
+- Cost Centre, where configured.
+
+The Expense PR must support supporting document attachments and mandatory business justification.
+
+---
+
+# 7. COMPANY-LEVEL AND BRANCH-LEVEL GOVERNANCE
+
+Use the existing Master Purchase Requisition Governance Configuration.
+
+Do not create a separate policy engine.
+
+Resolve the effective policy using:
+
+1. Company.
+2. Branch.
+3. Policy Scope.
+4. Inheritance Mode.
+5. Branch Override Permission.
+6. Effective From Date.
+7. Effective Until Date.
+8. Approval Status.
+9. Policy Version.
+
+Apply the existing governance hierarchy.
+
+## 7.1 Company-Level Policy
+
+Company-level settings must remain authoritative wherever centrally controlled.
+
+## 7.2 Branch-Level Policy
+
+Allow branch-level overrides only when explicitly permitted by the company policy.
+
+## 7.3 Effective Policy Resolution
+
+Before enabling a PR operation, resolve the effective configuration.
+
+Apply it consistently to:
+
+- PR creation.
+- PR Type eligibility.
+- Charge Item eligibility.
+- Expense Category eligibility.
+- Mandatory fields.
+- Budget validation.
+- Approval routing.
+- Submission.
+- SAP integration.
+
+Maintain the policy version used for each PR.
+
+Do not permit users to bypass centrally controlled restrictions.
+
+---
+
+# 8. PR TYPE-BASED CATEGORY ELIGIBILITY
+
+This is a mandatory functional requirement.
+
+Use the existing PR Type Master & Eligibility Mapping.
+
+The PR Type selected in the PR Header must determine the eligible category list.
+
+## 8.1 Inventory PR Types
+
+For MANUAL, MRP, REPAIR and MAINTENANCE:
+
+- Display only approved inventory categories mapped to the selected PR Type.
+- Display only Charge Items permitted for that PR Type and Company/Branch.
+- Respect existing inventory and charge applicability.
+
+## 8.2 EXPENSE PR
+
+When EXPENSE is selected:
+
+- Display only approved Expense Categories mapped to EXPENSE.
+- Do not display inventory categories as mandatory selections.
+- Do not display inventory-linked Charge Items.
+- Do not allow unauthorized categories.
+
+## 8.3 Mapping Validation
+
+Validate:
+
+- Company ID.
+- Branch ID.
+- PR Type ID.
+- Category ID.
+- Mapping Rule.
+- Active Status.
+- Effective Dates.
+- Approval Status.
+- Policy Version.
+
+Do not show expired, inactive or unapproved mappings.
+
+## 8.4 Dynamic PR Type Changes
+
+When the PR Type changes:
+
+- Refresh eligible categories immediately.
+- Revalidate all existing inventory lines.
+- Revalidate header Charge Items.
+- Revalidate line-level Charge Items.
+- Revalidate Expense PR categories.
+
+Do not silently delete existing data.
+
+Display precise validation messages and prevent submission until invalid selections are corrected.
+
+Enforce the same eligibility checks in the backend.
+
+---
+
+# 9. APPROVAL WORKFLOW
+
+Reuse the existing Approval Policy & Matrix Configuration.
+
+Do not introduce a separate approval mechanism for Charge Items or EXPENSE PR.
+
+Respect:
+
+- Configured Approval Levels.
+- Amount-Based Approval Matrix.
+- Branch-Level Approvers.
+- Department-Level Approvers.
+- Authorized Roles.
+- Mandatory Manager L1 Approval.
+- Maker-Checker Controls.
+- Approval Escalation SLA.
+- Automated SLA Escalation.
+- Approver Delegation.
+- Mandatory Approval Remarks.
+- Approval Notifications.
+
+## 9.1 Approval Value Calculation
+
+For inventory PRs, calculate the configured approval basis using:
+
+- Inventory amounts.
+- Header Charge Items.
+- Line-Level Charge Items.
+- Applicable taxes.
+
+For Expense PRs, calculate the configured approval basis using:
+
+- All independent expense lines.
+- Applicable taxes.
+- Currency conversion.
+
+Prevent double counting.
+
+## 9.2 Workflow Rules
+
+- Draft PRs follow existing editing rules.
+- Submitted PRs enter the configured approval workflow.
+- Returned PRs follow the existing correction and resubmission process.
+- Rejected PRs follow the existing rejection policy.
+- Approved PRs become eligible for the configured SAP integration stage.
+
+Do not create SAP purchasing documents before all mandatory approvals are completed.
+
+---
+
+# 10. CONDITIONAL BUDGET VALIDATION
+
+Use the existing Budget & Financial Controls configuration.
+
+Do not create separate budget validation logic for Expense PR.
+
+## 10.1 Budget Validation Enabled
+
+When Enable Budget Validation = ON:
+
+For inventory PRs:
+- Validate inventory amounts.
+- Include header Charge Items.
+- Include line-level Charge Items.
+- Include applicable taxes according to the configured budget basis.
+
+For Expense PRs:
+- Validate all expense lines.
+- Apply configured expense budget categories.
+- Apply relevant department and cost centre controls.
+- Include taxes according to the configured budget basis.
+
+Display:
+- Budget Allocation.
+- Existing Commitments.
+- Available Budget.
+- PR Requested Value.
+- Budget Consumption.
+- Validation Result.
+- Warnings and Restrictions.
+
+Respect:
+- Mandatory Budget Check Before Submission.
+- Reserve Budget on PR Approval.
+- Automatic Uncommitted Budget Release.
+- Existing PO Commitment Protection.
+- Duplicate Budget Release Protection.
+- Budget Reconciliation Audit.
+
+## 10.2 Budget Validation Disabled
+
+When Enable Budget Validation = OFF:
+
+- Do not execute budget validation.
+- Do not display budget validation cards.
+- Do not display budget warnings.
+- Do not require a budget check before submission.
+- Do not block PR submission due to missing budget information.
+- Do not create artificial budget reservations.
+- Do not execute automatic budget release operations.
+
+All other mandatory procurement controls must remain active.
+
+The UI and backend must follow the same effective policy.
+
+---
+
+# 11. FINANCIAL CALCULATIONS
+
+Implement separate financial calculations for Inventory PR and Expense PR.
+
+## 11.1 Inventory PR
+
+Display:
+
+- Inventory Subtotal.
+- Header Charge Items.
+- Line-Level Charge Items.
+- Total Applicable Charges.
+- Inventory Tax.
+- Charge Item Tax.
+- Total Landed PR Value.
+
+Formula:
+
+Total Landed PR Value =
+Inventory Subtotal
++ Header Charge Items
++ Line-Level Charge Items
++ Applicable Taxes.
+
+Ensure no duplicate charge or tax calculation.
+
+## 11.2 Expense PR
+
+Display:
+
+- Expense Subtotal.
+- Expense Tax.
+- Total Expense PR Value.
+
+Formula:
+
+Total Expense PR Value =
+Sum of Expense Line Base Amounts
++ Applicable Expense Taxes.
+
+Do not include inventory amounts or inventory-linked Charge Items in Expense PR.
+
+## 11.3 Calculation Controls
+
+Support:
+
+- Currency precision.
+- Exchange rates.
+- Fixed charges.
+- Percentage-based charges.
+- Tax-inclusive and tax-exclusive configuration, where supported.
+- Rounding rules.
+- Negative-value prevention.
+- Mandatory amount validation.
+
+Use decimal-safe calculations.
+
+Do not rely exclusively on frontend calculations.
+
+Backend totals must be authoritative.
+
+---
+
+# 12. SAP BUSINESS ONE 10.0 HANA INTEGRATION
+
+Koshit is the procurement governance and workflow platform.
+
+SAP Business One is the ERP system for the purchasing transactions assigned to it.
+
+Use the existing SAP Business One Service Layer integration.
+
+Never write directly to SAP HANA application tables.
+
+## 12.1 Inventory PR Integration
+
+For approved inventory PRs:
+
+- Generate SAP Item-type Purchase Requests.
+- Map inventory item codes.
+- Map quantities and UOM.
+- Map warehouse information.
+- Map delivery dates.
+- Preserve Koshit PR and line references.
+
+Charge Items must remain associated with the inventory procurement transaction.
+
+At the subsequent SAP purchasing document stage:
+
+- Map eligible header-level charges to SAP document-level Additional Expenses.
+- Map eligible line-level charges to SAP row-level Additional Expenses.
+- Validate SAP expense codes.
+- Validate tax mappings.
+- Validate account determination.
+- Prevent duplicate posting.
+
+Do not assume every Charge Item is automatically available as an expense in every SAP document type.
+
+Verify the actual installed SAP B1 version, patch level and Service Layer metadata before implementing the mappings.
+
+## 12.2 EXPENSE PR Integration
+
+For approved EXPENSE PRs:
+
+- Generate SAP Service-type Purchase Requests.
+- Map expense descriptions and supported service purchasing information.
+- Validate configured service purchasing requirements.
+- Validate SAP expense account mappings.
+- Validate tax mappings.
+- Preserve vendor and currency information where applicable.
+- Preserve the Koshit Expense PR reference.
+
+Do not create dummy inventory items.
+
+Do not convert every expense into an inventory-linked Additional Expense.
+
+## 12.3 SAP Expense and Account Mapping
+
+Maintain approved mappings between:
+
+Koshit Expense Category
+→ SAP Service Purchasing Information
+→ SAP Expense/Account Determination
+→ Applicable Tax Configuration.
+
+The actual SAP mapping must be validated against the installed system.
+
+Do not fabricate account codes or tax codes.
+
+## 12.4 SAP Document Conversion
+
+During the subsequent Purchase Order conversion process:
+
+- Preserve the original Koshit PR reference.
+- Preserve Charge Item references.
+- Apply eligible document-level and line-level Additional Expenses.
+- Respect supplier and purchasing configuration.
+- Prevent duplicate expense posting.
+- Maintain SAP document references.
+
+Do not automatically create separate Purchase Orders for every expense.
+
+Respect the existing procurement and supplier selection process.
+
+---
+
+# 13. SAP INTEGRATION TRACEABILITY
+
+Maintain a persistent mapping between Koshit PR records and SAP documents.
+
+Koshit PR fields:
+
+- Koshit PR ID.
+- Company.
+- Branch.
+- PR Type.
+- Requester.
+- Approval Status.
+- Approved Value.
+- Integration Status.
+
+SAP document fields:
+
+- SAP Document Type.
+- SAP DocEntry.
+- SAP DocNum.
+- Koshit Parent PR ID.
+- Integration Timestamp.
+- SAP Response.
+- Integration Status.
+- Error Details.
+
+Implement:
+
+- Idempotent document creation.
+- Duplicate document prevention.
+- Retry handling.
+- Partial failure handling.
+- SAP response logging.
+- Integration reconciliation.
+
+Use explicit integration states:
+
+- NOT_STARTED.
+- PENDING.
+- INTEGRATED.
+- FAILED.
+- REQUIRES_RECONCILIATION.
+
+If SAP confirms document creation but Koshit fails to record the response, reconcile the SAP document before attempting another creation.
+
+Never blindly retry a transaction that may already have succeeded.
+
+---
+
+# 14. UI/UX REQUIREMENTS
+
+Preserve the existing Koshit Purchase Requisition UI/UX.
+
+Use the existing design system, layout, typography, contextual banners, tabs, validation messages, status badges and footer actions.
+
+## 14.1 Inventory PR Screen
+
+Display:
+
+A. PR Header Information.
+
+B. PR Item Lines & Deliverables.
+
+C. Charge Items.
+
+D. Financial Summary.
+
+E. Conditional Budget Validation.
+
+F. Supporting Documents.
+
+G. Governance and Approval Summary.
+
+Charge Items must remain accessible at header and line levels.
+
+## 14.2 Expense PR Screen
+
+When EXPENSE is selected:
+
+A. PR Header Information.
+
+B. Expense Details.
+
+C. Multiple Expense Lines.
+
+D. Financial Summary.
+
+E. Conditional Budget Validation.
+
+F. Supporting Documents.
+
+G. Governance and Approval Summary.
+
+Do not display unnecessary inventory item, warehouse or inventory-linked Charge Item controls.
+
+## 14.3 Dynamic Behaviour
+
+Changing PR Type must refresh the applicable interface and category eligibility.
+
+Do not silently discard entered information.
+
+Provide clear messages explaining why an existing selection is no longer eligible.
+
+Maintain responsive and accessible UI behaviour.
+
+---
+
+# 15. DATA MODEL AND REPOSITORY REQUIREMENTS
+
+Inspect the existing database and repositories before introducing entities.
+
+Reuse existing entities wherever possible.
+
+Extend the existing models only when necessary.
+
+Potential required records:
+
+1. PR Type Master.
+2. PR Type Eligibility Mapping.
+3. Charge Item Master.
+4. Company/Branch Charge Item Mapping.
+5. Expense Category Master.
+6. Company/Branch Expense Category Mapping.
+7. PR Header Charge Records.
+8. PR Line Charge Records.
+9. PR Expense Lines.
+10. SAP Document Mapping.
+11. SAP Expense Account Mapping.
+12. PR Audit History.
+
+Maintain:
+- Unique identifiers.
+- Foreign keys.
+- Referential integrity.
+- Effective dates.
+- Version control.
+- Audit timestamps.
+- Created By / Modified By.
+- Status history.
+
+Do not store authoritative financial, approval or expense records exclusively in browser state.
+
+---
+
+# 16. SECURITY AND AUDIT
+
+Enforce existing RBAC.
+
+Ensure that:
+
+- Users can select only authorized Company and Branch combinations.
+- Users cannot add unauthorized categories.
+- Users cannot modify approved Charge Item mappings.
+- Users cannot modify approved Expense Category mappings without authorization.
+- Users cannot bypass approval controls.
+- Users cannot alter submitted financial amounts without the appropriate workflow.
+- Maker-Checker controls remain enforced.
+
+Maintain immutable audit records for:
+
+- PR creation.
+- Expense entry.
+- Charge Item addition.
+- Financial changes.
+- Policy resolution.
+- Category eligibility.
+- Budget validation.
+- Approval and rejection.
+- SAP integration.
+- Retry and reconciliation.
+
+---
+
+# 17. ACCEPTANCE TESTING
+
+Execute the following scenarios.
+
+## Inventory PR Tests
+
+1. MANUAL inventory PR without Charge Items.
+2. MANUAL inventory PR with header-level Charge Items.
+3. MANUAL inventory PR with line-level Charge Items.
+4. Inventory PR with both header and line-level Charge Items.
+5. MRP inventory PR.
+6. REPAIR inventory PR.
+7. MAINTENANCE inventory PR.
+8. Mandatory Charge Item enforcement.
+9. Fixed Charge calculation.
+10. Percentage Charge calculation.
+11. Tax and landed cost calculation.
+
+## Expense PR Tests
+
+12. EXPENSE PR without inventory lines.
+13. EXPENSE PR with one expense line.
+14. EXPENSE PR with multiple expense lines.
+15. EXPENSE PR with different approved categories.
+16. EXPENSE PR with supporting documents.
+17. Expense-only financial calculation.
+18. Expense Category eligibility validation.
+
+## Governance Tests
+
+19. Company-level policy enforcement.
+20. Approved Branch-level override.
+21. Unauthorized Branch override rejection.
+22. PR Type-based category filtering.
+23. Dynamic PR Type change.
+24. Effective date validation.
+25. Maker-Checker enforcement.
+26. Approval matrix routing.
+27. Approval escalation.
+28. Returned PR correction and resubmission.
+
+## Budget Tests
+
+29. Budget Validation enabled.
+30. Budget Validation disabled.
+31. Mandatory Budget Check enabled.
+32. Mandatory Budget Check disabled.
+33. Budget reservation at configured approval stage.
+34. Budget reconciliation.
+
+## SAP Integration Tests
+
+35. Inventory PR → SAP Item-type Purchase Request.
+36. EXPENSE PR → SAP Service-type Purchase Request.
+37. Charge Item mapping at the supported SAP purchasing document stage.
+38. SAP expense account mapping.
+39. Tax mapping.
+40. SAP transaction creation failure.
+41. Integration retry.
+42. Duplicate SAP document prevention.
+43. SAP document reconciliation.
+44. PO conversion and expense mapping.
+
+Do not claim a test passed unless it was actually executed.
+
+Where SAP environment access is unavailable, distinguish application-level tests from SAP integration tests.
+
+---
+
+# 18. STRICT IMPLEMENTATION RESTRICTIONS
+
+- Modify ONLY the existing PR module and necessary supporting integration components.
+- Preserve existing Purchase Requisition functionality.
+- Preserve existing Charge Item Master and calculations.
+- Preserve Company/Branch Governance.
+- Preserve PR Type Master.
+- Preserve existing Approval Workflow.
+- Preserve Budget & Financial Controls.
+- Preserve SAP Service Layer architecture.
+- Do not create duplicate Charge Item Masters.
+- Do not create duplicate Expense Category Masters.
+- Do not create duplicate approval engines.
+- Do not hardcode category eligibility.
+- Do not hardcode approval levels.
+- Do not bypass Maker-Checker.
+- Do not force budget validation when disabled.
+- Do not allow duplicate expense recording.
+- Do not create dummy inventory items.
+- Do not fabricate SAP responses.
+- Do not write directly to SAP HANA application tables.
+- Do not modify unrelated modules.
+- Do not remove existing data or audit records.
+
+---
+
+# 19. IMPLEMENTATION EXECUTION SEQUENCE
+
+Execute in the following order:
+
+PHASE 1 – Existing Architecture Inspection
+Inspect PR components, repositories, APIs, data models and configuration dependencies.
+
+PHASE 2 – PR Type Master
+Introduce EXPENSE PR Type and its controlled eligibility configuration.
+
+PHASE 3 – Charge Item Governance
+Preserve and validate existing header-level and line-level Charge Item functionality.
+
+PHASE 4 – Expense PR
+Implement independent expense/service requisition creation and multiple expense lines.
+
+PHASE 5 – Company/Branch Governance
+Integrate effective policy resolution and category eligibility.
+
+PHASE 6 – Approval Workflow
+Integrate existing approval matrix and Maker-Checker controls.
+
+PHASE 7 – Conditional Budget Validation
+Apply enabled/disabled behaviour consistently across frontend and backend.
+
+PHASE 8 – Financial Calculations
+Implement authoritative financial, tax and landed-cost calculations.
+
+PHASE 9 – SAP Business One Integration
+Implement Inventory PR and Expense PR document mapping using the existing Service Layer architecture.
+
+PHASE 10 – Audit and Reconciliation
+Implement transaction traceability, idempotency and integration recovery.
+
+PHASE 11 – UI/UX Validation
+Verify both PR workflows against the existing Koshit design standards.
+
+PHASE 12 – Acceptance Testing
+Execute all applicable tests and report actual outcomes.
+
+Do not skip dependencies or mark a phase complete without verifying its implementation.
+
+---
+
+# 20. FINAL IMPLEMENTATION REPORT
+
+After implementation, provide:
+
+1. Existing architecture findings.
+2. Root causes identified.
+3. Frontend files modified.
+4. Backend files modified.
+5. Database model changes.
+6. PR Type Master changes.
+7. Charge Item changes.
+8. Expense PR implementation.
+9. Company/Branch policy resolution.
+10. Category mapping implementation.
+11. Approval workflow integration.
+12. Conditional budget validation.
+13. Financial calculation implementation.
+14. SAP Business One Service Layer changes.
+15. SAP account and expense mapping dependencies.
+16. Audit and reconciliation implementation.
+17. Acceptance test results.
+18. Outstanding issues and dependencies.
+
+Clearly distinguish:
+- Implemented.
+- Tested successfully.
+- Tested with limitations.
+- Not implemented.
+- Pending SAP environment verification.
+
+FINAL INSTRUCTION:
+
+Implement a controlled, enterprise-grade extension of the existing Koshit Purchase Requisition architecture.
+
+The governing business rule is:
+
+INVENTORY-LINKED EXPENSE = CHARGE ITEM.
+
+INDEPENDENT EXPENSE / SERVICE = EXPENSE PR.
+
+Both must follow the same effective Company/Branch governance framework and configured approval controls, while retaining their appropriate financial treatment and SAP Business One integration mapping.
+
+Do not modify unrelated functionality.
+
+

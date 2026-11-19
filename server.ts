@@ -17,6 +17,8 @@ import { createUomsRouter } from './server/src/routes/uoms.js';
 import { createItemGovernanceRouter } from './server/src/routes/itemGovernance.js';
 import { createBranchItemsRouter } from './server/src/routes/branchItems.js';
 import { createChangeHistoryRouter } from './server/src/routes/changeHistory.js';
+import { createPrDuplicateGovernanceRouter } from './server/src/routes/prDuplicateGovernance.js';
+import { createPrGovernanceRouter } from './server/src/routes/prGovernance.js';
 import { checkDatabase, closeDatabase } from './server/src/db/pool.js';
 
 async function startServer(): Promise<void> {
@@ -42,17 +44,33 @@ async function startServer(): Promise<void> {
   app.use('/api/gst', createGstRouter());
   app.use('/api/charges', createChargesRouter());
   app.use('/api/security', createSecurityRouter());
+  app.use('/api/pr-duplicate-governance', createPrDuplicateGovernanceRouter());
+  app.use('/api/pr-governance', createPrGovernanceRouter());
 
   if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: process.env.DISABLE_HMR !== 'true',
-      },
-      appType: 'spa',
+    const vitePromise = import('vite').then(({ createServer: createViteServer }) =>
+      createViteServer({
+        server: {
+          middlewareMode: true,
+          allowedHosts: true,
+          hmr: false,
+          ws: false,
+          watch: null,
+        },
+        appType: 'spa',
+      })
+    );
+    vitePromise.catch((err) => {
+      console.error('Vite dev middleware failed to initialize:', err);
     });
-    app.use(vite.middlewares);
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distDir));
